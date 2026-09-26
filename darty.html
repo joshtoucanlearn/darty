@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#14304b">
+  <title>DARTY · Joe's cartoon football game</title>
+  <style>
+    :root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#fff9e7;background:#0b2236}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 72% 24%,#26587d,#0c2338 56%,#071523)}
+    main{width:min(980px,calc(100% - 36px));min-height:100vh;margin:auto;display:grid;align-content:center;gap:30px;padding:52px 0}
+    .eyebrow{color:#ffe66c;font-weight:900;text-transform:uppercase;letter-spacing:.22em;font-size:.74rem}
+    h1{font-size:clamp(5rem,17vw,11rem);line-height:.85;letter-spacing:-.085em;margin:0;color:#f36a39;text-shadow:5px 6px 0 #ffe66c,9px 13px 0 #11273a}
+    .intro{max-width:690px;font-size:clamp(1.1rem,2.8vw,1.65rem);font-weight:700;line-height:1.35;margin:8px 0 0}
+    .rules{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:5px 0 0}
+    .rule{border:1px solid #5e8cac;background:#143651;padding:20px;min-height:155px;box-shadow:5px 5px 0 #061727}
+    .rule b{display:block;font-size:2rem;line-height:1;color:#ffe66c}.rule span{display:block;margin-top:10px;font-size:.92rem;line-height:1.45;color:#e0ebed}
+    .actions{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+    .play{display:inline-block;background:#ffe66c;color:#092037;text-decoration:none;font-size:1.15rem;font-weight:1000;text-transform:uppercase;letter-spacing:.04em;padding:17px 25px;box-shadow:5px 6px 0 #f36a39;transition:transform .15s,box-shadow .15s}.play:hover,.play:focus-visible{transform:translate(2px,2px);box-shadow:3px 4px 0 #f36a39;outline:2px solid #fff}
+    .secondary{color:#c9dcdf;font-weight:700;text-underline-offset:4px}.note{font-size:.79rem;line-height:1.55;max-width:700px;color:#b6cbd3;margin:0}
+    @media(max-width:680px){.rules{grid-template-columns:1fr}.rule{min-height:0}.rule b{font-size:1.45rem}main{padding:32px 0}}
+  </style>
+</head>
+<body>
+  <main>
+    <div class="eyebrow">Joe's local football experiment</div>
+    <h1>DARTY!</h1>
+    <p class="intro">A full football match with big tackles, clashing players, and ridiculous toy-style pop-offs. No blood, just cartoon chaos.</p>
+    <div class="rules" aria-label="How DARTY works">
+      <div class="rule"><b>1. Play football</b><span>Choose teams, make passes and shots, defend and try to score. Keyboard or one controller.</span></div>
+      <div class="rule"><b>2. Land two</b><span>Two separate hard contacts on the same player count. Soft nudges and repeated frames do not.</span></div>
+      <div class="rule"><b>3. POP!</b><span>A toy head or leg flies off and bounces onto the pitch. The game carries on.</span></div>
+    </div>
+    <div class="actions">
+      <a class="play" href="quick-play/index.html?mode=single-player&amp;engine=fl-v2&amp;candidate=5">Set up a DARTY match →</a>
+      <a class="secondary" href="index.html">Browse the original Football Legacy modes</a>
+    </div>
+    <p class="note">Private local proof based on the August 14 Football Legacy browser build. DARTY has not replaced or updated the public Football Legacy site. The original game rules, teams and match setup remain under the hood; this first version adds the requested two-hard-hit cartoon mechanic.</p>
+  </main>
+</body>
+</html>

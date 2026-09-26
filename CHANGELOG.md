@@ -1,5 +1,19 @@
 # Football Legacy — Changelog
 
+## DARTY local follow-up — 27 September 2026 (not published)
+
+- Detached parts now use a frozen copy of the contact pose, so walking and head animations cannot pull or rotate them after the pop. The original rig is hidden until a new match restores it.
+- Pause freezes the flight and sparkle age. Landed parts stay still; resetting a match clears the effect, restores visibility and releases temporary sparkle/socket resources.
+- Added contact-to-host tests using real Movement V2 tackle and shoulder telemetry, covering soft contacts, duplicate episodes, the second-hit pop and invalid participants. Focused tracker, movement and launch checks pass (56 checks).
+- Verified head and leg flight, frozen child poses, pause, landing and reset in an instrumented browser presentation fixture. This fixture checks rendering, not the occurrence of two hard contacts during ordinary play. Joe's own playtest remains outstanding.
+
+## DARTY local prototype — 22 September 2026 (not published)
+
+- Added Joe's separate DARTY entry page and match overlay to this isolated clone of the August 14 browser build; no FLAME/Godot or public-site files were changed.
+- A per-player toy-impact tracker consumes only successfully committed FL V2 standing-tackle/shoulder-contact telemetry. A new presentation-only approach-speed measurement uses each footballer's actual travel toward the opponent during the contact tick, without changing the existing contest score; two distinct hard wins against the same victim (at least 4.6 m/s tackle or 4.9 m/s shoulder approach, separated by at least 18 committed ticks) trigger one head/leg pop. A collision's duplicate command ID, soft hit, lost challenge or repeated contact window cannot count twice.
+- A copy of the rendered head or leg detaches, arcs with a yellow/orange sparkle burst and lands on the pitch without blood or gore. Match logic and player-control ownership remain unchanged. A new match resets the count and restores the mesh.
+- Added focused tracker tests and a clearly synthetic `FLMatch.debugDartyVisual()` presentation fixture for local visual review. Thresholds and the overall feel await Joe's playtest.
+
 Last reviewed: 14 August 2026 — Build 174 Candidate 5 passing, locomotion and directional-touch release
 
 This file records the two source lines and the combined build produced from them:

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Football Legacy — Build 174 · FL V2 Playtest</title>
+<title>DARTY — Local Browser Prototype</title>
 <style>
   :root{--navy:#06182c;--orange:#e87824;--cream:#f7f1e7;--muted:#aab7c5;}
   *{box-sizing:border-box;} html,body{margin:0;height:100%;overflow:hidden;background:#03101f;font-family:Arial,Helvetica,sans-serif;color:var(--cream);}
@@ -60,6 +60,7 @@
   body.reactionReview .hud,body.reactionReview #pauseBtn,body.reactionReview #controllerStatus,body.reactionReview #audioGate,body.reactionReview .playerCard,body.reactionReview #radar,body.reactionReview #eventFeed,body.reactionReview #fightPrompt,body.reactionReview #goalCard,body.reactionReview #celebrationMenu,body.reactionReview #officialCard,body.reactionReview #varPanel,body.reactionReview .flash{display:none!important}
   #reactionReviewKey{display:none;position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:18;padding:8px 13px;border:1px solid rgba(255,255,255,.20);background:rgba(3,16,31,.82);color:#f7f1e7;font-size:.62rem;font-weight:900;letter-spacing:.12em;text-transform:uppercase;white-space:nowrap;pointer-events:none}body.reactionReview #reactionReviewKey{display:block}
   #v2AuthorityStatus{position:fixed;left:12px;top:12px;z-index:19;display:none;padding:4px 6px;border:1px solid rgba(100,213,145,.72);border-left:2px solid #64d591;background:rgba(3,16,31,.88);color:#aaf0c5;font-size:.48rem;font-weight:950;letter-spacing:.08em;text-transform:uppercase;box-shadow:0 5px 16px rgba(0,0,0,.28);pointer-events:none}#v2AuthorityStatus.show{display:block}#v2AuthorityStatus.stopped{border-color:rgba(232,76,76,.82);border-left-color:#e84c4c;color:#ffc0c0}
+  #dartyBadge{position:fixed;left:50%;top:12px;z-index:20;transform:translateX(-50%) rotate(-1deg);padding:7px 13px;border:2px solid #ffe65d;border-radius:4px;background:#f05b31;color:#fff8dc;box-shadow:0 7px 0 #8e271e,0 14px 30px rgba(0,0,0,.35);font-size:.66rem;font-weight:1000;letter-spacing:.13em;text-transform:uppercase;pointer-events:none;white-space:nowrap}#dartyBadge b{color:#fff;font-size:.82rem}#dartyBadge span{color:#ffe65d}
   #v2StrictFailurePage{z-index:70;background:rgba(2,8,16,.98)}#v2StrictFailurePage .pageCard{max-width:680px;border-color:rgba(232,76,76,.62);box-shadow:0 24px 90px rgba(0,0,0,.72)}#v2StrictFailurePage .pageEyebrow{color:#ff7777}#v2StrictFailurePage p{color:#c7d3df;line-height:1.58}#v2StrictFailureReason{padding:13px 15px;border:1px solid rgba(232,76,76,.34);background:#061525;color:#ffd1d1;font:700 .75rem/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere}#v2StrictFailureMeta{margin:10px 0 22px;color:#95a9bb;font-size:.68rem;letter-spacing:.08em;text-transform:uppercase}
   @media(max-width:760px){.playerCard{width:calc(50vw - 20px);padding-left:9px}.playerCard.away{padding-right:9px}.playerAction{display:none}#radar{bottom:150px!important;width:190px;height:auto}#setPieceHint{bottom:148px;max-width:calc(100vw - 24px);white-space:normal;text-align:center}}
 
@@ -68,6 +69,7 @@
 </head>
 <body>
 <div id="wrap"><canvas id="c" tabindex="0"></canvas></div>
+<div id="dartyBadge" aria-label="DARTY: two hard hits makes a toy body part pop off"><b>DARTY</b> · <span>2 hard hits = pop!</span></div>
 <div class="hud">
   <div class="scoreboard">
     <div class="clubscore"><div class="clubname">RIBBLE END</div><div class="scoreNo" id="youS">0</div></div>
@@ -113,6 +115,7 @@
 <script src="ball-physics.js?v=174-dormant-kernel"></script>
 <script src="instant-replay-review-v2.js?v=174-pause-review"></script>
 <script src="playtest-full-state-replay-v1.js?v=174-final-candidate-2"></script>
+<script src="darty-impact-v1.js?v=1-local-proof"></script>
 <script>if(!window.THREE){document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>')}</script>
 <script id="build173V2ShadowPreflight">
 (function(){
@@ -1036,7 +1039,7 @@
   function setWalkoutCameraBeat(beat){if(beat!==walkoutCameraBeat){walkoutCameraBeat=beat;walkoutCameraCut=true;}}
   let D0 = DIFF.ultimate;
   function aiDifficultyFor(){return D0;}
-  function focusGame(diff){ CONFIG.difficulty=normaliseDifficulty(diff);D0=DIFF[CONFIG.difficulty]||DIFF.ultimate; cv.focus(); initAudio(); matchTemperature=clamp(18+Number(savedMatchConfig.rivalryIntensity||0)*.45,10,52);temperatureBand=temperatureLabel();activeShirtPulls.clear();pendingFreeKickReplay=null;replayBuffer=[];replayLastSampleAt=0;latestOpenPlayShotReplayAnchor=null;openPlayShotReplaySequence=0;pendingGoalKickoffTeam=null;postGoalAutoKickoffPending=false;postGoalWatchdogAt=0;kickoffWatchdogAt=0;goalBroadcastHoldUntil=0;goalBroadcastHoldTarget=null;pauseStartedAt=0;youScore=0;oppScore=0;youS.textContent=0;oppS.textContent=0;clockFrames=0;matchOver=false;halfDone=false;halfTimeUntil=0;fullTimePresentationUntil=0;firstHalfAdded=null;secondHalfAdded=null;addedShownHalf=0;halfHardStopFrame=0;fullHardStopFrame=0;liveV2AuthorityTotals={candidateTicks:0,lastCommittedTick:0,gameplayEpochs:0};Object.assign(TEAM_BRAIN.you,makeTeamBrain());Object.assign(TEAM_BRAIN.opp,makeTeamBrain());you=[];opp=[];ykeep=okeep=null;bench=[];resetReport(); kickoff('you'); started=true;if(liveV2StrictStopped){liveV2RecordStrictStop();recordLiveV2Authority('strict-playtest-stop');return;}recordLiveV2Authority('match-start');if(build173V2Shadow)build173V2Shadow.resetForNewMatch();
+  function focusGame(diff){ CONFIG.difficulty=normaliseDifficulty(diff);D0=DIFF[CONFIG.difficulty]||DIFF.ultimate; cv.focus(); initAudio();dartyResetMatch(); matchTemperature=clamp(18+Number(savedMatchConfig.rivalryIntensity||0)*.45,10,52);temperatureBand=temperatureLabel();activeShirtPulls.clear();pendingFreeKickReplay=null;replayBuffer=[];replayLastSampleAt=0;latestOpenPlayShotReplayAnchor=null;openPlayShotReplaySequence=0;pendingGoalKickoffTeam=null;postGoalAutoKickoffPending=false;postGoalWatchdogAt=0;kickoffWatchdogAt=0;goalBroadcastHoldUntil=0;goalBroadcastHoldTarget=null;pauseStartedAt=0;youScore=0;oppScore=0;youS.textContent=0;oppS.textContent=0;clockFrames=0;matchOver=false;halfDone=false;halfTimeUntil=0;fullTimePresentationUntil=0;firstHalfAdded=null;secondHalfAdded=null;addedShownHalf=0;halfHardStopFrame=0;fullHardStopFrame=0;liveV2AuthorityTotals={candidateTicks:0,lastCommittedTick:0,gameplayEpochs:0};Object.assign(TEAM_BRAIN.you,makeTeamBrain());Object.assign(TEAM_BRAIN.opp,makeTeamBrain());you=[];opp=[];ykeep=okeep=null;bench=[];resetReport(); kickoff('you'); started=true;if(liveV2StrictStopped){liveV2RecordStrictStop();recordLiveV2Authority('strict-playtest-stop');return;}recordLiveV2Authority('match-start');if(build173V2Shadow)build173V2Shadow.resetForNewMatch();
     if(FREE_KICK_PRACTICE){enterFreeKickPractice();return;}
     // Both teams begin inside the tunnel, pass through the gap in the advertising boards, line up, then spread into formation.
     const colIndex=(p)=>{ const team=p.team==='you'?you:opp; let i=team.indexOf(p); return i<0?10:i; };
@@ -1292,6 +1295,45 @@
     if(actor){actor.action=actorAction;actor.actionT=Math.max(actor.actionT||0,actorFrames);holdContactPresentation(actor,actorAction,actorFrames);}
     if(target){target.action=targetAction;target.actionT=Math.max(target.actionT||0,targetFrames);target.diveSide=Math.sign((target.y||0)-(actor&&actor.y||0))||1;if(targetAction==='stumble')target.stumbleStrength=Math.max(Number(target.stumbleStrength)||0,.42);holdContactPresentation(target,targetAction,targetFrames);}
     return{actorAction,targetAction,actorFrames,targetFrames};
+  }
+  const dartyTracker=typeof window==='object'&&window.DartyImpactV1&&window.DartyImpactV1.createTracker();
+  const dartyFlights=[],dartyVisuals=new Map();
+  let dartyDetachQueue=[];
+  function dartyRemoveEffect(object){
+    if(!object)return;
+    if(object.parent)object.parent.remove(object);
+    const geometries=new Set(),materials=new Set();
+    object.traverse(child=>{if(child.geometry)geometries.add(child.geometry);if(child.material)(Array.isArray(child.material)?child.material:[child.material]).forEach(material=>materials.add(material));});
+    geometries.forEach(geometry=>geometry.dispose());materials.forEach(material=>material.dispose());
+  }
+  function dartyResetMatch(){
+    if(dartyTracker)dartyTracker.reset();
+    const badge=document.getElementById('dartyBadge');if(badge){badge.dataset.popCount='0';delete badge.dataset.lastPart;delete badge.dataset.visualStatus;delete badge.dataset.fixtureQueued;delete badge.dataset.drawQueue;}
+    dartyDetachQueue=[];
+    dartyFlights.splice(0);
+    for(const state of dartyVisuals.values()){
+      dartyRemoveEffect(state.sparkles);dartyRemoveEffect(state.socket);
+      // The flying copy shares the player's materials and geometry. Keep those alive.
+      if(state.part&&state.part.parent)state.part.parent.remove(state.part);
+      if(state.sourcePart)state.sourcePart.visible=state.sourceVisible;
+    }
+    dartyVisuals.clear();
+  }
+  function dartyRecordCommittedContacts(projection){
+    if(!dartyTracker||!projection||!projection.movementTelemetry)return;
+    const matchTick=liveV2AuthorityTotals.lastCommittedTick;
+    for(const contact of projection.movementTelemetry.contacts||[]){
+      const target=liveV2PlayerById(contact.targetId),actor=liveV2PlayerById(contact.actorId);
+      if(!target||!actor||target.team===actor.team||target.sentOff)continue;
+      const closingSpeedMps=Math.max(0,Number(contact.approachSpeedMps)||0);
+      const result=dartyTracker.register({...contact,relativeClosingSpeed:closingSpeedMps,tick:matchTick,commandId:String(liveV2AuthorityTotals.gameplayEpochs)+':'+String(contact.commandId||contact.tick)});
+      if(!result.accepted)continue;
+      logEvent('darty-hard-hit',target.team,target,{actorId:actor.id,contactType:contact.type,hardHits:result.target.hardHits,closingSpeedMps:result.speedMps,episodeId:result.episodeId});
+      if(!result.detachPart)continue;
+      dartyDetachQueue.push({targetId:String(target.id),part:result.detachPart,actorId:String(actor.id),speedMps:result.speedMps});
+      logEvent('darty-toy-pop',target.team,target,{actorId:actor.id,part:result.detachPart,hardHits:result.target.hardHits,style:'cartoon-toy-no-gore'});
+      showEvent('DARTY! '+(result.detachPart==='head'?'HEAD':'LEG')+' POP!',1600);
+    }
   }
   function contactImpact(offender,victim,info={}){
     if(!offender||!victim)return{relativeSpeed:0,closingSpeed:0,entrySpeed:0,intensity:clamp(Number(info.severity||0),0,1),forceX:1,forceY:0,forwardDot:0,sideDot:0};
@@ -2151,7 +2193,7 @@
     const saved=liveV2CaptureTransactionState(),nextTick=liveV2Tick+1,launchAtPlan=liveV2PendingLaunch,frame=liveV2Authority.planTick(liveV2Snapshot(nextTick));if(!frame){const status=liveV2Authority.status();if(!status.enabled)liveV2Stop(status.failure||'candidate planning fault');return false;}
     let prepared=null,controlPlan=null;try{prepared=liveV2Authority.prepareCommit(frame);if(!prepared)throw new Error('candidate host transaction prepare fault');controlPlan=liveV2PrepareControl();if(!liveV2Authority.applyPrepared(prepared)){const status=liveV2Authority.status();throw new Error(status&&status.failure||'candidate host transaction apply fault');}if(!liveV2Authority.finalizePrepared(prepared)){const status=liveV2Authority.status();throw new Error(status&&status.failure||'candidate host transaction finalize fault');}liveV2CommitControl(controlPlan);}
     catch(error){liveV2RestoreTransactionState(saved);if(prepared)liveV2Authority.rollbackPrepared(prepared,error);if(controlPlan)try{liveV2ControlApi.rollback(liveV2ControlRuntime,controlPlan,'outer-host-rollback',liveV2ControlCapability);}catch(_){}liveV2Stop(error);return false;}
-    liveV2Tick=nextTick;if(liveV2PendingLaunch===launchAtPlan)liveV2PendingLaunch=null;liveV2TickApplied=true;liveV2TickBallApplied=!!frame.hostProjection.ball;if(!liveV2WasEligible)liveV2AuthorityTotals.gameplayEpochs++;liveV2WasEligible=true;liveV2AuthorityCounters={...frame.hostProjection.authorityCounters};liveV2AuthorityTotals.candidateTicks+=Number(liveV2AuthorityCounters.candidateTicks)||0;liveV2AuthorityTotals.lastCommittedTick++;liveV2Badge(LIVE_V2_PREFLIGHT.workflow==='cpu-v-cpu'?'V2 · CPU':'V2 · SP');recordLiveV2Authority('first-live-authority-tick');return true;
+    liveV2Tick=nextTick;if(liveV2PendingLaunch===launchAtPlan)liveV2PendingLaunch=null;liveV2TickApplied=true;liveV2TickBallApplied=!!frame.hostProjection.ball;if(!liveV2WasEligible)liveV2AuthorityTotals.gameplayEpochs++;liveV2WasEligible=true;liveV2AuthorityCounters={...frame.hostProjection.authorityCounters};liveV2AuthorityTotals.candidateTicks+=Number(liveV2AuthorityCounters.candidateTicks)||0;liveV2AuthorityTotals.lastCommittedTick++;dartyRecordCommittedContacts(frame.hostProjection);liveV2Badge(LIVE_V2_PREFLIGHT.workflow==='cpu-v-cpu'?'V2 · CPU':'V2 · SP');recordLiveV2Authority('first-live-authority-tick');return true;
   }
   function liveV2QueueLaunch(source,targetPoint,details={}){
     if(!liveV2Authority||!liveV2CanStageProtectedLaunch(source)||!source||!targetPoint)return null;const xPerMetre=(W-2*M)/105,yPerMetre=H/68,zPerMetre=PITCH_UNITS_PER_METRE,origin=details.origin||{x:source.x,y:source.y,z:Number(ball.z)||0},dx=targetPoint.x-origin.x,dy=targetPoint.y-origin.y,mx=dx/xPerMetre,my=dy/yPerMetre,ml=Math.hypot(mx,my)||1,speedWorld=Math.max(.01,Number(details.speedWorld)||0),horizontal=Math.hypot(dx,dy)||1,speedMetresPerSecond=speedWorld*60*Math.hypot(dx/horizontal/xPerMetre,dy/horizontal/yPerMetre),verticalMetresPerSecond=(Number(details.loftWorld)||0)*60/zPerMetre,groundDampingModel=['weighted-ground-strike-v1','progressive-ground-strike-v2'].includes(details.groundDampingModel)?details.groundDampingModel:null;
@@ -6034,6 +6076,8 @@ function beginDedicatedSetPiece(kind,team,taker,x,y){
       const touchBack=H/2+STADIUM.touchRows*STADIUM.rowDepth+32,facadeZ=-(touchBack+22);px=-W*.34;py=118;pz=-(touchBack+102);lx=-W*.04;lz=facadeZ;lookY=61;targetFov=48;
     }else if(typeof debugScene!=='undefined'&&debugScene==='reaction-review'){
       const hero=controlled||you[1]||you[0],cx=worldX(hero.x),cz=worldZ(hero.y),fx=hero.fx||1,fz=hero.fy||0;px=cx+fx*285;py=82;pz=cz+fz*285;lx=cx;lz=cz;lookY=38;targetFov=43;
+    }else if(typeof debugScene!=='undefined'&&(debugScene==='darty-head'||debugScene==='darty-leg')){
+      const hero=opp[8]||opp[0],cx=worldX(hero.x),cz=worldZ(hero.y);px=cx+112;py=76;pz=cz+135;lx=cx;lz=cz;lookY=32;targetFov=34;
     }else if(typeof debugScene!=='undefined'&&(debugScene==='player-face'||debugScene==='keeper-ready'||debugScene==='keeper-forward'||debugScene==='slide-sprint')){
       const hero=controlled||you[8]||you[0],cx=worldX(hero.x),cz=worldZ(hero.y),fx=hero.fx||1,fz=hero.fy||0,actionWide=debugScene!=='player-face',back=actionWide?150:82;px=cx+fx*back-fz*(actionWide?45:0);py=actionWide?74:57;pz=cz+fz*back+fx*(actionWide?45:0);lx=cx;lz=cz;lookY=actionWide?27:48;targetFov=actionWide?32:26;
     }else if(typeof debugScene!=='undefined'&&debugScene==='ref-face'){
@@ -6123,7 +6167,7 @@ function beginDedicatedSetPiece(kind,team,taker,x,y){
       }
     }
     if(instantReplayActive)camera.fov=targetFov;else camera.fov+=(targetFov-camera.fov)*.08;camera.updateProjectionMatrix();
-    const debugCameraLocked=typeof debugScene!=='undefined'&&(debugScene==='stadium-aerial'||debugScene==='highbury-street'),ease=instantReplayActive?1:debugCameraLocked?1:goalReplay.active?(goalReplay.cameraCut?1:.14):disciplineReplay.active?(disciplineReplay.cameraCut?1:.14):(pendingDiveDecision&&pendingDiveDecision.whistled)?0.11:diveReplay.active?(diveReplay.cameraCut?1:.12):foulSequence?(foulSequence.cameraCut?1:.10):restartCameraCut?1:now<cameraRecoveryUntil?.30:specialPSequence.active&&specialPSequence.cameraCut?1:celebrationCameraCut?.74:matchPhase==='walkout'?(walkoutCameraCut?1:.075):celebrate>0?.10:cameraMode==='endToEnd'?.065:.14;
+    const debugCameraLocked=typeof debugScene!=='undefined'&&['stadium-aerial','highbury-street','darty-head','darty-leg'].includes(debugScene),ease=instantReplayActive?1:debugCameraLocked?1:goalReplay.active?(goalReplay.cameraCut?1:.14):disciplineReplay.active?(disciplineReplay.cameraCut?1:.14):(pendingDiveDecision&&pendingDiveDecision.whistled)?0.11:diveReplay.active?(diveReplay.cameraCut?1:.12):foulSequence?(foulSequence.cameraCut?1:.10):restartCameraCut?1:now<cameraRecoveryUntil?.30:specialPSequence.active&&specialPSequence.cameraCut?1:celebrationCameraCut?.74:matchPhase==='walkout'?(walkoutCameraCut?1:.075):celebrate>0?.10:cameraMode==='endToEnd'?.065:.14;
     camera.position.x+=(px-camera.position.x)*ease;camera.position.y+=(py-camera.position.y)*ease;camera.position.z+=(pz-camera.position.z)*ease;if(!instantReplayActive){if(goalReplay.active)goalReplay.cameraCut=false;if(disciplineReplay.active)disciplineReplay.cameraCut=false;if(diveReplay.active)diveReplay.cameraCut=false;if(foulSequence){foulSequence.cameraCut=false;}if(restartCameraCut)restartCameraCut=false;if(specialPSequence.active)specialPSequence.cameraCut=false;if(celebrationCameraCut)celebrationCameraCut=false;if(matchPhase==='walkout')walkoutCameraCut=false;}
     camera.lookAt(lx,lookY,lz);
     const broadcastRoll=(!instantReplayActive&&matchPhase==='play'&&celebrate<=0&&cameraMode!=='endToEnd')?clamp((ball.vy||0)*-.00045,-.010,.010):0;camera.rotation.z+=(broadcastRoll-camera.rotation.z)*.055;
@@ -7311,6 +7355,66 @@ function buildGoal(gx){
     if(u.ring){u.ring.visible=!!highlighted;u.ring.material.opacity=highlighted?.92:0;}u.prevWx=wx;u.prevWz=wz;u.prevSpeed=spd;
   }
 
+  function dartyMeshForPlayer(player){
+    if(!player)return null;
+    const home=you.indexOf(player),away=opp.indexOf(player);
+    return home>=0?youMeshes[home]:away>=0?oppMeshes[away]:null;
+  }
+  function dartyCreateSparkles(position){
+    const sparkles=new THREE.Group(),colors=[0xffe65d,0xf4723a,0xffffff],geometry=new THREE.SphereGeometry(1.8,6,5);
+    for(let i=0;i<12;i++){
+      const spark=new THREE.Mesh(geometry,new THREE.MeshBasicMaterial({color:colors[i%colors.length],transparent:true,opacity:1,depthWrite:false}));
+      const angle=i*Math.PI*2/12;
+      spark.userData.velocity=new THREE.Vector3(Math.cos(angle)*(24+i%3*8),25+(i%4)*13,Math.sin(angle)*(24+i%3*8));
+      spark.position.set(0,0,0);sparkles.add(spark);
+    }
+    sparkles.position.copy(position);scene.add(sparkles);return sparkles;
+  }
+  function dartyDetachVisual(event,now){
+    const player=liveV2PlayerById(event.targetId),mesh=dartyMeshForPlayer(player);
+    const badge=document.getElementById('dartyBadge');
+    if(!player||!mesh||!mesh.parent||dartyVisuals.has(event.targetId)){if(badge)badge.dataset.visualStatus='missing-player-mesh-or-existing';return false;}
+    const sourcePart=mesh.userData[event.part==='head'?'headGroup':event.part];if(!sourcePart||!sourcePart.parent){if(badge)badge.dataset.visualStatus='missing-part';return false;}
+    mesh.updateMatrixWorld(true);
+    const start=new THREE.Vector3();sourcePart.getWorldPosition(start);
+    const parent=sourcePart.parent,localPosition=sourcePart.position.clone(),sourceVisible=sourcePart.visible;
+    // Freeze the whole pose: normal walking still animates the hidden original rig.
+    const part=sourcePart.clone(true);parent.add(part);part.visible=true;
+    scene.attach(part);
+    sourcePart.visible=false;
+    const socket=new THREE.Mesh(new THREE.SphereGeometry(event.part==='head'?2.9:2.2,12,8),new THREE.MeshBasicMaterial({color:0xffd749}));
+    socket.position.copy(localPosition);socket.scale.set(1,.45,1);parent.add(socket);
+    const sparkles=dartyCreateSparkles(start);
+    const actor=liveV2PlayerById(event.actorId),dx=player.x-(actor?actor.x:player.x-1),dy=player.y-(actor?actor.y:player.y),length=Math.hypot(dx,dy)||1;
+    const state={targetId:event.targetId,partName:event.part,part,sourcePart,sourceVisible,socket,sparkles,age:0,lastAt:now,velocity:new THREE.Vector3(dx/length*85,128,dy/length*85),landed:false,bounds:new THREE.Box3()};
+    dartyVisuals.set(event.targetId,state);dartyFlights.push(state);
+    if(badge){badge.dataset.popCount=String(dartyVisuals.size);badge.dataset.lastPart=event.part;badge.dataset.visualStatus='detached';}
+    return true;
+  }
+  function dartyDrawFlights(){
+    if(!scene3dBuilt)return;
+    const badge=document.getElementById('dartyBadge');if(badge&&dartyDetachQueue.length)badge.dataset.drawQueue=String(dartyDetachQueue.length);
+    const now=performance.now();
+    for(const event of dartyDetachQueue.splice(0))dartyDetachVisual(event,now);
+    if(paused||instantReplayReviewController&&instantReplayReviewController.status().active){for(const state of dartyFlights)state.lastAt=now;return;}
+    for(const state of dartyFlights){
+      const dt=clamp((now-state.lastAt)/1000,0,.05);state.lastAt=now;
+      state.age+=dt;
+      if(!state.landed){
+        state.velocity.y-=315*dt;state.part.position.addScaledVector(state.velocity,dt);
+        state.part.rotation.x+=dt*(state.partName==='head'?5.5:4.1);
+        state.part.rotation.z+=dt*3.7;
+        state.bounds.setFromObject(state.part);
+        if(state.bounds.min.y<=.14){state.part.position.y+=.14-state.bounds.min.y;state.velocity.y=Math.abs(state.velocity.y)*.28;state.velocity.x*=.55;state.velocity.z*=.55;if(state.velocity.y<26)state.landed=true;}
+      }
+      const age=state.age;
+      if(state.sparkles){
+        state.sparkles.children.forEach(spark=>{spark.position.addScaledVector(spark.userData.velocity,dt);spark.userData.velocity.y-=110*dt;spark.material.opacity=Math.max(0,1-age*1.8);});
+        if(age>.65){dartyRemoveEffect(state.sparkles);state.sparkles=null;}
+      }
+    }
+  }
+
   function heldBallAnchor(){
     const keeper=ball&&ball.owner&&ball.owner.isGK&&ball.owner.action==='keeperCarry'?ball.owner:null,mesh=keeper===ykeep?ykeepMesh:keeper===okeep?okeepMesh:null,socket=mesh&&mesh.userData&&mesh.userData.carrySocket;
     if(!socket)return null;mesh.updateMatrixWorld(true);const point=new THREE.Vector3();socket.getWorldPosition(point);return point;
@@ -7338,7 +7442,7 @@ function buildGoal(gx){
     if(!scene3dBuilt) build3D();updateSetPieceGuide();updatePitchsideCameraOperators();
     for(let i=0;i<10;i++){ place(youMeshes[i], you[i]||{x:-999,y:-999}, you[i]===controlled||twoPlayerEnabled&&you[i]===controlledOpp); }
     for(let i=0;i<10;i++){ place(oppMeshes[i], opp[i]||{x:-999,y:-999}, twoPlayerEnabled&&opp[i]===controlledOpp); }
-    place(ykeepMesh, ykeep, ykeep===controlled||twoPlayerEnabled&&ykeep===controlledOpp); place(okeepMesh, okeep, twoPlayerEnabled&&okeep===controlledOpp);
+    place(ykeepMesh, ykeep, ykeep===controlled||twoPlayerEnabled&&ykeep===controlledOpp); place(okeepMesh, okeep, twoPlayerEnabled&&okeep===controlledOpp);dartyDrawFlights();
     if(specialPSequence.active&&specialPSequence.stage===0){
       place(refMesh,ref,false);place(lino1Mesh,lino1,false);place(lino2Mesh,lino2,false);
     }else if(foulSequence||disciplineReplay.active){
@@ -7649,6 +7753,19 @@ function buildGoal(gx){
   }
   window.FLMatch={
     start:(difficulty='ultimate')=>focusGame(difficulty),
+    getDartyState:()=>({version:window.DartyImpactV1&&window.DartyImpactV1.VERSION||null,activePlayers:[...you,...opp].filter(Boolean).map(player=>({id:String(player.id),name:player.name,...(dartyTracker?dartyTracker.snapshot(player.id):{})})),flights:dartyFlights.map(state=>({targetId:state.targetId,part:state.partName,landed:state.landed,position:state.part.position.toArray().map(value=>+value.toFixed(2))})),queued:dartyDetachQueue.length}),
+    debugDartyVisual:(part='head')=>{
+      // Synthetic presentation fixture only: never counts as a live V2 contact.
+      if(!started)focusGame(CONFIG.difficulty);
+      if(!scene3dBuilt)build3D();
+      dartyResetMatch();matchPhase='play';kickoffHeld=false;paused=false;clearRestartState();
+      const target=opp[8],actor=you[8];target.x=W*.5;target.y=H*.5;target.fx=-1;target.fy=0;target.vx=target.vy=0;target.sentOff=false;actor.x=target.x-35;actor.y=target.y;actor.fx=1;actor.fy=0;actor.sentOff=false;
+      [...you,...opp,ykeep,okeep].filter(player=>player&&player!==target&&player!==actor).forEach(player=>{player.x=player.team==='you'?W*.23:W*.77;player.y=H*.14;player.vx=player.vy=0;});
+      controlled=actor;ball.owner=null;ball.x=target.x;ball.y=target.y;ball.z=0;setCameraMode('classic',true);
+      const type=part==='head'?'shoulder-contact':'tackle-contact',first=dartyTracker.register({type,commandId:'visual-fixture-1',tick:100,actorId:String(actor.id),targetId:String(target.id),outcome:'win',relativeClosingSpeed:5.6}),second=dartyTracker.register({type,commandId:'visual-fixture-2',tick:140,actorId:String(actor.id),targetId:String(target.id),outcome:'win',relativeClosingSpeed:5.6});
+      if(second.detachPart){dartyDetachQueue.push({targetId:String(target.id),actorId:String(actor.id),part:second.detachPart,speedMps:5.6});document.getElementById('dartyBadge').dataset.fixtureQueued=String(dartyDetachQueue.length);showEvent('DARTY! '+(second.detachPart==='head'?'HEAD':'LEG')+' POP!',1600);}
+      return{synthetic:true,first:first.target,second:second.target,queued:dartyDetachQueue.length};
+    },
     getOnlineStream:(fps=60)=>{if(!ONLINE_HOST)throw new Error('Online stream is host-only');if(typeof cv.captureStream!=='function')throw new Error('This browser cannot stream the match canvas');if(!actx&&AUDIO_LEVEL>0)initAudio(false);const canvasStream=cv.captureStream(clamp(Number(fps)||60,24,60)),stream=new MediaStream(canvasStream.getVideoTracks());if(audioStreamDestination){const track=audioStreamDestination.stream.getAudioTracks()[0];if(track)stream.addTrack(track);}return stream;},
     getOnlineViewState,
     debugOnlineRemoteController,
@@ -8095,7 +8212,7 @@ function buildGoal(gx){
     const skill=.84,open=['finesse','normal','lowDriven'].flatMap(shotType=>[.24,.62,1].map(power=>{const paceMps=humanOpenPlayShotPaceMetresPerSecond(power,skill,shotType),distanceM=18;return{shotType,power,paceMps:+paceMps.toFixed(2),distanceM,arrivalMs:Math.round(distanceM/paceMps*1000)};})),goalX=W-M,startFor=metres=>goalX-metres*PITCH_UNITS_PER_METRE,freeKicks=['dipping','curved','driven'].flatMap(technique=>[18,25,32].map(distanceM=>{const power=freeKickIdealPower(distanceM,technique),plan=freeKickPhysicsPlan({team:'you',startX:startFor(distanceM),startY:H/2,targetY:H/2,aimHeight:.56,power,skill,curveSkill:skill,technique,deterministic:true});return{technique,distanceM,power:+power.toFixed(3),paceMps:plan.actualPaceMps,arrivalMs:plan.arrivalMs};}));return{open,freeKicks,bounds:{openMps:[22.5,34],freeKickMps:[22.5,34],openArrivalMs:[500,800],freeKickArrivalMs:[500,1500]},unitConversion:'host-world-velocity-to-regulation-metres-per-second',difficultyPhysicalBonus:false};
   };
   const rawMatchConfig=window.FLMatch.getMatchConfig;window.FLMatch.getMatchConfig=()=>{const config=rawMatchConfig(),liveStatus=window.FLLiveV2&&window.FLLiveV2.status?window.FLLiveV2.status():null;config.systems={identityPresentation:'FLARE',ballPhysics:window.FootballLegacyBallEngineV2&&window.FootballLegacyBallEngineV2.ENGINE_NAME||'Magnus Reynolds (MR) Engine',dribbling:window.FootballLegacyDribblingStateV2&&window.FootballLegacyDribblingStateV2.ENGINE_NAME||'True Feel',liveAuthorityProfile:liveStatus&&liveStatus.gameplay&&liveStatus.gameplay.authorityProfile||null};config.audio.unlocked=audioUnlocked;config.movement.groundedPresentation={rootBob:'subtle',footPlantCompensation:true,momentumLedLean:true,instantPivot:false,gaitCadenceScale:1.2,visualStepDistanceRatio:.8333,worldSpeedScale:1};config.presentation.pitchsideCameraOperators={count:6,tracking:'live-ball',viewports:['touchline-north','touchline-south','goal-line-left','goal-line-right','corner-left','corner-right'],replayKinds:['goal-replay','free-kick-goal-replay','free-kick-shot-replay','penalty-shot-replay','celebration','ordinary-foul-replay','carded-foul-replay','incident-chain-replay','dive-replay','missed-shot','save','save-to-corner'],walkoutAvailable:true};return config;};
-  const debugScene=query.get('debugScene'),debugDelay=Math.max(120,Number(query.get('debugDelay'))||620);if(debugScene)setTimeout(()=>{if(debugScene==='restart')window.FLMatch.debugRestart('FREE KICK','you',false);else if(debugScene==='free-kick')window.FLMatch.debugSetPieceFormation('FREE KICK','you');else if(debugScene==='free-kick-showcase')window.FLMatch.debugFreeKickShowcase();else if(debugScene==='penalty')window.FLMatch.debugSetPieceFormation('PENALTY','you');else if(debugScene==='ridiculous')window.FLMatch.debugRidiculousDiveCard('you');else if(debugScene==='rolling')window.FLMatch.debugRollingDive('you');else if(debugScene==='hands')window.FLMatch.debugReaction('handsOnHead','you');else if(debugScene==='reaction-review')window.FLMatch.debugReactionReview();else if(debugScene==='walkout-tackle')window.FLMatch.debugWalkoutTackle();else if(debugScene==='walkout-fight')window.FLMatch.debugWalkoutFight();else if(debugScene==='flair-trip')window.FLMatch.debugFlairPassTrip(true);else if(debugScene==='player-face'){if(!started)focusGame(CONFIG.difficulty);matchPhase='play';kickoffHeld=false;paused=true;controlled=you[8]||you[0];controlled.x=W*.50;controlled.y=H*.50;controlled.fx=1;controlled.fy=0;controlled.action='handsOnHead';controlled.actionT=600;}else if(debugScene==='keeper-ready'||debugScene==='keeper-forward'){if(!started)focusGame(CONFIG.difficulty);matchPhase='play';kickoffHeld=false;paused=true;controlled=okeep;okeep.x=W*.50;okeep.y=H*.50;okeep.fx=-1;okeep.fy=0;okeep.vx=okeep.vy=0;okeep.keeperPose=debugScene==='keeper-ready'?'ready':'active';okeep.action=debugScene==='keeper-ready'?'idle':'keeperForwardDive';okeep.keeperAnimationDuration=40;okeep.actionT=debugScene==='keeper-ready'?0:20;ball.owner=null;ball.x=W*.34;ball.y=H*.72;ball.z=1;ball.vx=ball.vy=ball.zv=0;}else if(debugScene==='slide-sprint'){if(!started)focusGame(CONFIG.difficulty);matchPhase='play';kickoffHeld=false;paused=true;controlled=you[3]||you[0];controlled.x=W*.50;controlled.y=H*.50;controlled.fx=1;controlled.fy=0;controlled.slideDuration=41;controlled.slide=21;controlled.slideEntrySpeed=6.2;controlled.action='slideTackle';controlled.actionT=21;ball.owner=null;ball.x=W*.70;ball.y=H*.72;ball.z=1;ball.vx=ball.vy=ball.zv=0;}else if(debugScene==='ref-face'){ref.action='foulXWave';ref.actionT=600;}else if(debugScene.startsWith('flick-'))window.FLMatch.debugFlickVariant(debugScene.slice(6),'you');else if(debugScene==='lob')window.FLMatch.debugLobPass('you',.78);else if(debugScene==='driven-lob')window.FLMatch.debugLobPass('you',.78,'lob','driven');else if(debugScene==='xwave')window.FLMatch.debugFoul('opp',null,null,{scene:'xWave'});},debugDelay);
+  const debugScene=query.get('debugScene'),debugDelay=Math.max(120,Number(query.get('debugDelay'))||620);if(debugScene)setTimeout(()=>{if(debugScene==='darty-head'||debugScene==='darty-leg')window.FLMatch.debugDartyVisual(debugScene==='darty-head'?'head':'leg');else if(debugScene==='restart')window.FLMatch.debugRestart('FREE KICK','you',false);else if(debugScene==='free-kick')window.FLMatch.debugSetPieceFormation('FREE KICK','you');else if(debugScene==='free-kick-showcase')window.FLMatch.debugFreeKickShowcase();else if(debugScene==='penalty')window.FLMatch.debugSetPieceFormation('PENALTY','you');else if(debugScene==='ridiculous')window.FLMatch.debugRidiculousDiveCard('you');else if(debugScene==='rolling')window.FLMatch.debugRollingDive('you');else if(debugScene==='hands')window.FLMatch.debugReaction('handsOnHead','you');else if(debugScene==='reaction-review')window.FLMatch.debugReactionReview();else if(debugScene==='walkout-tackle')window.FLMatch.debugWalkoutTackle();else if(debugScene==='walkout-fight')window.FLMatch.debugWalkoutFight();else if(debugScene==='flair-trip')window.FLMatch.debugFlairPassTrip(true);else if(debugScene==='player-face'){if(!started)focusGame(CONFIG.difficulty);matchPhase='play';kickoffHeld=false;paused=true;controlled=you[8]||you[0];controlled.x=W*.50;controlled.y=H*.50;controlled.fx=1;controlled.fy=0;controlled.action='handsOnHead';controlled.actionT=600;}else if(debugScene==='keeper-ready'||debugScene==='keeper-forward'){if(!started)focusGame(CONFIG.difficulty);matchPhase='play';kickoffHeld=false;paused=true;controlled=okeep;okeep.x=W*.50;okeep.y=H*.50;okeep.fx=-1;okeep.fy=0;okeep.vx=okeep.vy=0;okeep.keeperPose=debugScene==='keeper-ready'?'ready':'active';okeep.action=debugScene==='keeper-ready'?'idle':'keeperForwardDive';okeep.keeperAnimationDuration=40;okeep.actionT=debugScene==='keeper-ready'?0:20;ball.owner=null;ball.x=W*.34;ball.y=H*.72;ball.z=1;ball.vx=ball.vy=ball.zv=0;}else if(debugScene==='slide-sprint'){if(!started)focusGame(CONFIG.difficulty);matchPhase='play';kickoffHeld=false;paused=true;controlled=you[3]||you[0];controlled.x=W*.50;controlled.y=H*.50;controlled.fx=1;controlled.fy=0;controlled.slideDuration=41;controlled.slide=21;controlled.slideEntrySpeed=6.2;controlled.action='slideTackle';controlled.actionT=21;ball.owner=null;ball.x=W*.70;ball.y=H*.72;ball.z=1;ball.vx=ball.vy=ball.zv=0;}else if(debugScene==='ref-face'){ref.action='foulXWave';ref.actionT=600;}else if(debugScene.startsWith('flick-'))window.FLMatch.debugFlickVariant(debugScene.slice(6),'you');else if(debugScene==='lob')window.FLMatch.debugLobPass('you',.78);else if(debugScene==='driven-lob')window.FLMatch.debugLobPass('you',.78,'lob','driven');else if(debugScene==='xwave')window.FLMatch.debugFoul('opp',null,null,{scene:'xWave'});},debugDelay);
   if(query.get('selfTest')==='1')setTimeout(()=>{
     const result=document.createElement('pre');result.id='gameplaySelfTest';result.dataset.expanded='false';result.title='Click to expand or collapse validation results';result.style.cssText='position:fixed;z-index:99999;left:12px;bottom:12px;width:auto;max-width:340px;max-height:34px;overflow:hidden;margin:0;padding:8px 12px;background:rgba(7,21,38,.82);color:#fff;border:1px solid #e87824;border-radius:4px;font:12px/1.5 monospace;white-space:pre-wrap;cursor:pointer;box-shadow:0 3px 16px rgba(0,0,0,.32)';result.addEventListener('click',()=>{const expand=result.dataset.expanded!=='true';result.dataset.expanded=String(expand);result.style.maxWidth=expand?'560px':'340px';result.style.maxHeight=expand?'72vh':'34px';result.style.overflow=expand?'auto':'hidden';result.style.background=expand?'rgba(7,21,38,.96)':'rgba(7,21,38,.82)';});document.body.appendChild(result);
     const checks=[];const check=(label,pass,detail='')=>checks.push(`${pass?'PASS':'FAIL'} · ${label}${detail?' · '+detail:''}`);

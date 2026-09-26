@@ -1,5 +1,11 @@
 # Football Legacy — Build 174 Candidate 5
 
+## DARTY local branch (not published)
+
+This isolated clone also contains Joe's DARTY experiment. Open `darty.html` locally through a static server to launch a match with cartoon toy-part pop-offs after two separate hard winning contacts against the same player. The DARTY changes are not on the public Football Legacy site, and the Football Legacy description and links below document the August 14 source baseline rather than a DARTY release.
+
+To check DARTY, run `node --test tests/darty-impact-v1.mjs`. With a local server running on port 4331 and Playwright available, `node tools/verify-darty-browser.mjs` checks both detached parts, pause, landing and reset. Set `PLAYWRIGHT_MODULE` to an installed Playwright module path if needed; `DARTY_BASE_URL` changes the server URL and `DARTY_PROOF_DIR` changes the screenshot/evidence folder (default `/tmp/darty-browser-proof`). This is a deliberately instrumented rendering fixture, separate from ordinary match gameplay.
+
 Football Legacy is a browser football game prototype with FL V2 Quick Play, historic teams, creation tools, Career Mode and Grassroots to Glory.
 
 ## Play the current game

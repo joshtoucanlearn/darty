@@ -670,6 +670,14 @@
       const toTarget = normalize({ x: starts[target.id].x - starts[actor.id].x, y: starts[target.id].y - starts[actor.id].y }, action.direction);
       const alignment = dot(action.direction, toTarget);
       if (!approach.hit || alignment < (action.type === 'stand-tackle' ? 0.18 : -0.05)) continue;
+      // Report actual relative travel toward the opponent for presentation-only
+      // consumers. The older sweptApproach.relativeClosingSpeed is retained
+      // unchanged because it also contributes to the football contest score.
+      const relativeTravel = {
+        x: (actor.position.x - starts[actor.id].x) - (target.position.x - starts[target.id].x),
+        y: (actor.position.y - starts[actor.id].y) - (target.position.y - starts[target.id].y)
+      };
+      const approachSpeedMps = rounded(Math.max(0, dot(relativeTravel, toTarget)) / config.fixedTickSeconds);
       const actorAttrs = actor.attributes;
       const targetAttrs = target.attributes;
       const shielding = target.contextMode === 'shield' || target.locomotionState === 'shield';
@@ -692,7 +700,7 @@
       telemetry.contacts.push({
         type: contactType, commandId: action.commandId, tick, actorId: actor.id, targetId: target.id,
         alignment: rounded(alignment), closestDistance: approach.closestDistance,
-        relativeClosingSpeed: approach.relativeClosingSpeed, actorScore: rounded(actorScore),
+        relativeClosingSpeed: approach.relativeClosingSpeed, approachSpeedMps, actorScore: rounded(actorScore),
         targetScore: rounded(targetScore), outcome: action.outcome
       });
       const outcomeType = action.type === 'stand-tackle'
