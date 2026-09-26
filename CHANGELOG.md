@@ -1,5 +1,10 @@
 # Football Legacy — Changelog
 
+## DARTY separate repository — 27 September 2026
+
+- Created the private `joshtoucanlearn/darty` repository with the inherited source history and DARTY work. The main menu now identifies Joe's game, and Career saves use a separate database and fallback key. Browser checks confirmed save/reload and preservation of the original game's fallback storage.
+- Career's live Sim Lab and Play Match connection remains unimplemented. The existing Career dot animation is a statistical timeline, not the later test Sim Lab. No public website deployment was performed.
+
 ## DARTY local follow-up — 27 September 2026 (not published)
 
 - Detached parts now use a frozen copy of the contact pose, so walking and head animations cannot pull or rotate them after the pop. The original rig is hidden until a new match restores it.

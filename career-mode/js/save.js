@@ -1,6 +1,6 @@
 window.FLSave = (() => {
-  const KEY = 'footballLegacySaveV1';
-  const DB_NAME = 'FootballLegacyDB';
+  const KEY = 'dartyCareerSaveV1';
+  const DB_NAME = 'DartyCareerDB';
   const STORE_NAME = 'saves';
   const SLOT = 'main';
   let dbPromise = null;
