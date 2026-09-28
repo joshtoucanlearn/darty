@@ -31,4 +31,16 @@ The browser check requires Playwright and Chrome, with the local server running.
 
 The starting point is Football Legacy commit `0e3ff010b65668fe0144f99cd65a1f21695f7332` (14 August 2026). Its history is preserved. `upstream` is retained for reference with pushing disabled; `origin` is `joshtoucanlearn/darty`.
 
-See [the baseline notes](FOOTBALL-LEGACY-BASELINE.md) for the inherited engine and mode boundaries, and [the changelog](CHANGELOG.md) for DARTY changes. GitHub Pages has not been enabled.
+See [the baseline notes](FOOTBALL-LEGACY-BASELINE.md) for the inherited engine and mode boundaries, and [the changelog](CHANGELOG.md) for DARTY changes.
+
+## Joe's website playtest
+
+Quick Play is published through Joe's existing GitHub Pages website at https://joshtoucanlearn.github.io/os-joe/darty/. The separate DARTY source repository remains private. Career is not included in that playtest export.
+
+To refresh the website's runtime from this checkout, run:
+
+```sh
+python3 tools/export-joe-playtest.py ../joe-os/public/darty
+```
+
+Then build and publish `joe-os` following its README. The export copies the Quick Play and match scripts unchanged, includes their asset dependencies, and records file hashes and the source commit in `playtest-build.json`. It excludes teaching records, research notes and repository history.
