@@ -28,7 +28,7 @@ await page.addInitScript(()=>{navigator.getGamepads=()=>[];});
 await page.route('**/match-engine/match.html?*',r=>r.fulfill({contentType:'text/html',body:html}));
 try{
  console.log('Browser started');
- await page.goto(base+'/quick-play/index.html?mode=single-player&engine=fl-v2&candidate=5');
+ await page.goto(base+'/quick-play/index.html?mode=single-player&engine=fl-v2&candidate=5',{waitUntil:'networkidle'});
  for(const id of ['confirmTeams','confirmManagement','confirmSetup','confirmControls','startMatch'])await page.locator('#'+id).click();
  await page.waitForFunction(()=>window.__DARTY_TEST&&window.FLMatch);
  const url=new URL(page.url());url.searchParams.set('debugScene','darty-head');url.searchParams.set('debugDelay','999999');
@@ -38,7 +38,7 @@ try{
  for(const part of ['head','leg']){
   const fixture=await page.evaluate(part=>{const f=FLMatch.debugDartyVisual(part);__DARTY_TEST.render();return f;},part);
   const before=await page.evaluate(()=>__DARTY_TEST.snapshot()[0]);
-  assert.equal(before.sourceVisible,false); assert.equal(before.attached,true); assert.equal(fixture.first.hardHits,1);assert.equal(fixture.second.hardHits,2);
+  assert.equal(before.sourceVisible,false); assert.equal(before.attached,true); assert.equal(fixture.first.hardHits,1);assert.ok(fixture.first.detachedPart);
   await page.evaluate(()=>{for(let n=0;n<15;n++)__DARTY_TEST.step();__DARTY_TEST.render();});
   const mid=await page.evaluate(()=>__DARTY_TEST.snapshot()[0]);
   assert.notDeepEqual(mid.rotation,before.rotation);assert.notDeepEqual(mid.position,before.position);

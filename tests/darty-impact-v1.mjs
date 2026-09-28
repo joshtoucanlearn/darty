@@ -43,29 +43,29 @@ test('two command IDs inside one collision window remain one impact episode', ()
   assert.equal(tracker.snapshot('away-9').hardHits, 1);
 });
 
-test('two distinct hard tackles on the same player detach exactly one leg', () => {
+test('the first hard tackle detaches exactly one leg; later contacts cannot pop again', () => {
   const tracker = Darty.createTracker();
-  assert.equal(tracker.register(contact()).detachPart, null);
+  const first = tracker.register(contact());
+  assert.equal(first.accepted, true);
+  assert.ok(['legL', 'legR'].includes(first.detachPart));
+  assert.equal(first.target.hardHits, 1);
   const second = tracker.register(contact({ commandId: 'tackle-2', tick: 140, actorId: 'home-6' }));
-  assert.equal(second.accepted, true);
-  assert.ok(['legL', 'legR'].includes(second.detachPart));
-  assert.equal(second.target.hardHits, 2);
-  const third = tracker.register(contact({ commandId: 'tackle-3', tick: 180, actorId: 'home-8' }));
-  assert.equal(third.reason, 'already-detached');
-  assert.equal(third.detachPart, null);
+  assert.equal(second.reason, 'already-detached');
+  assert.equal(second.detachPart, null);
+  assert.equal(second.target.hardHits, 1);
 });
 
 test('hits stay isolated per victim and a hard shoulder clash chooses the head', () => {
   const tracker = Darty.createTracker();
   tracker.register(contact());
-  tracker.register(contact({ commandId: 'other-1', targetId: 'away-7', tick: 110 }));
   assert.equal(tracker.snapshot('away-9').hardHits, 1);
-  assert.equal(tracker.snapshot('away-7').hardHits, 1);
+  assert.equal(tracker.snapshot('away-7').hardHits, 0);
   const head = tracker.register(contact({
-    type: 'shoulder-contact', commandId: 'shoulder-2', tick: 150,
+    type: 'shoulder-contact', commandId: 'shoulder-1', tick: 150, targetId: 'away-7',
     actorId: 'home-5', relativeClosingSpeed: 5.3
   }));
   assert.equal(head.detachPart, 'head');
+  assert.equal(head.target.hardHits, 1);
 });
 
 test('reset starts a clean match for every player', () => {
@@ -96,9 +96,8 @@ test('real Movement V2 contact telemetry distinguishes a soft press from a runni
   const tracker = Darty.createTracker();
   assert.equal(tracker.register({ ...soft, relativeClosingSpeed: soft.approachSpeedMps }).accepted, false);
   const first = tracker.register({ ...hard, relativeClosingSpeed: hard.approachSpeedMps, tick: 100 });
-  const second = tracker.register({ ...hard, relativeClosingSpeed: hard.approachSpeedMps, commandId: 'second-real-challenge', tick: 140 });
   assert.equal(first.target.hardHits, 1);
-  assert.equal(second.detachPart, 'head');
+  assert.equal(first.detachPart, 'head');
 });
 
 // Exercise the actual host bridge with contacts resolved by Movement V2. In
@@ -132,14 +131,14 @@ function resolvedContact(type, id, speed = 6) {
 }
 
 for (const type of ['stand-tackle', 'shoulder-challenge']) {
-  test(`committed ${type} contacts reach the host pop queue only on the second hard episode`, () => {
+  test(`the first committed hard ${type} contact reaches the host pop queue exactly once`, () => {
     const host = hostHarness();
     host.record(resolvedContact(type, 'soft', 3.2));
     assert.equal(host.tracker.snapshot('ball-carrier').hardHits, 0);
     const first = resolvedContact(type, 'first');
     host.record(first);
     assert.equal(host.tracker.snapshot('ball-carrier').hardHits, 1);
-    assert.equal(host.queue.length, 0);
+    assert.equal(host.queue.length, 1);
     host.totals.lastCommittedTick = 140;
     host.record(first);
     assert.equal(host.tracker.snapshot('ball-carrier').hardHits, 1);

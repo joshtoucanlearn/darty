@@ -1,6 +1,6 @@
 # DARTY
 
-Joe's browser football game: play football, land two separate hard contacts, and watch a toy head or leg pop off.
+Joe's browser football game: play football, win one hard tackle or shoulder clash, and watch a toy head or leg pop off.
 
 This is Joe's separate public project based on Football Legacy. Joe's lesson notes and family records are kept outside this repository.
 
@@ -22,16 +22,19 @@ Open http://127.0.0.1:4331/ in a desktop browser. Single-player supports keyboar
 
 ## Current Career boundary
 
-Career still uses its inherited statistical match simulation and animated timeline. It is not yet connected to the later browser Sim Lab's live V2 simulation or playable matches. Quick Play runs the V2 match engine with DARTY's two-hit mechanic. Do not treat Career's moving dots as proof of that connection.
+Career still uses its inherited statistical match simulation and animated timeline. It is not yet connected to the later browser Sim Lab's live V2 simulation or playable matches. Quick Play runs the V2 match engine with DARTY's one-hit mechanic. Do not treat Career's moving dots as proof of that connection.
 
 ## Checks
 
 ```sh
 node --test tests/darty-impact-v1.mjs
 node tools/verify-darty-browser.mjs
+node tools/verify-darty-startup.mjs
 ```
 
 The browser check requires Playwright and Chrome, with the local server running. `PLAYWRIGHT_MODULE`, `DARTY_BASE_URL` and `DARTY_PROOF_DIR` override the module path, server and output folder. The presentation fixture checks flight, pause, landing and reset; it is separate from ordinary match gameplay.
+
+The startup check follows the setup and kickoff into live play, then checks missing-file and delayed-file recovery. Set `DARTY_BROWSER=firefox` to run it in Playwright Firefox. Its default server port is 4333; use `DARTY_BASE_URL` to select another server.
 
 ## Source
 

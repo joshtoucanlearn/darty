@@ -6,16 +6,16 @@
  * This module is deliberately detached from rendering and football outcomes.
  * It consumes resolved Movement V2 contact telemetry, counts only distinct
  * hard wins against the same player, and asks the host to detach one toy-like
- * body part after the second accepted hit.
+ * body part on the first accepted hit.
  */
 (function exposeDartyImpact(root, factory) {
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
   if (root) root.DartyImpactV1 = api;
 })(typeof window === 'object' ? window : null, function createDartyImpactApi() {
-  const VERSION = '1.0.0-local-proof';
+  const VERSION = '1.1.0-one-hit';
   const DEFAULTS = Object.freeze({
-    hitsToDetach: 2,
+    hitsToDetach: 1,
     minimumEpisodeGapTicks: 18,
     hardClosingSpeedMps: Object.freeze({
       'tackle-contact': 4.6,

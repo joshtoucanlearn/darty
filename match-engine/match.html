@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>DARTY — Local Browser Prototype</title>
+<title>DARTY — Match</title>
 <style>
   :root{--navy:#06182c;--orange:#e87824;--cream:#f7f1e7;--muted:#aab7c5;}
   *{box-sizing:border-box;} html,body{margin:0;height:100%;overflow:hidden;background:#03101f;font-family:Arial,Helvetica,sans-serif;color:var(--cream);}
@@ -69,7 +69,7 @@
 </head>
 <body>
 <div id="wrap"><canvas id="c" tabindex="0"></canvas></div>
-<div id="dartyBadge" aria-label="DARTY: two hard hits makes a toy body part pop off"><b>DARTY</b> · <span>2 hard hits = pop!</span></div>
+<div id="dartyBadge" aria-label="DARTY: one hard hit makes a toy body part pop off"><b>DARTY</b> · <span>1 hard hit = pop!</span></div>
 <div class="hud">
   <div class="scoreboard">
     <div class="clubscore"><div class="clubname">RIBBLE END</div><div class="scoreNo" id="youS">0</div></div>
@@ -110,12 +110,53 @@
 <output id="automationTelemetry" hidden aria-hidden="true"></output>
 <div id="errorBox"></div>
 
+<style>
+  #matchLoading{position:fixed;inset:0;z-index:90;display:grid;place-items:center;background:rgba(3,16,31,.94);padding:24px}
+  #matchLoading[hidden],#matchLoadingActions[hidden]{display:none}
+  #matchLoading section{max-width:500px;padding:28px;border:1px solid #e87824;background:#091f36;box-shadow:0 18px 60px #020811}
+  #matchLoading h1{margin:0 0 12px;font-size:1.6rem;color:#ffe66c}
+  #matchLoading p{line-height:1.5;color:#dce7f2}
+  #matchLoadingActions{display:flex;flex-wrap:wrap;gap:12px;margin-top:20px}
+  #matchLoadingActions a{color:#ffe66c;align-self:center;text-underline-offset:4px}
+</style>
+<div id="matchLoading" role="status" aria-live="polite"><section>
+  <h1 id="matchLoadingTitle">Loading your match…</h1>
+  <p id="matchLoadingText">Getting the pitch and players ready. You can play with a keyboard or a controller.</p>
+  <div id="matchLoadingActions" hidden><button class="menuButton primary" id="retryMatchLoad">Reload match</button><a href="../darty.html">Back to DARTY</a></div>
+</section></div>
+<script id="dartyStartupGuard">
+(function(){
+  const panel=document.getElementById('matchLoading'),title=document.getElementById('matchLoadingTitle'),text=document.getElementById('matchLoadingText'),actions=document.getElementById('matchLoadingActions');
+  let ready=false,failed=false;
+  function fail(message){
+    if(ready)return;
+    failed=true;title.textContent='The match could not start';text.textContent=message+' Reload the match to try again, or go back to DARTY.';actions.hidden=false;
+  }
+  // Install before any game dependency: even an early download or parse failure
+  // must leave a usable recovery screen instead of an empty canvas.
+  window.addEventListener('error',event=>{
+    if(event.target&&event.target.tagName==='SCRIPT')fail('A game file did not finish loading.');
+    else if(event.message)fail(/webgl|context|graphics/i.test(event.message)?'The browser could not start the 3D graphics.':'The game stopped while starting.');
+  },true);
+  window.addEventListener('unhandledrejection',()=>fail('The game stopped while starting.'));
+  const slowTimer=setTimeout(()=>{
+    if(ready||failed)return;
+    title.textContent='Still loading your match…';text.textContent='This is taking longer than usual. You can wait a little longer or reload the match.';actions.hidden=false;
+  },15000);
+  document.getElementById('retryMatchLoad').addEventListener('click',()=>location.reload());
+  window.DartyStartup=Object.freeze({
+    stage(message){if(!ready&&!failed)text.textContent=message;},
+    ready(){ready=true;clearTimeout(slowTimer);panel.hidden=true;},
+    fail
+  });
+})();
+</script>
 <script src="vendor/three.min.js?v=r128-local"></script>
 <script src="instant-result.js"></script>
 <script src="ball-physics.js?v=174-dormant-kernel"></script>
 <script src="instant-replay-review-v2.js?v=174-pause-review"></script>
 <script src="playtest-full-state-replay-v1.js?v=174-final-candidate-2"></script>
-<script src="darty-impact-v1.js?v=1-local-proof"></script>
+<script src="darty-impact-v1.js?v=1.1.0-one-hit"></script>
 <script>if(!window.THREE){document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>')}</script>
 <script id="build173V2ShadowPreflight">
 (function(){
@@ -214,7 +255,9 @@
   const cv=document.getElementById('c');
   const errorBox=document.getElementById('errorBox');
   window.addEventListener('error',e=>{ errorBox.style.display='block'; errorBox.textContent='Runtime error: '+e.message+'\n'+((e.error&&e.error.stack)||''); });
-  if(!window.THREE){ errorBox.style.display='block'; errorBox.textContent='The 3D graphics library could not load. Run INSTALL-OFFLINE-GRAPHICS.command once, or open the match while connected to the internet.'; return; }
+  if(!window.THREE){window.DartyStartup.fail('The 3D graphics library could not load.');return;}
+  if(!window.DartyImpactV1){window.DartyStartup.fail('The DARTY game rules could not load.');return;}
+  window.DartyStartup.stage('Building the pitch and players…');
   const query=new URLSearchParams(location.search);
   const ONLINE_ROLE=query.get('onlineRole')==='host'?'host':null;
   const ONLINE_HOST=ONLINE_ROLE==='host';
@@ -7485,7 +7528,7 @@ function buildGoal(gx){
     }
     ballVisualPreviousX=ballWorldX;ballVisualPreviousZ=ballWorldZ;
     if(netRipple){netRipple.ticks--;const duration=82,strength=Number(netRipple.strength||1),pulse=Math.sin((duration-netRipple.ticks)*.32)*netRipple.ticks/duration*13*strength;goalNets.forEach(n=>{const a=n.line.geometry.attributes.position.array,b=n.base,active=n.side===netRipple.side;for(let i=0;i<a.length;i+=3){a[i]=b[i]+(active?n.dir*pulse*Math.sin((b[i+1]+Math.abs(b[i+2]))*.055):0);}n.line.geometry.attributes.position.needsUpdate=true;});if(netRipple.ticks<=0){netRipple=null;goalNets.forEach(n=>{n.line.geometry.attributes.position.array.set(n.base);n.line.geometry.attributes.position.needsUpdate=true;});}}
-    if(specialPSequence.active){drawSpecialPSequence();if(specialPSequence.stage>0){camFollow();renderer.render(scene,camera);if(!firstRenderedFrame){cv.style.visibility='visible';firstRenderedFrame=true;}return;}}
+    if(specialPSequence.active){drawSpecialPSequence();if(specialPSequence.stage>0){camFollow();renderer.render(scene,camera);if(!firstRenderedFrame){cv.style.visibility='visible';firstRenderedFrame=true;window.DartyStartup.ready();}return;}}
     if(celebrationMobGroup){
       const active=celebrate>0&&celebrationMode===2&&celebrationMobTarget;
       celebrationMobGroup.visible=!!active;
@@ -7513,7 +7556,7 @@ function buildGoal(gx){
     // not remain stuck on an earlier controlled player.
     camFollow();
     drawRadar();
-    renderer.render(scene,camera);if(!firstRenderedFrame){cv.style.visibility='visible';firstRenderedFrame=true;}
+    renderer.render(scene,camera);if(!firstRenderedFrame){cv.style.visibility='visible';firstRenderedFrame=true;window.DartyStartup.ready();}
     // ---- debug readout ----
     const dbg=document.getElementById('dbg'); if(dbg){
       const own = ball.owner ? (ball.owner.isGK?ball.owner.team+'-GK':ball.owner.team+'-'+ball.owner.role) : 'LOOSE';
@@ -7762,9 +7805,9 @@ function buildGoal(gx){
       const target=opp[8],actor=you[8];target.x=W*.5;target.y=H*.5;target.fx=-1;target.fy=0;target.vx=target.vy=0;target.sentOff=false;actor.x=target.x-35;actor.y=target.y;actor.fx=1;actor.fy=0;actor.sentOff=false;
       [...you,...opp,ykeep,okeep].filter(player=>player&&player!==target&&player!==actor).forEach(player=>{player.x=player.team==='you'?W*.23:W*.77;player.y=H*.14;player.vx=player.vy=0;});
       controlled=actor;ball.owner=null;ball.x=target.x;ball.y=target.y;ball.z=0;setCameraMode('classic',true);
-      const type=part==='head'?'shoulder-contact':'tackle-contact',first=dartyTracker.register({type,commandId:'visual-fixture-1',tick:100,actorId:String(actor.id),targetId:String(target.id),outcome:'win',relativeClosingSpeed:5.6}),second=dartyTracker.register({type,commandId:'visual-fixture-2',tick:140,actorId:String(actor.id),targetId:String(target.id),outcome:'win',relativeClosingSpeed:5.6});
-      if(second.detachPart){dartyDetachQueue.push({targetId:String(target.id),actorId:String(actor.id),part:second.detachPart,speedMps:5.6});document.getElementById('dartyBadge').dataset.fixtureQueued=String(dartyDetachQueue.length);showEvent('DARTY! '+(second.detachPart==='head'?'HEAD':'LEG')+' POP!',1600);}
-      return{synthetic:true,first:first.target,second:second.target,queued:dartyDetachQueue.length};
+      const type=part==='head'?'shoulder-contact':'tackle-contact',first=dartyTracker.register({type,commandId:'visual-fixture-1',tick:100,actorId:String(actor.id),targetId:String(target.id),outcome:'win',relativeClosingSpeed:5.6});
+      if(first.detachPart){dartyDetachQueue.push({targetId:String(target.id),actorId:String(actor.id),part:first.detachPart,speedMps:5.6});document.getElementById('dartyBadge').dataset.fixtureQueued=String(dartyDetachQueue.length);showEvent('DARTY! '+(first.detachPart==='head'?'HEAD':'LEG')+' POP!',1600);}
+      return{synthetic:true,first:first.target,queued:dartyDetachQueue.length};
     },
     getOnlineStream:(fps=60)=>{if(!ONLINE_HOST)throw new Error('Online stream is host-only');if(typeof cv.captureStream!=='function')throw new Error('This browser cannot stream the match canvas');if(!actx&&AUDIO_LEVEL>0)initAudio(false);const canvasStream=cv.captureStream(clamp(Number(fps)||60,24,60)),stream=new MediaStream(canvasStream.getVideoTracks());if(audioStreamDestination){const track=audioStreamDestination.stream.getAudioTracks()[0];if(track)stream.addTrack(track);}return stream;},
     getOnlineViewState,
@@ -8440,7 +8483,7 @@ function buildGoal(gx){
     const t=now||performance.now(),rawElapsed=_lastT?Math.max(0,t-_lastT):0;if(!_lastT)_lastT=t;_acc+=Math.min(100,rawElapsed);_lastT=t;
     let fixedTicks=0;
     try{while(_acc>=STEP){DT=1;for(let n=0;n<SIM_STEPS;n++){build173ShadowSimulationStepIndex=n;build173SimulationTick();}build173ShadowRenderFrameSequence++;_acc-=STEP;fixedTicks++;}recordReplayFrame(t);draw();}
-    catch(err){console.error(err);errorBox.style.display='block';errorBox.textContent='Runtime error: '+err.message+'\n'+(err.stack||'');return;}
+    catch(err){window.DartyStartup.fail('The game stopped while building the pitch.');console.error(err);errorBox.style.display='block';errorBox.textContent='Runtime error: '+err.message+'\n'+(err.stack||'');return;}
     if(report&&report.performance&&started&&!paused&&!matchOver&&document.visibilityState==='visible'&&rawElapsed>0&&rawElapsed<5000){const perf=report.performance,sample=+rawElapsed.toFixed(2),renderInfo=renderer.info&&renderer.info.render||{};perf.renderFrames++;perf.simulation.ticks+=fixedTicks*SIM_STEPS;if(fixedTicks>1)perf.simulation.catchUpFrames++;perf.simulation.maximumTicksInRender=Math.max(perf.simulation.maximumTicksInRender,fixedTicks*SIM_STEPS);if(rawElapsed>100)perf.simulation.clampedElapsedFrames++;if(sample>25)perf.longFrames.over25Ms++;if(sample>40)perf.longFrames.over40Ms++;if(sample>80)perf.longFrames.over80Ms++;perf.renderer.maximumDrawCalls=Math.max(perf.renderer.maximumDrawCalls,Number(renderInfo.calls)||0);perf.renderer.maximumTriangles=Math.max(perf.renderer.maximumTriangles,Number(renderInfo.triangles)||0);perf.renderer.canvasWidth=cv.width;perf.renderer.canvasHeight=cv.height;perf.samples.push(sample);if(perf.samples.length>3600)perf.samples.splice(0,perf.samples.length-3600);}
     requestAnimationFrame(loop);
   }

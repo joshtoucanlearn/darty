@@ -1,5 +1,12 @@
 # Football Legacy — Changelog
 
+## DARTY one-hit playtest — 28 September 2026
+
+- One qualifying hard tackle or shoulder clash now triggers the toy-part pop immediately. Contact strength, winning-contact checks, per-player state and duplicate protection are preserved.
+- Updated the match badge, introduction and visual fixture to use one hit.
+- Added an early loading screen, delayed-load feedback and reload/back controls. Missing files and startup errors now surface before the main match code has initialised; the panel clears after the first rendered pitch frame. This improves recovery without claiming a cause for the reported Firefox stall.
+- Bundled graphics and public GitHub Pages hosting are now available at https://joshtoucanlearn.github.io/darty/darty.html. Career integration remains deferred.
+
 ## DARTY separate repository — 27 September 2026
 
 - Created the private `joshtoucanlearn/darty` repository with the inherited source history and DARTY work. The main menu now identifies Joe's game, and Career saves use a separate database and fallback key. Browser checks confirmed save/reload and preservation of the original game's fallback storage.
