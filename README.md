@@ -2,7 +2,13 @@
 
 Joe's browser football game: play football, land two separate hard contacts, and watch a toy head or leg pop off.
 
-This is a separate private project based on Football Legacy. Joe's lesson notes and family records are kept outside this repository.
+This is Joe's separate public project based on Football Legacy. Joe's lesson notes and family records are kept outside this repository.
+
+## Play online
+
+Open [DARTY](https://joshtoucanlearn.github.io/darty/darty.html), choose **Set up a DARTY match**, and follow the team and match setup. No account or download is needed. Joe's website arcade links directly to this game.
+
+For today's playtest, use Quick Play. Career remains separate from the playable match engine, as described below.
 
 ## Run locally
 
@@ -33,14 +39,6 @@ The starting point is Football Legacy commit `0e3ff010b65668fe0144f99cd65a1f2169
 
 See [the baseline notes](FOOTBALL-LEGACY-BASELINE.md) for the inherited engine and mode boundaries, and [the changelog](CHANGELOG.md) for DARTY changes.
 
-## Joe's website playtest
+## Publishing
 
-Quick Play is published through Joe's existing GitHub Pages website at https://joshtoucanlearn.github.io/os-joe/darty/. The separate DARTY source repository remains private. Career is not included in that playtest export.
-
-To refresh the website's runtime from this checkout, run:
-
-```sh
-python3 tools/export-joe-playtest.py ../joe-os/public/darty
-```
-
-Then build and publish `joe-os` following its README. The export copies the Quick Play and match scripts unchanged, includes their asset dependencies, and records file hashes and the source commit in `playtest-build.json`. It excludes teaching records, research notes and repository history.
+GitHub Pages serves the root of the `main` branch. Push game updates to this repository and wait for the Pages deployment to finish. The stable playtest link is https://joshtoucanlearn.github.io/darty/darty.html.
