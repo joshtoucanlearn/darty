@@ -20,6 +20,7 @@ const authority = new Function(`
 
 test('a resolved keeper-box shot is terminal for the rest of its update frame', () => {
   const contestSource = section('function resolveKeeperBoxShotContest', 'function resolveSlowReachableKeeperSaveBeforeGoal');
+  const envelopeSource = section('function keeperShotContactEnvelope', 'function keeperContactSaveModel');
   const runtime = new Function(`
     const NativeMath=globalThis.Math,Math=Object.create(NativeMath),events=[];
     let rolls=[];
@@ -27,7 +28,9 @@ test('a resolved keeper-box shot is terminal for the rest of its update frame', 
     const M=80,W=3200,H=2050,BOX_D=500,BOX_H=800,rad=13,AUTO=true,clockFrames=900;
     const clamp=(value,minimum,maximum)=>NativeMath.max(minimum,NativeMath.min(maximum,value));
     const D=(a,b)=>NativeMath.hypot(a.x-b.x,a.y-b.y);
-    const keeperContactSaveModel=()=>({pace:12,saveChance:.82,placement:.5,power:.4});
+    const keeperContactSaveModel=()=>({pace:12,paceMps:24,saveChance:.82,placement:.5,power:.4});
+    const keeperDivingAction=()=>false;
+    ${envelopeSource}
     const penaltyKeeperChoiceCoversBall=()=>true,countShotOnTarget=()=>{};
     const keeperSaveAnimation=({secure})=>secure?'low-scoop':'hand-jab';
     const keeperAnimationAction=animation=>animation==='low-scoop'?'keeperLowScoop':'keeperHandJab';
@@ -42,7 +45,7 @@ test('a resolved keeper-box shot is terminal for the rest of its update frame', 
         events.length=0;rolls=[...randomRolls];
         const shooter={id:'shooter',name:'Shooter',team:'you'};
         const keeper={id:'keeper',name:'Keeper',team:'opp',x:3120,y:1025,attrs:{keeper:90},stats:{saves:0},sentOff:false,positioningContract:{prepared:true}};
-        ball={owner:null,isShot:true,shooter,shotType:'normal',flightType:'shot',x:3072,y:1025,z:12,vx:12,vy:0,zv:0,cool:0,keeperBypassId:null,keeperBypassUntil:0,target:null};
+        ball={owner:null,isShot:true,shooter,shotType:'normal',flightType:'shot',x:3100,y:1025,z:12,vx:12,vy:0,zv:0,cool:0,keeperBypassId:null,keeperBypassUntil:0,target:null};
         const keeperShotResolved=resolveKeeperBoxShotContest(keeper,forceSave);
         if(legacyKeeperContactEligible(ball,keeperShotResolved))events.push({type:'keeper-claim',syntheticLegacyFallthrough:true});
         return {keeperShotResolved,ball:{ownerId:ball.owner&&ball.owner.id,isShot:ball.isShot,shooterId:ball.shooter&&ball.shooter.id,cool:ball.cool},events:[...events]};

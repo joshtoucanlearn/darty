@@ -1,8 +1,13 @@
 # Football Legacy request log — build 173 gameplay baseline
 
-Updated 10 August 2026 after Josh closed the Online playtest stage and specified the final receiver, knock-on, penalty and direct-free-kick rules for this baseline. His locomotion verdict remains explicit: “the game, the running, it feels amazing now. amazing.” Build 173 preserves that running base and changes no difficulty-dependent pace or physical outcomes.
+Updated 14 October 2026 during Joe Baker's DARTY lesson. Josh and Joe reported that the goalkeepers were too effective and Joe requested a commentator. The goalkeeper balance change is being handled as the immediate website update; commentary remains a separate requested feature. The earlier Build 173 baseline remains recorded below, including Josh's locomotion verdict: “the game, the running, it feels amazing now. amazing.”
 
 This log deliberately separates **code presence** from **playtest proof**. Josh's existing comments below remain the human acceptance authority; a browser check or CPU simulation cannot silently overwrite them.
+
+## Joe Baker lesson requests — 14 October 2026
+
+- **Goalkeepers are too good:** reduce unrealistic keeper reach and make powerful or well-placed shots more capable of beating the goalkeeper, while keeping routine central saves credible. **Approved for immediate website publication.**
+- **Add a commentator:** introduce match commentary for DARTY. **Requested and logged; not yet implemented.** The voice, delivery format, event coverage and audio approach still need to be designed with Joe rather than assumed.
 
 ## Build 173 — final gameplay-baseline additions
 
