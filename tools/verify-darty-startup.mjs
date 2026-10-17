@@ -38,7 +38,7 @@ try {
   const result = await page.evaluate(() => ({ phase: FLMatch.getState().phase, live: FLLiveV2.status(), darty: FLMatch.getDartyState() }));
   assert.equal(result.live.strictStopped, false);
   assert.equal(result.live.failure, null);
-  assert.equal(result.darty.version, '1.1.0-one-hit');
+  assert.equal(result.darty.version, '1.2.0-slide-impact');
   assert.deepEqual(errors, []);
   assert.deepEqual(failedRequests, []);
   await page.screenshot({ path: path.join(output, engine + '-match.png') });

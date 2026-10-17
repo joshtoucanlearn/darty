@@ -59,12 +59,16 @@
     defensiveActionCooldownTicks: 30,
     defensiveStandTackleMinDistance: 12,
     defensiveStandTackleMaxDistance: 76,
+    defensiveSlideTackleMinDistance: 78,
+    defensiveSlideTackleMaxDistance: 118,
+    defensiveSlideMinimumAlignment: 0.72,
+    defensiveSlideDangerDepth: 790,
     defensiveShoulderMaxDistance: 50,
     defensiveMinimumActionAlignment: 0.5,
     defensiveMaximumActionRelativeSpeed: 260,
     defensiveCoverDepth: 240,
-    shotDistance: 610,
-    minimumShotLaneClearance: 30,
+    shotDistance: 690,
+    minimumShotLaneClearance: 27,
     minimumCarryLaneClearance: 54,
     carryDistance: 230,
     routineProgressiveRunMinimumProgress: 210,
@@ -205,12 +209,19 @@
       'severeBlockClearance', 'minimumPassLaneClearance', 'minimumBidScore', 'offsideBuffer',
       'minimumForwardRun', 'shotDistance', 'minimumShotLaneClearance', 'minimumCarryLaneClearance',
       'carryDistance', 'pitchInset', 'defensiveStandTackleMinDistance',
-      'defensiveStandTackleMaxDistance', 'defensiveShoulderMaxDistance',
+      'defensiveStandTackleMaxDistance', 'defensiveSlideTackleMinDistance',
+      'defensiveSlideTackleMaxDistance', 'defensiveSlideDangerDepth', 'defensiveShoulderMaxDistance',
       'defensiveMaximumActionRelativeSpeed', 'defensiveCoverDepth']) {
       if (config[key] < 0) throw new RangeError(key + ' must be non-negative');
     }
     if (config.defensiveStandTackleMaxDistance < config.defensiveStandTackleMinDistance) {
       throw new RangeError('defensiveStandTackleMaxDistance must be at least defensiveStandTackleMinDistance');
+    }
+    if (config.defensiveSlideTackleMaxDistance < config.defensiveSlideTackleMinDistance) {
+      throw new RangeError('defensiveSlideTackleMaxDistance must be at least defensiveSlideTackleMinDistance');
+    }
+    if (config.defensiveSlideMinimumAlignment < 0 || config.defensiveSlideMinimumAlignment > 1) {
+      throw new RangeError('defensiveSlideMinimumAlignment must be between 0 and 1');
     }
     if (!(config.laneConflictWidth > 0)) throw new RangeError('laneConflictWidth must be positive');
     return config;
@@ -248,7 +259,8 @@
       if (config[key] >= width) throw new RangeError(key + ' must be less than the pitch width');
     }
     for (const key of ['defensiveStandTackleMinDistance', 'defensiveStandTackleMaxDistance',
-      'defensiveShoulderMaxDistance', 'defensiveCoverDepth']) {
+      'defensiveSlideTackleMinDistance', 'defensiveSlideTackleMaxDistance',
+      'defensiveSlideDangerDepth', 'defensiveShoulderMaxDistance', 'defensiveCoverDepth']) {
       if (config[key] > diagonal) throw new RangeError(key + ' must not exceed the pitch diagonal');
     }
     if (config.laneConflictWidth > height) {
@@ -797,6 +809,14 @@
     const relativeClosingSpeed = (velocity.x - carrierVelocity.x) * toward.x +
       (velocity.y - carrierVelocity.y) * toward.y;
     const safeRelativeSpeed = Math.abs(relativeClosingSpeed) <= config.defensiveMaximumActionRelativeSpeed;
+    const ownGoalX = snapshot.attackingDirection > 0 ? snapshot.pitch.xMin : snapshot.pitch.xMax;
+    const carrierOwnGoalDepth = space.xToCanonical(Math.abs(carrier.x - ownGoalX));
+    const slideEligible = safeRelativeSpeed &&
+      contactDistance >= config.defensiveSlideTackleMinDistance &&
+      contactDistance <= config.defensiveSlideTackleMaxDistance &&
+      alignment >= config.defensiveSlideMinimumAlignment &&
+      carrierOwnGoalDepth <= config.defensiveSlideDangerDepth &&
+      primary.defending >= 62 && primary.aggression >= 58;
     const shoulderEligible = safeRelativeSpeed && contactDistance <= config.defensiveShoulderMaxDistance &&
       contactDistance >= 4 && alignment >= config.defensiveMinimumActionAlignment * 0.5 && alignment < 0.82 &&
       primary.strength >= 60 && primary.aggression >= 55;
@@ -804,7 +824,12 @@
       contactDistance >= config.defensiveStandTackleMinDistance &&
       contactDistance <= config.defensiveStandTackleMaxDistance &&
       alignment >= config.defensiveMinimumActionAlignment && primary.defending >= 50;
-    const type = shoulderEligible ? 'shoulder-challenge' : tackleEligible ? 'stand-tackle' : null;
+    // Sliding is a committed recovery tool, never the default close-range
+    // challenge. It is available only beyond standing reach and close enough
+    // to the defender's own goal for the recovery risk to have a football
+    // reason. This mirrors FLAME's retained action/risk split without copying
+    // its Godot implementation into the browser simulation.
+    const type = slideEligible ? 'slide-tackle' : shoulderEligible ? 'shoulder-challenge' : tackleEligible ? 'stand-tackle' : null;
     if (!type) return null;
     const nextCooldown = snapshot.tick + config.defensiveActionCooldownTicks;
     memory.defense.cooldowns[primary.id] = nextCooldown;
@@ -815,6 +840,7 @@
       distance: rounded(contactDistance),
       alignment: rounded(alignment, 6),
       relativeClosingSpeed: rounded(relativeClosingSpeed),
+      ownGoalDepth: rounded(carrierOwnGoalDepth),
       cooldownUntilTick: nextCooldown
     };
   }
@@ -1485,12 +1511,31 @@
       .sort((left, right) => right.clearance - left.clearance || left.tiePriority - right.tiePriority);
     const bestShotLane = shotLanes[0];
     const shotClearance = bestShotLane.clearance;
-    const ratedShotDistance = config.shotDistance + clamp(carrier.shooting - 62, 0, 37) * 4;
+    const ratedShotDistance = config.shotDistance + clamp(carrier.shooting - 62, 0, 37) * 5;
     if (goalDistance <= ratedShotDistance && shotClearance >= config.minimumShotLaneClearance && carrier.shooting >= 62) {
+      const lateralOffset = Math.abs(space.yToCanonical(carrier.y - goal.y));
+      const closeRange = goalDistance <= 390;
+      const longRange = goalDistance >= 690;
+      const wideAngle = lateralOffset >= 360;
+      const pressure = nearestOpponentClearance(carrier, carrier, snapshot);
+      let technique = 'driven';
+      if (closeRange || pressure < 72) technique = 'low-driven';
+      else if (wideAngle && carrier.control >= 70) technique = 'placed';
+      else if (longRange && carrier.shooting >= 74) technique = 'power';
+      const power = clamp(0.48 + goalDistance / Math.max(1, ratedShotDistance) * 0.38 +
+        (technique === 'power' ? 0.1 : technique === 'low-driven' ? 0.04 : 0), 0.5, 0.98);
       return {
         type: 'shot', targetPlayerId: null, target: { ...bestShotLane.target },
         confidence: rounded(clamp(0.45 + carrier.shooting / 180 + shotClearance / 900, 0, 0.99)),
-        reason: 'goal-range-and-shot-lane-open'
+        reason: 'goal-range-and-shot-lane-open',
+        shotProfile: {
+          technique,
+          power: rounded(power, 4),
+          distance: rounded(goalDistance),
+          laneClearance: rounded(shotClearance),
+          pressure: rounded(pressure),
+          wideAngle
+        }
       };
     }
     const passOptions = runs.map(run => {

@@ -13,12 +13,13 @@
   if (typeof module === 'object' && module.exports) module.exports = api;
   if (root) root.DartyImpactV1 = api;
 })(typeof window === 'object' ? window : null, function createDartyImpactApi() {
-  const VERSION = '1.1.0-one-hit';
+  const VERSION = '1.2.0-slide-impact';
   const DEFAULTS = Object.freeze({
     hitsToDetach: 1,
     minimumEpisodeGapTicks: 18,
     hardClosingSpeedMps: Object.freeze({
       'tackle-contact': 4.6,
+      'slide-contact': 5.1,
       'shoulder-contact': 4.9
     })
   });
@@ -60,6 +61,7 @@
       minimumEpisodeGapTicks: Math.max(0, Math.round(finite(source.minimumEpisodeGapTicks, DEFAULTS.minimumEpisodeGapTicks))),
       hardClosingSpeedMps: {
         'tackle-contact': Math.max(0, finite(thresholds['tackle-contact'], DEFAULTS.hardClosingSpeedMps['tackle-contact'])),
+        'slide-contact': Math.max(0, finite(thresholds['slide-contact'], DEFAULTS.hardClosingSpeedMps['slide-contact'])),
         'shoulder-contact': Math.max(0, finite(thresholds['shoulder-contact'], DEFAULTS.hardClosingSpeedMps['shoulder-contact']))
       }
     };

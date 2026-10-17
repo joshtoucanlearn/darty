@@ -43,7 +43,7 @@ function finiteTree(value) {
 
 test('freeze and dependency bytes match the independently reviewed versions', () => {
   assert.equal(sha256(bytes.adapter), '2c6bf8b63e327c653556d73ec4c820b742038e63fb1f46217ef912eccec432f2');
-  assert.equal(sha256(bytes.movement), 'e5418910d2d5003fa302b6e3a26684b32efc31005c643b0dfb12a618aefdef86');
+  assert.equal(sha256(bytes.movement), 'e8848db45518ef54ed5cec5e65091160605decfb9995d23b9769395f1eafa0b3');
   assert.equal(sha256(bytes.ball), 'e2b6776a12ebcf8353e322c181e2f38dbb18c1c41d10c1cebf134418a296a819');
   assert.equal(sha256(bytes.touch), 'f548c5c33c0d82ce044ebb083ec6deac0deb212f8287608f77e490794894152c');
   assert.equal(Ball.ENGINE_NAME, 'Magnus Reynolds (MR) Engine');

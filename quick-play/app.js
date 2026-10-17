@@ -41,7 +41,7 @@ function deterministicSimulationSeed(payload){
 }
 function launchEngineSelection(requested,matchType,online=false){const selection=resolveEngineSelection(requested,matchType,online);if(selection.effective!==FL_V2_ENGINE)throw new Error(selection.fallbackReason||'FL V2 is unavailable for this match mode');return selection}
 function finalizeMatchPayload(payload,requested,online=false){const engine=launchEngineSelection(requested,payload?.matchType,online),result={...payload,engine};result.simulationSeed=deterministicSimulationSeed(result);return result}
-function applyEngineQueryMarkers(params,engine,simulationSeed){params.set('simulationSeed',String(simulationSeed));if(engine?.effective===FL_V2_ENGINE){params.set('engine',FL_V2_ENGINE);params.set('candidate',FL_V2_CANDIDATE);params.set('release','joe-20261017');}else{params.delete('engine');params.delete('candidate');params.delete('release');}return params}
+function applyEngineQueryMarkers(params,engine,simulationSeed){params.set('simulationSeed',String(simulationSeed));if(engine?.effective===FL_V2_ENGINE){params.set('engine',FL_V2_ENGINE);params.set('candidate',FL_V2_CANDIDATE);params.set('release','joe-20261017-gameplay');}else{params.delete('engine');params.delete('candidate');params.delete('release');}return params}
 // QUICK_PLAY_ENGINE_CONTRACT_END
 function encodeMatchPayload(value){
   const bytes=new TextEncoder().encode(JSON.stringify(value));

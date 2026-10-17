@@ -50,16 +50,16 @@ Entry-point requirements:
 
 The final manifest must match these SHA-256 values after the last edit:
 
-- `match-engine/match.html`: `3349234405a5f9991b3190e482e7dceb74bf24e5cdba342726ad89aec7b820ec`
+- `match-engine/match.html`: `789328ec56e133a68c23143b26139bd08df89219911c52d03ffbf6e9f6185233`
 - `match-engine/ball-engine-v2.js`: `e2b6776a12ebcf8353e322c181e2f38dbb18c1c41d10c1cebf134418a296a819`
-- `match-engine/movement-engine-v2.js`: `e5418910d2d5003fa302b6e3a26684b32efc31005c643b0dfb12a618aefdef86`
+- `match-engine/movement-engine-v2.js`: `e8848db45518ef54ed5cec5e65091160605decfb9995d23b9769395f1eafa0b3`
 - `match-engine/dribbling-state-v2.js`: `84ae72d02125b2bdf273dc838258ce6b26d9dfe59d52e568e262d1550ab72a42`
-- `match-engine/live-v2-authority-adapter.js`: `293fa76c42a5798be627acbaca2fddf71e4553792cbdfc9f62d847d08f0dc13d`
+- `match-engine/live-v2-authority-adapter.js`: `355b0b0759f693f6fa6ab277f7176c902a03dedb3e42413b0b18a51cc71d2dfc`
 - `match-engine/live-v2-contact-authority-composer.js`: `15f87890f25012412dff34d1d8f0dcdf44694d14d107b859f260cde3c4e6c10b`
-- `quick-play/app.js`: `097f9bc2475f89b8b6796a4e00cc9b869f143f423785d63fcf0cbdb2737b0bc5`
-- `quick-play/index.html`: `f354a4df924713a6709fbbba58e960820e5c0a8d8e9a606b3ee73f8afb0dbace`
+- `quick-play/app.js`: `b46c921a78001ae2c3bcf5ff4c31a5de7a68cc3fafd9f6575fdd4123aa377abd`
+- `quick-play/index.html`: `ce84797df2320b072a93b9bd2c0bcc0536515d8cf2da7a560dd5e673df1288df`
 - `quick-play/styles.css`: `ed49a7f9f80f876373c38feafa1599b3a1248faa513b39d67788f5221fc53532`
-- `index.html`: `cfb91a2c336eefa5a90d2cf25ed56096f7d33b451a4e75e0e20d9c2670af52fc`
+- `index.html`: `6d0b3ca3813499dcd9d56a8f8f98a3c5601f6af64a6ee2148ae645444ca9d869`
 - `styles.css`: `a60b5b114ce5d41ddd4d54717dce27ce51ba5bea0fedf14e11d42da2010e40b4`
 - `online/index.html`: `84085c9fcedbd70964d8f8c7705752418fe8a73165c4220b86beeb01fc9e09dc`
 - `match-engine/index.html`: `ca35d6f816c652f569799072463c35563895573afd67122fc644d7688ad8cc61`

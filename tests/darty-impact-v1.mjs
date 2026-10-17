@@ -130,7 +130,7 @@ function resolvedContact(type, id, speed = 6) {
   return { movementTelemetry: Movement.advance(fixture.world, fixture.commands, 15).telemetry };
 }
 
-for (const type of ['stand-tackle', 'shoulder-challenge']) {
+for (const type of ['stand-tackle', 'slide-tackle', 'shoulder-challenge']) {
   test(`the first committed hard ${type} contact reaches the host pop queue exactly once`, () => {
     const host = hostHarness();
     host.record(resolvedContact(type, 'soft', 3.2));
@@ -145,7 +145,7 @@ for (const type of ['stand-tackle', 'shoulder-challenge']) {
     host.record(resolvedContact(type, 'second'));
     assert.equal(host.queue.length, 1);
     assert.equal(host.queue[0].targetId, 'ball-carrier');
-    assert.match(host.queue[0].part, type === 'stand-tackle' ? /^leg[LR]$/ : /^head$/);
+    assert.match(host.queue[0].part, type === 'shoulder-challenge' ? /^head$/ : /^leg[LR]$/);
     assert.equal(host.events.filter(event => event.type === 'darty-toy-pop').length, 1);
   });
 }

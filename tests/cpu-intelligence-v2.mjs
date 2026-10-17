@@ -638,6 +638,29 @@ test('elite shooting extends a clear shot decision into a realistic edge-of-box 
   }));
   assert.equal(decision.carrierIntent.type, 'shot', JSON.stringify(decision.carrierIntent));
   assert.equal(decision.carrierIntent.reason, 'goal-range-and-shot-lane-open');
+  assert.equal(decision.carrierIntent.shotProfile.technique, 'power');
+  assert.ok(decision.carrierIntent.shotProfile.power >= .5);
+});
+
+test('CPU shot choice varies the strike instead of emitting one generic driven shot', () => {
+  const decisionFor = ({ x, y, shooting = 82, control = 84, opponents = [] }) => Intelligence.decide(snapshot({
+    tick: 186,
+    players: [
+      player('carrier', 'home', x, y, { role: 'striker', position: 'ST', shooting, control }),
+      ...opponents
+    ],
+    ball: { x, y },
+    offsideLine: 3160
+  }), null, { maximumCommittedRuns: 0 }).carrierIntent;
+  const close = decisionFor({ x: 2940, y: 1070 });
+  const wide = decisionFor({ x: 2680, y: 620 });
+  const central = decisionFor({ x: 2720, y: 1070, shooting: 70, control: 68 });
+  assert.equal(close.type, 'shot');
+  assert.equal(close.shotProfile.technique, 'low-driven');
+  assert.equal(wide.type, 'shot');
+  assert.equal(wide.shotProfile.technique, 'placed');
+  assert.equal(central.type, 'shot');
+  assert.equal(central.shotProfile.technique, 'driven');
 });
 
 test('a screened centre lane selects an open goal third without bypassing defenders', () => {
@@ -805,6 +828,29 @@ test('DEFENSIVE LOOP: stand tackle and shoulder actions require safe windows and
   decision = Intelligence.decide(unsafeSpeed, null, { minimumReactionTicks: 0, maximumReactionTicks: 0 });
   press = decision.defensiveIntents.find(intent => intent.type === 'press');
   assert.equal(press.physicalAction, null, 'an unsafe relative-speed collision cannot show a challenge');
+});
+
+test('DEFENSIVE LOOP: a CPU defender can commit the slide input only in a goal-side recovery window', () => {
+  const danger = defensiveSnapshot(550);
+  const presser = danger.players.find(entry => entry.id === 'home-presser');
+  const carrier = danger.players.find(entry => entry.id === 'away-carrier');
+  presser.x = 700;
+  presser.fx = 1;
+  carrier.x = 800;
+  danger.ball = { x: carrier.x, y: carrier.y };
+  let decision = Intelligence.decide(danger, null, { minimumReactionTicks: 0, maximumReactionTicks: 0 });
+  let press = decision.defensiveIntents.find(intent => intent.type === 'press');
+  assert.equal(press.physicalAction.type, 'slide-tackle');
+  assert.ok(press.physicalAction.distance > Intelligence.DEFAULT_CONFIG.defensiveStandTackleMaxDistance);
+  assert.ok(press.physicalAction.ownGoalDepth <= Intelligence.DEFAULT_CONFIG.defensiveSlideDangerDepth);
+
+  const midfield = defensiveSnapshot(551);
+  midfield.players.find(entry => entry.id === 'home-presser').x = 1400;
+  midfield.players.find(entry => entry.id === 'home-presser').fx = 1;
+  midfield.players.find(entry => entry.id === 'away-carrier').x = 1500;
+  decision = Intelligence.decide(midfield, null, { minimumReactionTicks: 0, maximumReactionTicks: 0 });
+  press = decision.defensiveIntents.find(intent => intent.type === 'press');
+  assert.equal(press.physicalAction, null, 'midfield distance alone must not justify a committed slide');
 });
 
 test('DEFENSIVE LOOP: turnover abort is immediate and populated defensive replay memory validates', () => {

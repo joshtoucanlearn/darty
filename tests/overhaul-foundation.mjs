@@ -137,7 +137,7 @@ test('Quick Play fixes FL V2 as the sole authority for exactly three playable mo
   assert.match(quickPlayApp, /if\(selection\.effective!==FL_V2_ENGINE\)throw new Error/);
   assert.match(quickPlayApp, /function finalizeMatchPayload\(payload,requested,online=false\)[\s\S]*?result\.simulationSeed=deterministicSimulationSeed\(result\)/);
   assert.match(quickPlayApp, /params\.set\('simulationSeed',String\(simulationSeed\)\)/);
-  assert.match(quickPlayApp, /if\(engine\?\.effective===FL_V2_ENGINE\)\{params\.set\('engine',FL_V2_ENGINE\);params\.set\('candidate',FL_V2_CANDIDATE\);params\.set\('release','joe-20261017'\);\}else\{params\.delete\('engine'\);params\.delete\('candidate'\);params\.delete\('release'\);\}/);
+  assert.match(quickPlayApp, /if\(engine\?\.effective===FL_V2_ENGINE\)\{params\.set\('engine',FL_V2_ENGINE\);params\.set\('candidate',FL_V2_CANDIDATE\);params\.set\('release','joe-20261017-gameplay'\);\}else\{params\.delete\('engine'\);params\.delete\('candidate'\);params\.delete\('release'\);\}/);
   assert.match(quickPlayApp, /if\(data\.matchType==='spectator'\)params\.set\('autoplay','1'\)/);
 });
 
@@ -177,8 +177,8 @@ test('the match page conditionally loads the exact FL V2 runtime only after fail
     priorIndex = index;
     assert.doesNotMatch(matchHtml, new RegExp(`<script\\s+src=["'][^"']*${filename.replace(/\./g, '\\.')}`, 'i'), `${filename} must not load unconditionally`);
   }
-  assert.equal(authority.scriptCacheVersion, '174-fl-v2-final-candidate-5-joe-ai-1');
-  assert.match(preflight, /pieces\.forEach\(src=>document\.write\('<script src="'\+src\+'\?v=174-fl-v2-final-candidate-5-joe-ai-1/);
+  assert.equal(authority.scriptCacheVersion, '174-fl-v2-final-candidate-5-joe-gameplay-1');
+  assert.match(preflight, /pieces\.forEach\(src=>document\.write\('<script src="'\+src\+'\?v=174-fl-v2-final-candidate-5-joe-gameplay-1/);
   assert.match(matchHtml, /trueFeelPhysicalTouchAuthority:true,cpuPassRaceFilter:true/);
 });
 

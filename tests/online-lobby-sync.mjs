@@ -37,7 +37,7 @@ check(quickApp.includes('getProtocolTrace:()=>onlineProtocolTrace.slice()'), 'Lo
 check(!quickApp.match(/function applyOnlineSide\([^\n]+remoteReady=false/), 'Team replication must not silently erase Ready state');
 check(!quickApp.match(/function applyOnlineSettings\([^\n]+remoteReady=false/), 'Settings replication must not silently erase Ready state');
 check(!onlineHtml.includes('<script') && !onlineHtml.includes('id="hostButton"') && !onlineHtml.includes('id="gameFrame"'), 'The public Online page must keep the preserved lobby implementation inert while V2 authority is incomplete');
-check(quickHtml.includes('app.js?v=174-fl-v2-final-candidate-5-joe-controls-1'), 'Quick Play must load Joe’s V2-only controller and launch bytes while the dormant lobby protocol remains testable but unshipped');
+check(quickHtml.includes('app.js?v=174-fl-v2-final-candidate-5-joe-gameplay-1'), 'Quick Play must load Joe’s V2-only controller and gameplay bytes while the dormant lobby protocol remains testable but unshipped');
 
 class ReadyPeer {
   constructor(side) {

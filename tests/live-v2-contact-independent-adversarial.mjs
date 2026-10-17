@@ -18,7 +18,7 @@ const HASHES = Object.freeze({
   'first-touch-authority-adapter-v2.js': '2c6bf8b63e327c653556d73ec4c820b742038e63fb1f46217ef912eccec432f2',
   'aerial-contact-v2.js': '54bf086bef9e0f149f9ed2445454da510fca5908e79aa77d95ba5f70d5e8b1ba',
   'ball-engine-v2.js': 'e2b6776a12ebcf8353e322c181e2f38dbb18c1c41d10c1cebf134418a296a819',
-  'movement-engine-v2.js': 'e5418910d2d5003fa302b6e3a26684b32efc31005c643b0dfb12a618aefdef86'
+  'movement-engine-v2.js': 'e8848db45518ef54ed5cec5e65091160605decfb9995d23b9769395f1eafa0b3'
 });
 
 function sha(file) {

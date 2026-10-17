@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const matchPath = path.join(root, 'match-engine', 'match.html');
 const matchSource = readFileSync(matchPath, 'utf8');
+const adapterSource = readFileSync(path.join(root, 'match-engine', 'live-v2-authority-adapter.js'), 'utf8');
 
 function sourceWindow(start, end) {
   const from = matchSource.indexOf(start);
@@ -368,6 +369,20 @@ test('human pass and shot releases queue during the lease and execute exactly on
   assert.match(apply, /if\(!physicalBallSeparated&&liveV2PendingDribbleAction\)/,
     'a heavy touch, turnover or protected handoff must retire an unacknowledged terminal-tick action');
   assert.match(apply, /physical-lease-ended-without-release/);
+});
+
+test('CPU shot technique and power survive a physical dribble lease before host launch', () => {
+  const start = adapterSource.indexOf('function cpuDribblingAction(');
+  const end = adapterSource.indexOf('function dribblingPlan(', start);
+  assert.ok(start >= 0 && end > start, 'CPU dribbling action seam must remain extractable');
+  const cpuAction = adapterSource.slice(start, end);
+  assert.match(cpuAction, /row\.shotProfile/);
+  assert.match(cpuAction, /shotProfile && shotProfile\.power/);
+  assert.match(cpuAction, /shotProfile\.technique/);
+
+  const apply = functionSource('liveV2ApplyDribbling');
+  assert.match(apply, /shotProfile:releasedAction\.type==='shot'\?\{technique:variant,power\}:null/,
+    'resecured CPU shots must retain their rated technique and power at the live host');
 });
 
 test('host rollback restores lease, pending action, serial and exact-once ledger', () => {

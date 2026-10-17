@@ -55,6 +55,12 @@
     tackleReach: 0.48,
     tackleLungeSpeed: 5.8,
     tackleAcceleration: 12.5,
+    slideWindupTicks: 2,
+    slideContactTicks: 10,
+    slideRecoveryTicks: 30,
+    slideReach: 0.78,
+    slideLungeSpeed: 7.4,
+    slideAcceleration: 15,
     shoulderWindupTicks: 1,
     shoulderContactTicks: 8,
     shoulderRecoveryTicks: 7,
@@ -135,6 +141,7 @@
     }
     if (!(config.fixedTickSeconds > 0)) throw new RangeError('fixedTickSeconds must be positive');
     for (const key of ['tackleWindupTicks', 'tackleContactTicks', 'tackleRecoveryTicks',
+      'slideWindupTicks', 'slideContactTicks', 'slideRecoveryTicks',
       'shoulderWindupTicks', 'shoulderContactTicks', 'shoulderRecoveryTicks',
       'separationIterations', 'maximumAdvanceTicks']) {
       if (!Number.isInteger(config[key]) || config[key] < 0) throw new RangeError(key + ' must be a non-negative integer');
@@ -144,13 +151,14 @@
     // treated as the smallest valid phase rather than allowing an acknowledged
     // tackle/challenge to disappear before its acknowledgement frame returns.
     for (const key of ['tackleWindupTicks', 'tackleContactTicks', 'tackleRecoveryTicks',
+      'slideWindupTicks', 'slideContactTicks', 'slideRecoveryTicks',
       'shoulderWindupTicks', 'shoulderContactTicks', 'shoulderRecoveryTicks']) {
       config[key] = Math.max(1, config[key]);
     }
     for (const key of ['playerRadius', 'baseMass', 'runSpeedMinimum', 'runSpeedMaximum',
       'sprintSpeedMinimum', 'sprintSpeedMaximum', 'accelerationMinimum', 'accelerationMaximum',
       'decelerationMinimum', 'decelerationMaximum', 'turnRateMinimum', 'turnRateMaximum',
-      'safetyVelocityLimit', 'safetyPositionLimit']) {
+      'slideReach', 'slideLungeSpeed', 'slideAcceleration', 'safetyVelocityLimit', 'safetyPositionLimit']) {
       if (!(config[key] > 0)) throw new RangeError(key + ' must be positive');
     }
     if (!(config.shieldTurnRateMultiplier > 0)) throw new RangeError('shieldTurnRateMultiplier must be positive');
@@ -210,7 +218,8 @@
 
   function createAction(value) {
     if (!value || typeof value !== 'object') return null;
-    const type = value.type === 'shoulder-challenge' ? 'shoulder-challenge' : 'stand-tackle';
+    const type = value.type === 'shoulder-challenge' ? 'shoulder-challenge' :
+      value.type === 'slide-tackle' ? 'slide-tackle' : 'stand-tackle';
     return {
       commandId: String(value.commandId || type),
       type,
@@ -332,7 +341,7 @@
     if (!Number.isInteger(source.tick) || source.tick < 0) throw new TypeError('every command requires an explicit non-negative integer tick');
     if (typeof source.playerId !== 'string' || !source.playerId) throw new TypeError('every command requires playerId');
     const type = String(source.type || 'move');
-    if (!['move', 'stop', 'stand-tackle', 'shoulder-challenge'].includes(type)) {
+    if (!['move', 'stop', 'stand-tackle', 'slide-tackle', 'shoulder-challenge'].includes(type)) {
       throw new TypeError('unsupported movement command type: ' + type);
     }
     const requestedMode = source.sprint ? 'sprint' : String(source.mode || (type === 'move' ? 'run' : 'idle'));
@@ -366,7 +375,7 @@
   }
 
   function acknowledgeCommand(player, command, tick, config, telemetry) {
-    const isPhysicalAction = command.type === 'stand-tackle' || command.type === 'shoulder-challenge';
+    const isPhysicalAction = ['stand-tackle', 'slide-tackle', 'shoulder-challenge'].includes(command.type);
     const currentPhase = actionPhase(player.action, tick);
     if (isPhysicalAction && player.action && currentPhase !== 'complete') {
       const rejection = {
@@ -409,10 +418,10 @@
       player.control = createControl({ commandId: command.id, startTick: tick, untilTick: tick, mode: 'idle' });
       return;
     }
-    const tackle = command.type === 'stand-tackle';
-    const windupTicks = tackle ? config.tackleWindupTicks : config.shoulderWindupTicks;
-    const contactTicks = tackle ? config.tackleContactTicks : config.shoulderContactTicks;
-    const recoveryTicks = tackle ? config.tackleRecoveryTicks : config.shoulderRecoveryTicks;
+    const tackle = command.type === 'stand-tackle', slide = command.type === 'slide-tackle';
+    const windupTicks = slide ? config.slideWindupTicks : tackle ? config.tackleWindupTicks : config.shoulderWindupTicks;
+    const contactTicks = slide ? config.slideContactTicks : tackle ? config.tackleContactTicks : config.shoulderContactTicks;
+    const recoveryTicks = slide ? config.slideRecoveryTicks : tackle ? config.tackleRecoveryTicks : config.shoulderRecoveryTicks;
     const direction = command.direction || normalize(command.move, player.facing);
     player.action = createAction({
       commandId: command.id,
@@ -514,11 +523,12 @@
     if (liveAction && livePhase !== 'complete') {
       mode = liveAction.type;
       desiredDirection = liveAction.direction;
-      if (livePhase === 'windup') forcedSpeed = liveAction.type === 'stand-tackle' ? 1.2 : 2.2;
-      else if (livePhase === 'contact') forcedSpeed = liveAction.type === 'stand-tackle'
-        ? config.tackleLungeSpeed : config.shoulderSpeed;
+      if (livePhase === 'windup') forcedSpeed = liveAction.type === 'slide-tackle' ? 1.5 : liveAction.type === 'stand-tackle' ? 1.2 : 2.2;
+      else if (livePhase === 'contact') forcedSpeed = liveAction.type === 'slide-tackle'
+        ? config.slideLungeSpeed : liveAction.type === 'stand-tackle' ? config.tackleLungeSpeed : config.shoulderSpeed;
       else forcedSpeed = 0;
-      forcedAcceleration = liveAction.type === 'stand-tackle' ? config.tackleAcceleration : config.accelerationMaximum;
+      forcedAcceleration = liveAction.type === 'slide-tackle' ? config.slideAcceleration :
+        liveAction.type === 'stand-tackle' ? config.tackleAcceleration : config.accelerationMaximum;
     }
     const contextualMode = CONTEXT_MODES.has(mode) ? mode : 'run';
     const limits = limitsFor(player, contextualMode, config);
@@ -664,12 +674,13 @@
       if (!action || action.resolved || actionPhase(action, tick) !== 'contact') continue;
       const target = targetForAction(actor, world.players);
       if (!target) continue;
+      const slide = action.type === 'slide-tackle';
       const approach = sweptApproach(starts[actor.id], actor.position, actor.radius,
         starts[target.id], target.position, target.radius,
-        action.type === 'stand-tackle' ? config.tackleReach : config.shoulderReach);
+        slide ? config.slideReach : action.type === 'stand-tackle' ? config.tackleReach : config.shoulderReach);
       const toTarget = normalize({ x: starts[target.id].x - starts[actor.id].x, y: starts[target.id].y - starts[actor.id].y }, action.direction);
       const alignment = dot(action.direction, toTarget);
-      if (!approach.hit || alignment < (action.type === 'stand-tackle' ? 0.18 : -0.05)) continue;
+      if (!approach.hit || alignment < (slide ? 0.42 : action.type === 'stand-tackle' ? 0.18 : -0.05)) continue;
       // Report actual relative travel toward the opponent for presentation-only
       // consumers. The older sweptApproach.relativeClosingSpeed is retained
       // unchanged because it also contributes to the football contest score.
@@ -683,7 +694,12 @@
       const shielding = target.contextMode === 'shield' || target.locomotionState === 'shield';
       let actorScore;
       let targetScore;
-      if (action.type === 'stand-tackle') {
+      if (slide) {
+        actorScore = actorAttrs.defending * 0.34 + actorAttrs.aggression * 0.24 + actorAttrs.strength * 0.16 +
+          actorAttrs.acceleration * 0.1 + alignment * 14 + approach.relativeClosingSpeed * 2.6;
+        targetScore = targetAttrs.control * 0.34 + targetAttrs.balance * 0.34 + targetAttrs.strength * 0.16 +
+          (shielding ? 18 : 0);
+      } else if (action.type === 'stand-tackle') {
         actorScore = actorAttrs.defending * 0.38 + actorAttrs.strength * 0.24 + actorAttrs.aggression * 0.17 +
           actorAttrs.acceleration * 0.08 + alignment * 12 + approach.relativeClosingSpeed * 2.2;
         targetScore = targetAttrs.control * 0.32 + targetAttrs.balance * 0.3 + targetAttrs.strength * 0.22 +
@@ -696,14 +712,14 @@
       const won = actorScore >= targetScore;
       action.resolved = true;
       action.outcome = won ? 'win' : 'contact-lost';
-      const contactType = action.type === 'stand-tackle' ? 'tackle-contact' : 'shoulder-contact';
+      const contactType = slide ? 'slide-contact' : action.type === 'stand-tackle' ? 'tackle-contact' : 'shoulder-contact';
       telemetry.contacts.push({
         type: contactType, commandId: action.commandId, tick, actorId: actor.id, targetId: target.id,
         alignment: rounded(alignment), closestDistance: approach.closestDistance,
         relativeClosingSpeed: approach.relativeClosingSpeed, approachSpeedMps, actorScore: rounded(actorScore),
         targetScore: rounded(targetScore), outcome: action.outcome
       });
-      const outcomeType = action.type === 'stand-tackle'
+      const outcomeType = slide ? (won ? 'slide-win' : 'slide-contact-lost') : action.type === 'stand-tackle'
         ? (won ? 'tackle-win' : 'tackle-contact-lost')
         : (won ? 'shoulder-win' : 'shoulder-contact-lost');
       telemetry.actions.push({
@@ -716,7 +732,7 @@
       }
       const direction = approach.normal;
       const strengthRatio = actorAttrs.strength / Math.max(1, targetAttrs.strength);
-      const impulse = config.contactImpulse * clamp(strengthRatio, 0.55, 1.65);
+      const impulse = config.contactImpulse * (slide ? 1.32 : 1) * clamp(strengthRatio, 0.55, 1.65);
       if (won) {
         target.velocity.x += direction.x * impulse;
         target.velocity.y += direction.y * impulse;
@@ -733,7 +749,7 @@
       action.resolved = true;
       action.outcome = 'miss';
       telemetry.actions.push({
-        type: action.type === 'stand-tackle' ? 'tackle-miss' : 'shoulder-miss',
+        type: action.type === 'slide-tackle' ? 'slide-miss' : action.type === 'stand-tackle' ? 'tackle-miss' : 'shoulder-miss',
         commandId: action.commandId, tick, actorId: actor.id, targetId: action.targetId,
         outcome: 'miss'
       });

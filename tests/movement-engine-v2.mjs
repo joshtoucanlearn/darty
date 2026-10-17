@@ -469,6 +469,30 @@ test('stand-tackle contact produces deterministic contact/win telemetry and poss
   assert.equal(byId(result.state, 'tackler').action.outcome, 'win');
 });
 
+test('slide-tackle has a longer committed contact and recovery window with explicit telemetry', () => {
+  const start = world([
+    player('slider', 'home', 0, 0, {
+      role: 'defender', attributes: { defending: 99, strength: 92, aggression: 98, acceleration: 92 }
+    }),
+    player('carrier', 'away', 1.65, 0, {
+      attributes: { control: 45, balance: 45, strength: 45 }
+    })
+  ], { ballOwnerId: 'carrier' });
+  const commands = [{
+    id: 'committed-slide', tick: 1, playerId: 'slider', type: 'slide-tackle',
+    targetId: 'carrier', direction: { x: 1, y: 0 }
+  }];
+  const contact = Movement.advance(start, commands, 15);
+  const slider = byId(contact.state, 'slider');
+  assert.equal(contact.state.ballOwnerId, 'slider');
+  assert.equal(slider.visibleAction, true);
+  assert.equal(slider.locomotionState, 'slide-tackle-recovery');
+  assert.ok(contact.telemetry.contacts.some(event => event.type === 'slide-contact' && event.outcome === 'win'));
+  assert.ok(contact.telemetry.actions.some(event => event.type === 'slide-win'));
+  const recovered = Movement.advance(contact.state, [], 30);
+  assert.equal(byId(recovered.state, 'slider').action, null);
+});
+
 test('SHOULDER-CHALLENGE FIXTURE: physical win is explicit and transfers possession', () => {
   const fixture = Movement.createShoulderChallengeFixture();
   assert.equal(fixture.name, 'shoulder challenge contact');

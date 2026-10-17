@@ -1241,6 +1241,7 @@
         }
         projection.push({ teamId, playerId: owner.id, type: intent.type, targetPlayerId: targetId || null,
           target: intent.target ? livePoint(intent.target, snapshot) : null, confidence: finite(intent.confidence, 0), reason: String(intent.reason || 'cpu-v2'),
+          shotProfile: intent.shotProfile ? clone(intent.shotProfile) : null,
           supportKind: intent.supportKind == null ? null : String(intent.supportKind),
           supportMetrics: intent.supportMetrics ? clone(intent.supportMetrics) : null,
           passRace: intent.passRace ? clone(intent.passRace) : null,
@@ -1943,13 +1944,16 @@
       if (!carrierId || snapshot.humanPlayerIds.has(carrierId)) return null;
       const row = intelligence.projection.find(intent => intent.playerId === carrierId && ['pass', 'shot'].includes(intent.type));
       if (!row) return null;
+      const shotProfile = row.type === 'shot' && row.shotProfile && typeof row.shotProfile === 'object'
+        ? row.shotProfile : null;
       return {
         id: ['cpu-dribble-action', resetEpoch, carrierId, row.type, row.targetPlayerId || 'none', Math.floor(snapshot.tick / 6)].join(':'),
         type: row.type,
         actorId: carrierId,
         targetPlayerId: row.targetPlayerId,
         target: row.target,
-        power: clamp(finite(row.confidence, 0.65), 0, 1),
+        power: clamp(finite(shotProfile && shotProfile.power, finite(row.confidence, 0.65)), 0, 1),
+        variant: shotProfile ? String(shotProfile.technique || 'driven') : 'normal',
         source: 'cpu-v2',
         commandTick: snapshot.tick
       };
