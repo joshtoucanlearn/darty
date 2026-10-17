@@ -81,6 +81,12 @@ const normalisedPad=context.FLOnlineDebug.serialisePad({id:'54c-0ce6-Wireless Co
 check(normalisedPad.mapping==='standard', 'A remote Firefox DualSense must be normalised before crossing the peer link');
 check(normalisedPad.buttons[2].pressed&&!normalisedPad.buttons[0].pressed, 'Remote Firefox Square/Cross must retain the corrected logical layout');
 check(normalisedPad.buttons[13].pressed, 'Remote Firefox hat-axis D-pad Down must become the standard dive button');
+const switchButtons=Array.from({length:18},()=>({pressed:false,value:0}));
+switchButtons[0]={pressed:true,value:1};
+switchButtons[13]={pressed:true,value:1};
+const normalisedSwitch=context.FLOnlineDebug.serialisePad({id:'Nintendo Switch Pro Controller (STANDARD GAMEPAD Vendor: 057e Product: 2009)',mapping:'standard',connected:true,index:1,axes:[.5,0,0,0],buttons:switchButtons});
+check(normalisedSwitch.mapping==='standard'&&/Nintendo Switch/.test(normalisedSwitch.id), 'A Nintendo controller keeps its browser standard mapping and device identity online');
+check(normalisedSwitch.buttons[0].pressed&&normalisedSwitch.buttons[13].pressed, 'Nintendo B and D-pad Down retain their physical standard indices across the peer link');
 node('hostButton').dispatch('click');
 const peer=peers.at(-1);
 peer.emit('open');

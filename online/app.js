@@ -488,10 +488,13 @@
   function serialisePad(gamepad){
     if(!gamepad)return null;
     const rawDualSense=/(dual\s?sense|ps5|(?:0?54c)[-:]0?ce6|wireless controller.*extended gamepad)/i.test(gamepad.id||'')&&gamepad.mapping!=='standard';
+    const nintendo=/(nintendo|switch(?:\s?pro)?|joy-?con|(?:0?57e)[-:](?:0?2006|0?2007|0?2009|0?200e))/i.test(gamepad.id||'');
     return{
       index:99,
       id:String(gamepad.id||'Remote standard gamepad').slice(0,160),
-      mapping:rawDualSense?'standard':String(gamepad.mapping||''),
+      // Nintendo's B/A/Y/X labels differ from Xbox, but the browser packet is
+      // kept in the same physical south/east/west/north order as DARTY.
+      mapping:rawDualSense||nintendo?'standard':String(gamepad.mapping||''),
       connected:true,
       axes:Array.from(gamepad.axes||[]).slice(0,10).map(value=>+Math.max(-1,Math.min(1,Number(value)||0)).toFixed(3)),
       buttons:normalisedRemoteButtons(gamepad)

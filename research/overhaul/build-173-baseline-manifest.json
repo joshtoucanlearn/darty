@@ -109,7 +109,7 @@
         "live-v2-match-control-composition.js",
         "live-v2-authority-adapter.js"
       ],
-      "scriptCacheVersion": "174-fl-v2-final-candidate-5",
+      "scriptCacheVersion": "174-fl-v2-final-candidate-5-joe-ai-1",
       "workflowRemovalAllowed": true
     },
     "liveShadowAttachment": {
@@ -175,22 +175,25 @@
       "replayCleanupRegressionGateSha256": "0a99e9ca4297828aa009593cbe6c8bd60843655869251637784f179df3372f66"
     },
     "controllerReconnectMaintenance": {
-      "id": "dualsense-reconnect-input-transport-maintenance",
+      "id": "controller-compatibility-input-transport-maintenance",
       "authority": "input-transport-maintenance-only",
       "scope": [
         "reject transient zeroed raw DualSense hat packets",
         "clear per-device edge state on disconnect and reconnect",
+        "recognise Nintendo Switch controllers and preserve standard physical B/A/Y/X positions",
+        "preserve Nintendo controller identity and inputs through the dormant online bridge",
         "cache-bust the reviewed shared controller and online input bridge bytes"
       ],
       "onlineGameplayAuthority": "unavailable-until-v2-authority",
       "onlineGameplayAuthorityChanged": true,
       "files": {
-        "controller-ui.js": "77fe9dedac1b2d75a411bddf8e87aabf615d64f8ccd6839e8f1e3dff5edd9223",
-        "online/app.js": "97039c202a04593c923f0b7bf497eec6ccc81ba30e8d0aa692bcbe17312c261f",
+        "controller-ui.js": "e0ce32b1320457d24511a1d9c06d1d8cebc25662fedf4c78183c1eb191672b4f",
+        "online/app.js": "f03f110e615cbcd4243242d33175f050320927857f313b4ced80a0d10badf3b2",
         "online/index.html": "84085c9fcedbd70964d8f8c7705752418fe8a73165c4220b86beeb01fc9e09dc"
       },
       "regressionGates": {
-        "tests/controller-reconnect-and-quick-play-launch.mjs": "70173eda77d86914ac38343db882740c783cf3233c536bc293d4065c7f5439a0",
+        "tests/controller-reconnect-and-quick-play-launch.mjs": "c17e0b0d96356f1fc8c030fe0d5298033d9c83e7d65184d491381147a3a8378e",
+        "tests/online-quality-stability.mjs": "c2628da68e5f9ed13f1184b0dcff92a04d3f5e8955035f97da64373267921f32",
         "tests/online-controller-hotfix.mjs": "542cc3005d0cb85ada5cde81859a4ea7197c55ec2bd52c7f3dd9ecb55280896c"
       }
     }
@@ -200,7 +203,7 @@
       "path": "index.html",
       "purpose": "main menu with V2-only playable match routes and unavailable multiplayer notices",
       "baselineSha256": "a86ce73e7221560c384ba3f87c6befff0e35b54edc838ce4a869c5c45e70c81b",
-      "candidateSha256": "cfb91a2c336eefa5a90d2cf25ed56096f7d33b451a4e75e0e20d9c2670af52fc",
+      "candidateSha256": "9c9b69cc97948a81be14a6fe1a65f5b6ccc9a0acaa326be0a6f97297f42dce9f",
       "expectedRelation": "v2-only-entry-routing-and-no-previous-engine-playpath"
     },
     {
@@ -221,7 +224,7 @@
       "path": "controller-ui.js",
       "purpose": "shared controller presentation and navigation",
       "baselineSha256": "f3408f2e1a4cf6a72b04874c03778cc8ea9f45eb8961dcdad5ca745d527d2b11",
-      "candidateSha256": "77fe9dedac1b2d75a411bddf8e87aabf615d64f8ccd6839e8f1e3dff5edd9223",
+      "candidateSha256": "e0ce32b1320457d24511a1d9c06d1d8cebc25662fedf4c78183c1eb191672b4f",
       "expectedRelation": "scoped-controller-reconnect-input-maintenance"
     },
     {
@@ -235,7 +238,7 @@
       "path": "match-engine/match.html",
       "purpose": "V2-only playable host with exact three-workflow fail-closed preflight",
       "baselineSha256": "8380734db3a142293c5bca2a22f6b6cc9e6a0fa658f9f0c26cce8ad1801cf678",
-      "candidateSha256": "3349234405a5f9991b3190e482e7dceb74bf24e5cdba342726ad89aec7b820ec",
+      "candidateSha256": "26b88aa73ce037061bfd299693392f51aa01b9fc12c6cbb752ffa02ad84842d7",
       "pinState": "frozen",
       "expectedRelation": "authoritative-v2-only-three-workflow-host-plus-nonplayable-compatibility-scaffold"
     },
@@ -285,14 +288,14 @@
       "path": "quick-play/index.html",
       "purpose": "Quick Play launcher with fixed FL V2 authority and unsupported multiplayer modes disabled",
       "baselineSha256": "6732f88581b00dfb5651d3bdfae4bc440b7891c3763b9b8e13e482a4fe04fef1",
-      "candidateSha256": "f354a4df924713a6709fbbba58e960820e5c0a8d8e9a606b3ee73f8afb0dbace",
+      "candidateSha256": "915bf7b6af03118738298f3475cf09b486ba6c27e82fd748fbb9b2cd9faeae15",
       "expectedRelation": "v2-only-three-workflow-launcher-plus-controller-cache-bust"
     },
     {
       "path": "quick-play/app.js",
       "purpose": "Quick Play mode, controller, deterministic seed and exact V2-only payload routing",
       "baselineSha256": "ae18e09bb8fef49c3da25b5187cf26b9b2d7bbb91c46f51dd044a8e75fd44ac6",
-      "candidateSha256": "097f9bc2475f89b8b6796a4e00cc9b869f143f423785d63fcf0cbdb2737b0bc5",
+      "candidateSha256": "6f40145faa42c2ca9a96b6e3252fb88963c97c808c9ab7f53813498ccc2bd606",
       "expectedRelation": "v2-only-three-workflow-engine-payload-routing"
     },
     {
@@ -327,7 +330,7 @@
       "path": "online/app.js",
       "purpose": "dormant unloaded online signaling, streaming and controller bridge retained for V2 migration",
       "baselineSha256": "208e31dcdb3f1fc563d6dc8091ed565429956f6d8f4275a313a9d0ea70418c03",
-      "candidateSha256": "97039c202a04593c923f0b7bf497eec6ccc81ba30e8d0aa692bcbe17312c261f",
+      "candidateSha256": "f03f110e615cbcd4243242d33175f050320927857f313b4ced80a0d10badf3b2",
       "expectedRelation": "dormant-unloaded-online-transport-provenance"
     },
     {
@@ -420,7 +423,7 @@
       "path": "match-engine/cpu-intelligence-v2.js",
       "purpose": "deterministic FL V2 player and team decision authority",
       "baselineAbsent": true,
-      "candidateSha256": "3d46c27803b738aeabc850ebcd2f3cb61eb7bad4198c7a2fb0b9464b85acf69b",
+      "candidateSha256": "45381b15be2b494383b73523451880c544b8c79e8555f4247329accca2f2da1c",
       "authorityScope": ["single-player-quick-play", "cpu-versus-cpu", "v2-shadow"]
     },
     {

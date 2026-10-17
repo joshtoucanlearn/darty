@@ -84,14 +84,22 @@ for(const listener of listeners.get('gamepaddisconnected')||[])listener({gamepad
 ui.receiveGamepad(standardCross,102);
 check(focusButton.clicks===2,'A reconnected pad index starts with clean edge state');
 
+const switchB=pad({mapping:'standard',pressedIndex:0,index:2,id:'Nintendo Switch Pro Controller (STANDARD GAMEPAD Vendor: 057e Product: 2009)',axis9:1.285714});
+const switchContract=ui.debugGamepadContract(switchB);
+check(switchContract.nintendo===true&&switchContract.layout==='nintendo-switch-positional','A Nintendo Switch Pro Controller is identified without changing its browser standard layout');
+check(switchContract.select===true&&switchContract.faceLabels.select==='B'&&switchContract.faceLabels.back==='A'&&switchContract.faceLabels.lob==='Y'&&switchContract.faceLabels.through==='X','Switch B/A/Y/X labels follow the same physical south/east/west/north positions');
+ui.receiveGamepad(switchB,103);
+ui.receiveGamepad(switchB,104);
+check(focusButton.clicks===3,'A held Nintendo B select button produces one menu edge');
+
 check(quickPlaySource.includes('if(ONLINE||offlineLaunchInProgress)return false'),'Offline launch is single-flight without altering Online');
 check(quickPlaySource.includes("setAttribute('aria-busy','true')"),'The first Start activation immediately exposes a busy state');
 check(quickPlaySource.includes('requestAnimationFrame(()=>setTimeout(()=>'),'The loading acknowledgement gets a paint opportunity before payload encoding');
 check(!quickPlaySource.includes("elements.startMatch.addEventListener('click',()=>{syncSetupState();saveAndLaunch(buildMatchData())})"),'Quick Play no longer performs an unacknowledged synchronous launch directly in the click handler');
 check(quickPlaySource.includes('for(const index of padState.keys())if(!present.has(index))padState.delete(index)'),'The Quick Play shoulder carousel drops stale disconnected-pad state');
 check(quickPlaySource.includes('detected, but no input received'),'Quick Play distinguishes a detected Bluetooth slot from a working controller');
-check(quickPlayHtml.includes('app.js?v=174-fl-v2-final-candidate-5'),'Quick Play loads the V2-only candidate bytes while retaining controller-readiness and launch acknowledgement');
+check(quickPlayHtml.includes('app.js?v=174-fl-v2-final-candidate-5-joe-controls-1'),'Quick Play cache-busts Joe’s controller and match-launch changes');
 check(quickPlayHtml.includes('historic-playtest-squads.js?v=174-fl-v2-final-candidate-2'),'Quick Play cache-busts the final historic ratings alongside the final gameplay candidate');
-check(quickPlayHtml.includes('../controller-ui.js?v=174-controller-input-ready-1'),'Quick Play cache-busts the input-verified controller UI');
+check(quickPlayHtml.includes('../controller-ui.js?v=174-controller-input-ready-1-nintendo-1'),'Quick Play cache-busts the Nintendo-aware controller UI');
 
 console.log(`controller reconnect and Quick Play launch: ${passed}/${passed} checks passed`);

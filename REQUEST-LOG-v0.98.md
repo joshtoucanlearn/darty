@@ -1,13 +1,15 @@
 # Football Legacy request log — build 173 gameplay baseline
 
-Updated 14 October 2026 during Joe Baker's DARTY lesson. Josh and Joe reported that the goalkeepers were too effective and Joe requested a commentator. The goalkeeper balance change is being handled as the immediate website update; commentary remains a separate requested feature. The earlier Build 173 baseline remains recorded below, including Josh's locomotion verdict: “the game, the running, it feels amazing now. amazing.”
+Updated 17 October 2026 from Joe Baker's DARTY lesson notes. Joe's goalkeeper balance was published on 14 October; Nintendo Switch controller support and the defender return-pass loop are the next approved website changes. Commentary remains a separate requested feature for the next task, when Joe will write the source line templates. The earlier Build 173 baseline remains recorded below, including Josh's locomotion verdict: “the game, the running, it feels amazing now. amazing.”
 
 This log deliberately separates **code presence** from **playtest proof**. Josh's existing comments below remain the human acceptance authority; a browser check or CPU simulation cannot silently overwrite them.
 
 ## Joe Baker lesson requests — 14 October 2026
 
-- **Goalkeepers are too good:** reduce unrealistic keeper reach and make powerful or well-placed shots more capable of beating the goalkeeper, while keeping routine central saves credible. **Approved for immediate website publication.**
-- **Add a commentator:** introduce match commentary for DARTY. **Requested and logged; not yet implemented.** The voice, delivery format, event coverage and audio approach still need to be designed with Joe rather than assumed.
+- **Goalkeepers are too good:** reduce unrealistic keeper reach and make powerful or well-placed shots more capable of beating the goalkeeper, while keeping routine central saves credible. **Completed and published 14 October 2026.**
+- **Nintendo Switch controller fallback:** support Joe's Switch controller if the Xbox controller is unavailable. Use the browser's standard physical face-button order, shown to Joe as **B pass/select, A shoot/tackle/back, Y lob/clear and X through ball**; L/R, ZL/ZR, sticks, D-pad and + retain their matching physical roles. **Implementation and publication approved.**
+- **Defenders passing back and forth:** after one defender completes a pass to another, suppress an immediate unpressured return to the same defender. Prefer a third teammate or carry into space, while preserving the return pass as an emergency outlet under genuine pressure. **Implementation and publication approved.**
+- **Professional-style commentator:** introduce match commentary for DARTY. **Requested, logged and explicitly deferred to the next task; not implemented here.** Joe will write the template lines before voice, delivery format, event coverage or audio production is chosen.
 
 ## Build 173 — final gameplay-baseline additions
 

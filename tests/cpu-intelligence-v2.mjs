@@ -480,6 +480,67 @@ test('carrier planner retains short support circulation when no penetrating run 
   assert.ok(decision.carrierIntent.confidence >= .6);
 });
 
+test('unpressured defenders break an immediate return-pass loop after a completed pass', () => {
+  const players = [
+    player('defender-a', 'home', 1040, 1070, {
+      role: 'centre-back', position: 'CB', duty: 'stay-back', passing: 90, control: 88
+    }),
+    player('defender-b', 'home', 1260, 1070, {
+      role: 'centre-back', position: 'CB', duty: 'stay-back', passing: 91, control: 90
+    }),
+    player('midfielder-c', 'home', 1510, 720, {
+      role: 'central-midfielder', position: 'CM', passing: 87, control: 90
+    }),
+    player('away-left', 'away', 2520, 360, { role: 'striker', position: 'ST' }),
+    player('away-right', 'away', 2520, 1780, { role: 'striker', position: 'ST' })
+  ];
+  const memory = Intelligence.createMemory();
+  Object.assign(memory, { teamId: 'home', lastTick: 99 });
+  Object.assign(memory.circulation, {
+    pendingPasserId: 'defender-a', pendingReceiverId: 'defender-b', pendingIssuedTick: 99
+  });
+  const decision = Intelligence.decide(snapshot({
+    tick: 100,
+    carrierId: 'defender-b',
+    players,
+    ball: { x: 1260, y: 1070 },
+    offsideLine: 2850
+  }), memory, { maximumCommittedRuns: 0 });
+  assert.equal(decision.memory.circulation.lastCompletedPasserId, 'defender-a');
+  assert.equal(decision.memory.circulation.lastCompletedReceiverId, 'defender-b');
+  assert.equal(decision.carrierIntent.type, 'pass', JSON.stringify(decision.carrierIntent));
+  assert.equal(decision.carrierIntent.targetPlayerId, 'midfielder-c');
+  assert.equal(decision.carrierIntent.reason, 'defender-return-loop-break-support');
+  assert.ok(decision.telemetry.transitions.some(event => event.type === 'circulation-pass-completed'));
+});
+
+test('a defender under genuine pressure may still use the emergency return pass', () => {
+  const players = [
+    player('defender-a', 'home', 1040, 1070, {
+      role: 'centre-back', position: 'CB', duty: 'stay-back', passing: 90, control: 88
+    }),
+    player('defender-b', 'home', 1260, 1070, {
+      role: 'centre-back', position: 'CB', duty: 'stay-back', passing: 91, control: 90
+    }),
+    player('away-pressure', 'away', 1260, 1120, { role: 'striker', position: 'ST' })
+  ];
+  const memory = Intelligence.createMemory();
+  Object.assign(memory, { teamId: 'home', lastTick: 109 });
+  Object.assign(memory.circulation, {
+    pendingPasserId: 'defender-a', pendingReceiverId: 'defender-b', pendingIssuedTick: 109
+  });
+  const decision = Intelligence.decide(snapshot({
+    tick: 110,
+    carrierId: 'defender-b',
+    players,
+    ball: { x: 1260, y: 1070 },
+    offsideLine: 2850
+  }), memory, { maximumCommittedRuns: 0 });
+  assert.equal(decision.carrierIntent.type, 'pass', JSON.stringify(decision.carrierIntent));
+  assert.equal(decision.carrierIntent.targetPlayerId, 'defender-a');
+  assert.equal(decision.carrierIntent.reason, 'short-support-circulation');
+});
+
 test('a clearly superior progressive coordinated run beats routine short circulation', () => {
   const players = [
     player('carrier', 'home', 1500, 1070, {

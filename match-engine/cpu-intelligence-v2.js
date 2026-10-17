@@ -409,6 +409,34 @@
     };
   }
 
+  function emptyCirculationMemory() {
+    return {
+      pendingPasserId: null,
+      pendingReceiverId: null,
+      pendingIssuedTick: null,
+      lastCompletedPasserId: null,
+      lastCompletedReceiverId: null,
+      lastCompletedTick: null
+    };
+  }
+
+  function validateCirculationMemory(circulation) {
+    if (!isRecord(circulation)) throw new TypeError('memory.circulation must be an object');
+    for (const field of ['pendingPasserId', 'pendingReceiverId',
+      'lastCompletedPasserId', 'lastCompletedReceiverId']) {
+      if (circulation[field] != null) validateMemoryString(circulation[field], 'memory.circulation.' + field);
+    }
+    for (const field of ['pendingIssuedTick', 'lastCompletedTick']) {
+      if (circulation[field] != null) validateMemoryInteger(circulation[field], 'memory.circulation.' + field, 0);
+    }
+    const pending = [circulation.pendingPasserId, circulation.pendingReceiverId,
+      circulation.pendingIssuedTick].filter(value => value != null).length;
+    if (pending !== 0 && pending !== 3) throw new RangeError('memory pending circulation pass is incomplete');
+    const completed = [circulation.lastCompletedPasserId, circulation.lastCompletedReceiverId,
+      circulation.lastCompletedTick].filter(value => value != null).length;
+    if (completed !== 0 && completed !== 3) throw new RangeError('memory completed circulation pass is incomplete');
+  }
+
   function validateDefenseMemory(defense) {
     if (!isRecord(defense)) throw new TypeError('memory.defense must be an object');
     if (!['idle', 'reacting', 'committed', 'persisting'].includes(defense.phase)) {
@@ -548,6 +576,7 @@
       validateMemoryInteger(source.lastTick, 'memory.lastTick', -1);
       validateMemoryMaps(source);
       if (source.defense != null) validateDefenseMemory(source.defense);
+      if (source.circulation != null) validateCirculationMemory(source.circulation);
     }
     const lanes = fresh ? {} : cloneObject(source.lanes);
     const observations = fresh ? {} : cloneObject(source.observations);
@@ -555,6 +584,9 @@
     const defense = fresh || source.defense == null
       ? emptyDefenseMemory()
       : cloneObject(source.defense);
+    const circulation = fresh || source.circulation == null
+      ? emptyCirculationMemory()
+      : cloneObject(source.circulation);
     return {
       schema: MEMORY_SCHEMA,
       teamId: fresh || source.teamId == null ? null : source.teamId,
@@ -562,7 +594,8 @@
       lanes,
       observations,
       commitments,
-      defense
+      defense,
+      circulation
     };
   }
 
@@ -1391,6 +1424,40 @@
         left.player.id.localeCompare(right.player.id));
   }
 
+  function observeCirculationOutcome(snapshot, memory, telemetry) {
+    const circulation = memory.circulation;
+    if (!circulation.pendingPasserId) return;
+    const completed = snapshot.possessionTeamId === snapshot.teamId &&
+      snapshot.carrierId === circulation.pendingReceiverId;
+    if (completed) {
+      circulation.lastCompletedPasserId = circulation.pendingPasserId;
+      circulation.lastCompletedReceiverId = circulation.pendingReceiverId;
+      circulation.lastCompletedTick = snapshot.tick;
+      telemetry.transitions.push({
+        type: 'circulation-pass-completed',
+        passerId: circulation.pendingPasserId,
+        receiverId: circulation.pendingReceiverId,
+        tick: snapshot.tick
+      });
+    }
+    const possessionResolvedElsewhere = snapshot.carrierId &&
+      (snapshot.possessionTeamId !== snapshot.teamId ||
+        ![circulation.pendingPasserId, circulation.pendingReceiverId].includes(snapshot.carrierId));
+    const expired = snapshot.tick - circulation.pendingIssuedTick > 240;
+    if (completed || possessionResolvedElsewhere || expired) {
+      circulation.pendingPasserId = null;
+      circulation.pendingReceiverId = null;
+      circulation.pendingIssuedTick = null;
+    }
+  }
+
+  function rememberCirculationPass(snapshot, intent, memory) {
+    if (intent.type !== 'pass' || !snapshot.carrierId || !intent.targetPlayerId) return;
+    memory.circulation.pendingPasserId = snapshot.carrierId;
+    memory.circulation.pendingReceiverId = intent.targetPlayerId;
+    memory.circulation.pendingIssuedTick = snapshot.tick;
+  }
+
   function carrierIntent(snapshot, runs, memory, config) {
     const carrier = snapshot.players.find(player => player.id === snapshot.carrierId) || null;
     if (!carrier || snapshot.possessionTeamId !== snapshot.teamId) {
@@ -1452,13 +1519,28 @@
     const openedRun = passOptions.find(option => option.run.observedOpening);
     if (openedRun) return releaseRun(openedRun);
     const supportOptions = shortSupportOptions(snapshot, carrier, config);
+    const carrierPressure = nearestOpponentClearance(carrier, carrier, snapshot);
+    const carrierFamily = familyOf(carrier);
+    const previousPasser = memory.circulation.lastCompletedPasserId
+      ? snapshot.players.find(player => player.id === memory.circulation.lastCompletedPasserId) || null
+      : null;
+    const recentDefenderReceipt = memory.circulation.lastCompletedReceiverId === carrier.id &&
+      memory.circulation.lastCompletedTick != null &&
+      snapshot.tick - memory.circulation.lastCompletedTick <= 180 &&
+      previousPasser && previousPasser.teamId === carrier.teamId &&
+      isRestDefender(carrier) && isRestDefender(previousPasser);
+    const suppressDirectReturn = recentDefenderReceipt && carrierPressure >= 82;
+    const alternativeSupport = suppressDirectReturn
+      ? supportOptions.filter(option => option.player.id !== previousPasser.id)
+      : supportOptions;
+    const preferredSupportOptions = alternativeSupport.length ? alternativeSupport : supportOptions;
     // Circulation remains the default, but it must not erase an independently
     // authored penetrating run whose live geometry is materially better. This
     // comparison is deliberately systemic: progress, distance, lane clearance
     // and the same run/support scores used by the planner all have to agree.
     // The downstream live pass-race gate still owns whether the ball is safe
     // to release; this layer only keeps a real forward option in contention.
-    const bestSupport = supportOptions[0] || null;
+    const bestSupport = preferredSupportOptions[0] || null;
     const progressiveRoutineRun = passOptions.find(option =>
       !option.run.observedOpening && PENETRATING_RUNS.has(option.run.runType) &&
       option.progress >= config.routineProgressiveRunMinimumProgress &&
@@ -1466,8 +1548,6 @@
       option.clearance >= config.minimumPassLaneClearance + config.routineProgressiveRunClearanceBonus &&
       (!bestSupport || option.score >= bestSupport.score + config.routineProgressiveRunScoreAdvantage));
     if (progressiveRoutineRun) return releaseRun(progressiveRoutineRun);
-    const carrierPressure = nearestOpponentClearance(carrier, carrier, snapshot);
-    const carrierFamily = familyOf(carrier);
     const circulationRole = ['centre-back', 'full-back', 'wing-back', 'defensive-midfielder', 'midfielder']
       .includes(carrierFamily);
     const xInset = space.xFromCanonical(config.pitchInset);
@@ -1477,6 +1557,14 @@
       y: carrier.y + ((pitch.yMin + pitch.yMax) / 2 - carrier.y) * 0.08
     };
     const carryClearance = nearestOpponentClearance(carrier, carryTarget, snapshot);
+    if (suppressDirectReturn && !alternativeSupport.length &&
+        carryClearance >= config.minimumCarryLaneClearance) {
+      return {
+        type: 'carry', targetPlayerId: null, target: carryTarget,
+        confidence: rounded(clamp(0.43 + carrier.control / 195 + carryClearance / 1250, 0, 0.95)),
+        reason: 'defender-return-loop-break-carry'
+      };
+    }
     const assertiveCarrier = ['attacking-midfielder', 'winger', 'striker'].includes(carrierFamily);
     // An unpressured attacking carrier should use the space in front of him.
     // Previously every available support pass won first, producing lateral
@@ -1488,13 +1576,16 @@
         reason: 'attacking-carrier-space-open'
       };
     }
-    if (supportOptions.length && (circulationRole || carrierPressure < 180 || supportOptions[0].progress > 75)) {
-      const best = supportOptions[0];
+    if (preferredSupportOptions.length &&
+        (circulationRole || carrierPressure < 180 || preferredSupportOptions[0].progress > 75)) {
+      const best = preferredSupportOptions[0];
       return {
         type: 'pass', targetPlayerId: best.player.id, target: { ...best.target }, offsideTiming: null,
         confidence: rounded(clamp(.36 + carrier.passing / 300 + best.lane / 2200 + best.receiverSpace / 3000,
           .58, .94)),
-        reason: 'short-support-circulation',
+        reason: suppressDirectReturn && best.player.id !== previousPasser.id
+          ? 'defender-return-loop-break-support'
+          : 'short-support-circulation',
         supportKind: best.progress < -45 ? 'recycle' : 'support',
         supportMetrics: {
           distance: rounded(best.passDistance),
@@ -1552,7 +1643,9 @@
     perceiveOpenings(current, memory, candidates, playersById, config, telemetry);
     const active = persistCommitments(current, memory, candidates, playersById, config, telemetry);
     const runs = selectNewRuns(current, memory, candidates, playersById, active, config, telemetry);
+    observeCirculationOutcome(current, memory, telemetry);
     const intent = carrierIntent(current, runs, memory, config);
+    rememberCirculationPass(current, intent, memory);
     const defensiveIntents = buildDefensiveIntents(current, memory, config, telemetry);
     telemetry.carrier = cloneObject(intent);
     telemetry.constraints = summarizeConstraints(telemetry);
