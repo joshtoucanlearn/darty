@@ -13,7 +13,10 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const LAB_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const rootArg = (() => { const i = process.argv.indexOf('--root'); return i >= 0 ? process.argv[i + 1] : null; })();
+// --root points the lab at another copy of the game (e.g. the V1.5 lab copy's game/ folder).
+const ROOT = rootArg ? path.resolve(rootArg) : LAB_DIR;
 const ORIGIN = 'http://darty.lab';
 const require = createRequire(import.meta.url);
 const PUPPETEER = process.env.PUPPETEER_MODULE || '/Users/joshuagordonjones/Documents/ChatGPT/Toucan Learn/website/node_modules/puppeteer-core';
@@ -25,10 +28,11 @@ const opt = (name, fallback) => { const i = args.indexOf('--' + name); return i 
 const flag = name => args.includes('--' + name);
 const seeds = String(opt('seeds', '173')).split(',').map(Number).filter(Number.isFinite);
 const minutes = Number(opt('minutes', 6));
-const outDir = path.resolve(ROOT, opt('out', 'lab-runs'));
+const outDir = path.resolve(LAB_DIR, opt('out', 'lab-runs'));
 const probe = flag('probe');
 const extraParams = Object.fromEntries(String(opt('params', '')).split('&').filter(Boolean).map(kv => kv.split('=')));
 const label = opt('label', '');
+const shots = Number(opt('shots', 0));
 
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.glb': 'model/gltf-binary', '.gltf': 'model/gltf+json', '.bin': 'application/octet-stream', '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.wav': 'audio/wav', '.woff2': 'font/woff2', '.woff': 'font/woff', '.ttf': 'font/ttf', '.ktx2': 'image/ktx2' };
 
@@ -40,7 +44,7 @@ async function getLaunchTemplate(browser) {
   if (launchTemplate) return launchTemplate;
   const page = await browser.newPage();
   await serve(page);
-  await page.goto(`${ORIGIN}/quick-play/index.html?mode=spectator&engine=fl-v2&candidate=5&release=joe-20261017-gameplay`, { waitUntil: 'load' });
+  await page.goto(`${ORIGIN}/quick-play/index.html?${opt('qp', 'mode=spectator&engine=fl-v2&candidate=5&release=joe-20261017-gameplay')}`, { waitUntil: 'load' });
   await page.waitForFunction(() => typeof window.buildMatchData === 'function' || typeof buildMatchData === 'function', { timeout: 30000 });
   const nav = page.waitForNavigation({ timeout: 30000 });
   await page.evaluate(() => saveAndLaunch(buildMatchData()));
@@ -105,7 +109,8 @@ async function runMatch(browser, seed) {
     state = await page.evaluate(() => { window.dartyCapture.step(150); const s = window.FLMatch.getState(); return { phase: s.phase, minute: s.minute, score: s.score, ball: s.ball, restart: s.restart.held && s.restart.kind, players: s.players.map(p => [p.id, p.team, p.role, Math.round(p.x), Math.round(p.y)]) }; });
     chunks++;
     samples.push({ frame: chunks * 150, phase: state.phase, minute: state.minute, ball: { x: Math.round(state.ball.x || 0), y: Math.round(state.ball.y || 0), owner: state.ball.owner || null }, restart: state.restart || null, players: state.players });
-    if (probe && chunks >= 4) break;
+    if (shots && chunks <= shots) await page.screenshot({ path: path.join(outDir, `${label || 'run'}-seed-${seed}-shot-${String(chunks).padStart(2, '0')}.png`) });
+    if (probe && chunks >= Math.max(4, shots)) break;
     if (state.phase === 'ended') break;
   }
   const report = await page.evaluate(() => window.FLMatch.getReport());
@@ -121,7 +126,7 @@ try {
     const result = await runMatch(browser, seed);
     const file = path.join(outDir, `${label ? label + '-' : ''}seed-${seed}${probe ? '-probe' : ''}.json`);
     await writeFile(file, JSON.stringify(result));
-    console.log(JSON.stringify({ seed, file: path.relative(ROOT, file), wallSeconds: result.wallSeconds, frames: result.frames, phase: result.finalPhase, score: result.score, preflight: result.preflight, errors: result.errors.length }));
+    console.log(JSON.stringify({ seed, file: path.relative(LAB_DIR, file), wallSeconds: result.wallSeconds, frames: result.frames, phase: result.finalPhase, score: result.score, preflight: result.preflight, errors: result.errors.length }));
   }
 } finally {
   await browser.close();
