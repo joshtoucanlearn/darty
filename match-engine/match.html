@@ -66,6 +66,7 @@
 
 </style>
 <!-- Bundled CC0 Poly Haven Stadium 01 environment. See ASSET-SOURCES-v0.61.txt. -->
+<link rel="stylesheet" href="darty-video-capture.css"/>
 </head>
 <body>
 <div id="wrap"><canvas id="c" tabindex="0"></canvas></div>
@@ -151,6 +152,7 @@
   });
 })();
 </script>
+<script src="darty-video-capture.js"></script>
 <script src="vendor/three.min.js?v=r128-local"></script>
 <script src="instant-result.js"></script>
 <script src="ball-physics.js?v=174-dormant-kernel"></script>
@@ -259,6 +261,13 @@
   if(!window.DartyImpactV1){window.DartyStartup.fail('The DARTY game rules could not load.');return;}
   window.DartyStartup.stage('Building the pitch and players…');
   const query=new URLSearchParams(location.search);
+  const video=window.DartyVideo||null;
+  // Capture reads the selected match/tactics, but never inherits or writes a
+  // previous recording's walkout, camera, test switch, or playtest log.
+  const localStorage=video&&video.capture?(()=>{
+    const values=new Map();for(const key of ['footballLegacyMatchConfig','footballLegacyTactics']){const value=window.localStorage.getItem(key);if(value!==null)values.set(key,value);}
+    return {getItem:key=>values.get(key)??null,setItem:(key,value)=>values.set(key,String(value)),removeItem:key=>values.delete(key)};
+  })():window.localStorage;
   const ONLINE_ROLE=query.get('onlineRole')==='host'?'host':null;
   const ONLINE_HOST=ONLINE_ROLE==='host';
   const ONLINE_PARENT_ORIGIN=location.origin==='null'?'*':location.origin;
@@ -320,7 +329,7 @@
   // supporter-allocation and night presentation are refined.
   const MATCH_LENGTH_MINUTES=clamp(Number(query.get('matchMinutes')||savedMatchConfig.matchLengthMinutes||6),2,20);
   const FLARE_FACE_MODE='flat-reaction-plate';
-  const CONFIG={difficulty:normaliseDifficulty(query.get('difficulty')||'ultimate'),homeKit:query.get('homeKit')||'stripes',awayKit:query.get('awayKit')||'sash',weather:MATCH_WEATHER,requestedWeather:REQUESTED_WEATHER,camera:query.get('camera')||homeInstructions.camera||'broadcast',formation:normaliseFormation(query.get('formation')||homeInstructions.formation||homeTeamConfig.formation||'442'),mentality:query.get('mentality')||homeInstructions.mentality||'balanced',width:query.get('width')||homeInstructions.width||'balanced',support:query.get('support')||homeInstructions.support||'balanced',pressing:query.get('pressing')||homeInstructions.pressing||'balanced',autoSwitch:query.get('autoSwitch')||homeInstructions.autoSwitch||savedTactics.autoSwitch||'on',year:MATCH_YEAR,stadiumSize:STADIUM.size,stadiumCapacity:STADIUM.capacity,attendance:STADIUM.attendance,hasFloodlights:STADIUM.hasFloodlights,stadiumTheme:STADIUM_THEME,practiceMode:FREE_KICK_PRACTICE?'free-kick':null}, AUTO=query.get('autoplay')==='1'||window.__FL_AUTO_TEST===true, FAST=query.get('fast')==='1'||window.__FL_FAST_TEST===true;
+  const CONFIG={difficulty:normaliseDifficulty(query.get('difficulty')||'ultimate'),homeKit:query.get('homeKit')||'stripes',awayKit:query.get('awayKit')||'sash',weather:MATCH_WEATHER,requestedWeather:REQUESTED_WEATHER,camera:query.get('camera')||homeInstructions.camera||'broadcast',formation:normaliseFormation(query.get('formation')||homeInstructions.formation||homeTeamConfig.formation||'442'),mentality:query.get('mentality')||homeInstructions.mentality||'balanced',width:query.get('width')||homeInstructions.width||'balanced',support:query.get('support')||homeInstructions.support||'balanced',pressing:query.get('pressing')||homeInstructions.pressing||'balanced',autoSwitch:query.get('autoSwitch')||homeInstructions.autoSwitch||savedTactics.autoSwitch||'on',year:MATCH_YEAR,stadiumSize:STADIUM.size,stadiumCapacity:STADIUM.capacity,attendance:STADIUM.attendance,hasFloodlights:STADIUM.hasFloodlights,stadiumTheme:STADIUM_THEME,practiceMode:FREE_KICK_PRACTICE?'free-kick':null}, AUTO=query.get('autoplay')==='1'||window.__FL_AUTO_TEST===true, FAST=!(video&&video.capture)&&(query.get('fast')==='1'||window.__FL_FAST_TEST===true);
   function buildTactic(src={}){const mentality=src.mentality||'balanced',width=src.width||'balanced',support=src.support||src.supportRuns||'balanced',pressing=src.pressing||'balanced',tempo=src.tempo||'balanced',lineHeight=src.lineHeight||'balanced',directness=src.directness||'balanced';return{mentality,attack:mentality==='attacking'?1.22:mentality==='defensive'?.78:1,width:width==='wide'?1.18:width==='narrow'?.80:1,support:support==='forward'||support==='getForward'?1.26:support==='hold'?.72:1,press:pressing==='high'?1.24:pressing==='low'?.72:1,pressing,tempo,tempoFactor:tempo==='high'||tempo==='fast'?1.18:tempo==='low'||tempo==='slow'?.84:1,lineHeight,lineFactor:lineHeight==='high'?1.22:lineHeight==='low'?.78:1,directness,directFactor:directness==='direct'?1.22:directness==='short'?.78:1,customSlots:Array.isArray(src.formationSlots)?src.formationSlots:null};}
   const TEAM_TACTICS={you:buildTactic({...homeInstructions,formation:CONFIG.formation,mentality:CONFIG.mentality,width:CONFIG.width,support:CONFIG.support,pressing:CONFIG.pressing}),opp:buildTactic(awayInstructions)};
   const DEFAULT_PLAYSTYLE={id:'default-balanced',baseShape:'4-4-2',inPossessionShape:'2-4-4',restDefenders:2,attackingPrinciples:['triangle-near-ball','one-runner-beyond','progressive-pass-first','carry-when-lane-blocked','recycle-as-last-safe-option'],defensivePhases:['counterpress','high-press','wide-trap','mid-block','low-block','box-defence'],lossResponse:'short-counterpress-then-recover'};
@@ -491,7 +500,7 @@
   function persistPlaytestLog(force=false){const now=Date.now();if(!force&&now-lastPlaytestPersistAt<1200)return;lastPlaytestPersistAt=now;try{const completed=!!report.endedAt,key=completed?COMPLETED_PLAYTEST_LOG_KEY:ACTIVE_PLAYTEST_LOG_KEY;if(completed)localStorage.removeItem(ACTIVE_PLAYTEST_LOG_KEY);localStorage.setItem(key,JSON.stringify(report));}catch(e){}publishAutomationTelemetry();}
   function logEvent(type,team,p,extra){
     if(!report||!Array.isArray(report.events))return;const bx=ball&&Number.isFinite(ball.x)?+ball.x.toFixed(1):null,by=ball&&Number.isFinite(ball.y)?+ball.y.toFixed(1):null,actorX=p&&Number.isFinite(p.x)?+p.x.toFixed(1):null,actorY=p&&Number.isFinite(p.y)?+p.y.toFixed(1):null,replayAnchor=type==='shot'?markOpenPlayShotReplayAnchor(p,extra):null;
-    const event={seq:++actionSequence,type,team,minute:minuteNow(),frame:+Number(clockFrames||0).toFixed(1),realTime:Date.now(),player:p?p.name:null,playerId:p?p.id:null,x:actorX,y:actorY,zone:team&&actorX!=null?pitchZone(actorX,team):null,ball:{x:bx,y:by,z:ball&&Number.isFinite(ball.z)?+ball.z.toFixed(1):null,owner:ball&&ball.owner?ball.owner.id:null},score:typeof youScore==='number'?youScore+'-'+oppScore:null,...(extra||{}),replayAnchorId:replayAnchor&&replayAnchor.id||null};report.events.push(event);markFullStateReplayEvent(event);
+    const event={seq:++actionSequence,type,team,minute:minuteNow(),frame:+Number(clockFrames||0).toFixed(1),realTime:Date.now(),player:p?p.name:null,playerId:p?p.id:null,x:actorX,y:actorY,zone:team&&actorX!=null?pitchZone(actorX,team):null,ball:{x:bx,y:by,z:ball&&Number.isFinite(ball.z)?+ball.z.toFixed(1):null,owner:ball&&ball.owner?ball.owner.id:null},score:typeof youScore==='number'?youScore+'-'+oppScore:null,...(extra||{}),replayAnchorId:replayAnchor&&replayAnchor.id||null};report.events.push(event);markFullStateReplayEvent(event);if(video)video.onEvent(event);
     if(report.events.length>18000)report.events.splice(0,report.events.length-18000);if(forcePlaytestPersistence(type)||report.events.length%20===0)persistPlaytestLog();
   }
   function forcePlaytestPersistence(type){return ['goal','shot','foul','yellow-card','red-card','dive','restart','half-time','full-time','keeper-save','keeper-error'].includes(type);}
@@ -1116,7 +1125,7 @@
 
   // ---- sound (generated in-browser, no files) ----
   const requestedAudioPercent=Number(query.get('volume')==null?70:query.get('volume'));
-  const AUDIO_LEVEL=clamp((Number.isFinite(requestedAudioPercent)?requestedAudioPercent:70)/100,0,1);
+  const AUDIO_LEVEL=video&&video.capture?0:clamp((Number.isFinite(requestedAudioPercent)?requestedAudioPercent:70)/100,0,1);
   const audioGate=document.getElementById('audioGate');
   let actx=null, ambienceOn=false,audioMaster=null,audioStreamDestination=null,audioUnlocked=false,audioUnlockError='',audioMuted=false;
   cv.dataset.audioState=AUDIO_LEVEL<=0?'muted':'waiting-for-input';
@@ -1372,6 +1381,7 @@
     for(const contact of projection.movementTelemetry.contacts||[]){
       const target=liveV2PlayerById(contact.targetId),actor=liveV2PlayerById(contact.actorId);
       if(!target||!actor||target.team===actor.team||target.sentOff)continue;
+      if(typeof video!=='undefined'&&video)video.onContact(contact,liveV2AuthorityTotals.gameplayEpochs);
       const closingSpeedMps=Math.max(0,Number(contact.approachSpeedMps)||0);
       const result=dartyTracker.register({...contact,relativeClosingSpeed:closingSpeedMps,tick:matchTick,commandId:String(liveV2AuthorityTotals.gameplayEpochs)+':'+String(contact.commandId||contact.tick)});
       if(!result.accepted)continue;
@@ -1981,6 +1991,7 @@
     p.aiTakeOnState=null;p.aiSkillCooldown=0;p.shotScreenCarrierId=null;p.shotBlockIntent=null;p.dribbleContainment=null;p.dribbleContainmentKey=null;p.positioningContractKey=null;p.positioningContractLastLog=-9999;
   }
   function kickoff(who){                            // preserves player attributes, fatigue and match statistics
+    if(video)video.record('kickoff',{team:who});
     if(!you.length||!opp.length||!ykeep||!okeep) createTeams();
     [...you,...opp,ykeep,okeep].forEach(resetPlayerForKickoff);
     activeShirtPulls.clear();kickoffWatchdogAt=0;postGoalAutoKickoffPending=false;
@@ -5882,7 +5893,7 @@ function beginDedicatedSetPiece(kind,team,taker,x,y){
     const elapsed=practiceRoamCamera.lastAt?clamp(now-practiceRoamCamera.lastAt,0,50):1000/60,next=advancePracticeRoamCamera(practiceRoamCamera,{x:gamepadInput.aimX,y:gamepadInput.aimY},elapsed);practiceRoamCamera={...next,lastAt:now};return practiceRoamCamera;
   }
   const CAMERA_ORDER=['broadcast','classic','dynamic','endToEnd','tactical'],CAMERA_NAMES={broadcast:'Broadcast',classic:'Classic 2008',dynamic:'Dynamic',endToEnd:'End to end',tactical:'Tactical wide'};
-  function setCameraMode(mode,announce=false){cameraMode=CAMERA_ORDER.includes(mode)?mode:'broadcast';document.querySelectorAll('.cameraChoice').forEach(b=>b.classList.toggle('selected',b.dataset.camera===cameraMode));try{localStorage.setItem('footballLegacyCamera',cameraMode);}catch(e){}if(announce)showEvent('CAMERA · '+CAMERA_NAMES[cameraMode].toUpperCase(),700);}
+  function setCameraMode(mode,announce=false){cameraMode=CAMERA_ORDER.includes(mode)?mode:'broadcast';document.querySelectorAll('.cameraChoice').forEach(b=>b.classList.toggle('selected',b.dataset.camera===cameraMode));try{if(!(video&&(video.capture||video.showcase)))localStorage.setItem('footballLegacyCamera',cameraMode);}catch(e){}if(announce)showEvent('CAMERA · '+CAMERA_NAMES[cameraMode].toUpperCase(),700);}
   function cycleCamera(){setCameraMode(CAMERA_ORDER[(CAMERA_ORDER.indexOf(cameraMode)+1)%CAMERA_ORDER.length],true);}
 
 
@@ -6287,13 +6298,16 @@ function beginDedicatedSetPiece(kind,team,taker,x,y){
   }
   const crestTextureCache={},sponsorTextureCache={},adTextureCache={};
   function makeCrestTexture(kind){
+    if(video&&video.clean)return new THREE.CanvasTexture(document.createElement('canvas'));
     if(crestTextureCache[kind])return crestTextureCache[kind];const c=document.createElement('canvas');c.width=128;c.height=144;const g=c.getContext('2d');g.clearRect(0,0,c.width,c.height);
     const home=kind==='home'||kind==='gkHome',primary=home?'#a62c2d':'#17365d',secondary=home?'#f4eee3':'#e2b43f';g.save();g.translate(64,8);g.beginPath();g.moveTo(-41,7);g.lineTo(41,7);g.lineTo(35,82);g.quadraticCurveTo(16,117,0,128);g.quadraticCurveTo(-16,117,-35,82);g.closePath();g.fillStyle=primary;g.fill();g.lineWidth=7;g.strokeStyle='#e8d7a3';g.stroke();g.clip();g.fillStyle=secondary;for(let x=-52;x<54;x+=24)g.fillRect(x,0,11,132);g.fillStyle='rgba(3,12,24,.22)';g.fillRect(-48,59,96,22);g.restore();g.fillStyle='#fff';g.font='900 27px Arial';g.textAlign='center';g.textBaseline='middle';g.fillText(home?'RE':'SH',64,77);const t=new THREE.CanvasTexture(c);t.anisotropy=8;crestTextureCache[kind]=t;return t;
   }
   function makeSponsorTexture(kind){
+    if(video&&video.clean)return new THREE.CanvasTexture(document.createElement('canvas'));
     if(sponsorTextureCache[kind])return sponsorTextureCache[kind];const c=document.createElement('canvas');c.width=256;c.height=64;const g=c.getContext('2d');g.clearRect(0,0,256,64);g.fillStyle=kind==='home'?'rgba(246,241,228,.94)':'rgba(229,182,77,.96)';g.roundRect?g.roundRect(3,8,250,48,8):g.fillRect(3,8,250,48);g.fill();g.fillStyle='#14263b';g.font='900 29px Arial';g.textAlign='center';g.textBaseline='middle';g.fillText('NORTHBANK',128,33);const t=new THREE.CanvasTexture(c);t.anisotropy=8;sponsorTextureCache[kind]=t;return t;
   }
   function makeAdMaterial(label,bg,fg='#f7f1e7'){
+    if(video&&video.clean)label='DARTY';
     const key=label+bg+fg;if(adTextureCache[key])return adTextureCache[key];const c=document.createElement('canvas');c.width=512;c.height=96;const g=c.getContext('2d');g.fillStyle=bg;g.fillRect(0,0,512,96);g.fillStyle='rgba(255,255,255,.13)';g.fillRect(0,0,512,7);g.fillStyle=fg;g.font='900 37px Arial';g.textAlign='center';g.textBaseline='middle';g.fillText(label,256,52);const t=new THREE.CanvasTexture(c);t.anisotropy=8;t.wrapS=THREE.RepeatWrapping;const mat=new THREE.MeshStandardMaterial({map:t,roughness:.54,metalness:.02});adTextureCache[key]=mat;return mat;
   }
   const kitTextureCache={};
@@ -6911,7 +6925,8 @@ function buildGoal(gx){
     const rim=new THREE.DirectionalLight(night?0x86a9d6:0xffc58c,night?.44:.36);rim.position.set(-850,380,-640);scene.add(rim);
     const skyDome=new THREE.Mesh(new THREE.SphereGeometry(4200,48,24),new THREE.MeshBasicMaterial({map:makeSkyTexture(),side:THREE.BackSide,fog:false,depthWrite:false}));skyDome.rotation.y=.36;scene.add(skyDome);
     if(!flatSky){sunGlowSprite=new THREE.Sprite(new THREE.SpriteMaterial({map:makeGlowTexture(),color:night?0xc8dcff:0xffe0a8,transparent:true,opacity:night?.30:.86,depthWrite:false,blending:THREE.AdditiveBlending,fog:false}));sunGlowSprite.position.set(-1750,night?1050:1420,-2450);sunGlowSprite.scale.set(night?420:760,night?420:760,1);scene.add(sunGlowSprite);}
-    try{new THREE.TextureLoader().load('assets/stadium_01_polyhaven.jpg',tex=>{tex.encoding=THREE.sRGBEncoding;tex.mapping=THREE.EquirectangularReflectionMapping;const pmrem=new THREE.PMREMGenerator(renderer);pmrem.compileEquirectangularShader();stadiumEnvMap=pmrem.fromEquirectangular(tex).texture;scene.environment=stadiumEnvMap;tex.dispose();pmrem.dispose();},undefined,()=>{});}catch(e){}
+    if(video&&video.capture){video.waitFor(new Promise((resolve,reject)=>{try{new THREE.TextureLoader().load('assets/stadium_01_polyhaven.jpg',tex=>{try{video.gpu(()=>{tex.encoding=THREE.sRGBEncoding;tex.mapping=THREE.EquirectangularReflectionMapping;const pmrem=new THREE.PMREMGenerator(renderer);pmrem.compileEquirectangularShader();stadiumEnvMap=pmrem.fromEquirectangular(tex).texture;scene.environment=stadiumEnvMap;tex.dispose();pmrem.dispose();});resolve();}catch(error){reject(error);}},undefined,()=>reject(new Error('Capture stadium texture failed to load')));}catch(error){reject(error);}}));}
+    else try{new THREE.TextureLoader().load('assets/stadium_01_polyhaven.jpg',tex=>{tex.encoding=THREE.sRGBEncoding;tex.mapping=THREE.EquirectangularReflectionMapping;const pmrem=new THREE.PMREMGenerator(renderer);pmrem.compileEquirectangularShader();stadiumEnvMap=pmrem.fromEquirectangular(tex).texture;scene.environment=stadiumEnvMap;tex.dispose();pmrem.dispose();},undefined,()=>{});}catch(e){}
     const pitchMat=new THREE.MeshPhysicalMaterial({map:makePitchTexture(),bumpMap:makePitchBump(),bumpScale:flatSky?.48:.42,roughness:CONFIG.weather==='rain'?.54:.79,metalness:0,clearcoat:CONFIG.weather==='rain'?.30:.035,clearcoatRoughness:CONFIG.weather==='rain'?.42:.88,envMapIntensity:CONFIG.weather==='rain'?.65:.28});const pitch=new THREE.Mesh(new THREE.PlaneGeometry(W,H,1,1),pitchMat);pitch.receiveShadow=true;pitch.rotation.x=-Math.PI/2;scene.add(pitch);
     const surroundMat=new THREE.MeshStandardMaterial({color:STADIUM_THEME==='north-london'?(CONFIG.weather==='rain'?0x272e31:0x30363a):(CONFIG.weather==='rain'?0x294a2a:0x2d572b),roughness:.98,envMapIntensity:.12});const surround=new THREE.Mesh(new THREE.PlaneGeometry(W*2.5,H*2.75),surroundMat);surround.receiveShadow=true;surround.rotation.x=-Math.PI/2;surround.position.y=-1.3;scene.add(surround);
     const oldTerrace=STADIUM.year<1950,northLondon=STADIUM_THEME==='north-london',seatBase=oldTerrace?0x4a4f4f:northLondon?0x7c2028:CONFIG.homeKit==='claret'?0x5f1c2a:0x17314d,seatSecond=oldTerrace?0x69655b:northLondon?0xa5343d:CONFIG.homeKit==='claret'?0x832b3a:0x2c5274,seatAccent=northLondon?0xeee5d4:CONFIG.homeKit==='claret'?0xb7d5e6:0xe7dfcf,awaySeatBase=0x163f6b,awaySeatSecond=0x275f91,awaySeatAccent=0xdce7ed;
@@ -7024,10 +7039,10 @@ function buildGoal(gx){
       [crowdBodies,crowdHeads,crowdFaces,crowdArms,crowdScarves].forEach(m=>{m.instanceMatrix.needsUpdate=true;if(m.instanceColor)m.instanceColor.needsUpdate=true;m.castShadow=false;m.receiveShadow=false;scene.add(m);});
     }
     // Large cloth banners break up the crowd and give each ground a club identity.
-    const bannerCanvas=(text,bg,fg)=>{const c=document.createElement('canvas');c.width=512;c.height=128;const g=c.getContext('2d');g.fillStyle=bg;g.fillRect(0,0,512,128);g.fillStyle=fg;g.font='900 52px Arial';g.textAlign='center';g.textBaseline='middle';g.fillText(text,256,68);const t=new THREE.CanvasTexture(c);t.anisotropy=8;return t;};
+    const bannerCanvas=(text,bg,fg)=>{if(video&&video.clean)text='DARTY';const c=document.createElement('canvas');c.width=512;c.height=128;const g=c.getContext('2d');g.fillStyle=bg;g.fillRect(0,0,512,128);g.fillStyle=fg;g.font='900 52px Arial';g.textAlign='center';g.textBaseline='middle';g.fillText(text,256,68);const t=new THREE.CanvasTexture(c);t.anisotropy=8;return t;};
     if(MATCH_YEAR>=1900){[['NORTH LONDON',-standSpan*.29],['HOME SUPPORT',standSpan*.24]].forEach(([txt,x],i)=>{const b=new THREE.Mesh(new THREE.PlaneGeometry(300,72),new THREE.MeshStandardMaterial({map:bannerCanvas(txt,i?'#f1e9d7':'#972c2d',i?'#972c2d':'#f1e9d7'),side:THREE.DoubleSide,roughness:.86}));b.position.set(x,26,-H/2-74);b.rotation.y=0;scene.add(b);});if(northLondon){const sectionSpecs=[{text:'NORTH BANK · HOME',x:-W/2-75,rot:Math.PI/2,bg:'#8e2730',fg:'#f2eadb',parent:leftEndStand},{text:'AWAY SUPPORT',x:W/2+75,rot:-Math.PI/2,bg:'#173f72',fg:'#e3edf2',parent:rightEndStand}];sectionSpecs.forEach(q=>{const b=new THREE.Mesh(new THREE.PlaneGeometry(360,70),new THREE.MeshStandardMaterial({map:bannerCanvas(q.text,q.bg,q.fg),emissiveMap:night?bannerCanvas(q.text,q.bg,q.fg):null,emissive:night?0x302018:0x000000,emissiveIntensity:night?.26:0,side:THREE.DoubleSide,roughness:.80}));b.position.set(q.x,32,0);b.rotation.y=q.rot;q.parent.add(b);});const clockCanvas=document.createElement('canvas');clockCanvas.width=256;clockCanvas.height=256;const cg=clockCanvas.getContext('2d');cg.fillStyle='#8e2730';cg.fillRect(0,0,256,256);cg.fillStyle='#efe7d8';cg.beginPath();cg.arc(128,128,92,0,Math.PI*2);cg.fill();cg.strokeStyle='#201d1b';cg.lineWidth=10;cg.stroke();for(let i=0;i<12;i++){const a=i/12*Math.PI*2-Math.PI/2;cg.lineWidth=i%3===0?8:4;cg.beginPath();cg.moveTo(128+Math.cos(a)*70,128+Math.sin(a)*70);cg.lineTo(128+Math.cos(a)*84,128+Math.sin(a)*84);cg.stroke();}cg.lineCap='round';cg.lineWidth=9;cg.beginPath();cg.moveTo(128,128);cg.lineTo(128,77);cg.moveTo(128,128);cg.lineTo(168,143);cg.stroke();cg.fillStyle='#201d1b';cg.beginPath();cg.arc(128,128,8,0,Math.PI*2);cg.fill();const ct=new THREE.CanvasTexture(clockCanvas);ct.anisotropy=8;const clock=new THREE.Mesh(new THREE.PlaneGeometry(112,112),new THREE.MeshStandardMaterial({map:ct,emissiveMap:ct,emissive:night?0x544532:0x000000,emissiveIntensity:night?.42:0,roughness:.52,side:THREE.DoubleSide}));clock.position.set(-standSpan*.37,touchStandTop*.70,-H/2-72-touchRows*rowDepth*.82);scene.add(clock);}}
     if(MATCH_YEAR>=1955){
-      const screenCanvas=document.createElement('canvas');screenCanvas.width=512;screenCanvas.height=256;const sg=screenCanvas.getContext('2d'),grad=sg.createLinearGradient(0,0,512,256);grad.addColorStop(0,'#06182c');grad.addColorStop(1,'#123b5b');sg.fillStyle=grad;sg.fillRect(0,0,512,256);sg.strokeStyle='rgba(255,255,255,.22)';sg.lineWidth=8;sg.strokeRect(8,8,496,240);sg.fillStyle='#f4efe4';sg.font='900 45px Arial';sg.textAlign='center';sg.fillText('NORTH LONDON',256,82);sg.fillStyle='#e87824';sg.font='900 72px Arial';sg.fillText('0   0',256,168);sg.fillStyle='#a8bdcc';sg.font='700 24px Arial';sg.fillText('FOOTBALL LEGACY',256,218);const st=new THREE.CanvasTexture(screenCanvas);st.encoding=THREE.sRGBEncoding;const board=new THREE.Mesh(new THREE.PlaneGeometry(215,108),new THREE.MeshStandardMaterial({map:st,emissiveMap:st,emissive:0xffffff,emissiveIntensity:night?.95:.28,roughness:.42,side:THREE.DoubleSide}));board.position.set(standSpan*.16,touchStandTop*.62,-H/2-72-touchRows*rowDepth*.82);board.rotation.y=0;scene.add(board);
+      const screenCanvas=document.createElement('canvas');screenCanvas.width=512;screenCanvas.height=256;const sg=screenCanvas.getContext('2d'),grad=sg.createLinearGradient(0,0,512,256);grad.addColorStop(0,'#06182c');grad.addColorStop(1,'#123b5b');sg.fillStyle=grad;sg.fillRect(0,0,512,256);sg.strokeStyle='rgba(255,255,255,.22)';sg.lineWidth=8;sg.strokeRect(8,8,496,240);sg.fillStyle='#f4efe4';sg.font='900 45px Arial';sg.textAlign='center';sg.fillText(video&&video.clean?'DARTY':'NORTH LONDON',256,82);sg.fillStyle='#e87824';sg.font='900 72px Arial';sg.fillText('0   0',256,168);sg.fillStyle='#a8bdcc';sg.font='700 24px Arial';sg.fillText(video&&video.clean?'1 HARD HIT = POP!':'FOOTBALL LEGACY',256,218);const st=new THREE.CanvasTexture(screenCanvas);st.encoding=THREE.sRGBEncoding;const board=new THREE.Mesh(new THREE.PlaneGeometry(215,108),new THREE.MeshStandardMaterial({map:st,emissiveMap:st,emissive:0xffffff,emissiveIntensity:night?.95:.28,roughness:.42,side:THREE.DoubleSide}));board.position.set(standSpan*.16,touchStandTop*.62,-H/2-72-touchRows*rowDepth*.82);board.rotation.y=0;scene.add(board);
       if(!northLondon){const lampMat=new THREE.MeshStandardMaterial({color:0xf3f0dc,emissive:night?0xe8f4ff:0x5b5a50,emissiveIntensity:night?1.8:.12,roughness:.34});for(let x=-standSpan*.44;x<=standSpan*.44;x+=82)box(38,2.5,3,x,touchStandTop+48,-H/2-70-touchRows*rowDepth*.34,lampMat);}
     }
     if(STADIUM.hasFloodlights){const floodMat=new THREE.MeshStandardMaterial({color:0xe8e7dc,emissive:CONFIG.weather==='night'?0xffffdd:0x555544,emissiveIntensity:CONFIG.weather==='night'?1.35:.18});if(northLondon){const touchBack=H/2+touchRows*rowDepth+10,touchLampY=touchStandTop+72,floodStart=RENDER_HIGH_QUALITY?-W*.38:-W*.32,floodStep=RENDER_HIGH_QUALITY?W*.19:W*.32,floodIntensity=RENDER_HIGH_QUALITY?.30:.42;for(const side of [-1,1])for(let x=floodStart;x<=-floodStart+.01;x+=floodStep){if(CONFIG.weather==='night'){const light=new THREE.SpotLight(0xe8f1ff,floodIntensity,3600,.74,.55,1.1);light.position.set(x,touchLampY+2,side*touchBack);light.target.position.set(x*.28,0,0);scene.add(light,light.target);}}}else{for(const sx of [-1,1])for(const sz of [-1,1]){box(7,260,7,sx*(W/2+185),130,sz*(H/2+190),concrete);box(100,38,10,sx*(W/2+185),266,sz*(H/2+190),floodMat);if(CONFIG.weather==='night'){const light=new THREE.SpotLight(0xe8f1ff,.72,5200,.72,.48,1.05);light.position.set(sx*(W/2+185),270,sz*(H/2+190));light.target.position.set(0,0,0);scene.add(light,light.target);}}}}
@@ -7488,7 +7503,12 @@ function buildGoal(gx){
     setPieceGuideLine.geometry.attributes.position.needsUpdate=true;setPieceGuideLine.computeLineDistances();setPieceGuideRing.position.copy(end);setPieceGuideDot.position.copy(end);if(goalTarget){setPieceGuideRing.rotation.set(0,Math.PI/2,0);}else setPieceGuideRing.rotation.set(-Math.PI/2,0,0);const pulse=1+Math.sin(performance.now()/150)*.10;setPieceGuideRing.scale.setScalar(pulse);
   }
 
+  function renderVideoFrame(){
+    const render=()=>renderer.render(scene,camera);if(video)video.gpu(render);else render();
+    if(!firstRenderedFrame){cv.style.visibility='visible';firstRenderedFrame=true;window.DartyStartup.ready();}
+  }
   function draw(){
+    const renderFrame=arguments.length?arguments[0]:true;
     let instantReplayReviewProjection=null,instantReplayReviewDrawError=null;
     try{
     instantReplayReviewProjection=beginInstantReplayReviewProjection();
@@ -7538,7 +7558,7 @@ function buildGoal(gx){
     }
     ballVisualPreviousX=ballWorldX;ballVisualPreviousZ=ballWorldZ;
     if(netRipple){netRipple.ticks--;const duration=82,strength=Number(netRipple.strength||1),pulse=Math.sin((duration-netRipple.ticks)*.32)*netRipple.ticks/duration*13*strength;goalNets.forEach(n=>{const a=n.line.geometry.attributes.position.array,b=n.base,active=n.side===netRipple.side;for(let i=0;i<a.length;i+=3){a[i]=b[i]+(active?n.dir*pulse*Math.sin((b[i+1]+Math.abs(b[i+2]))*.055):0);}n.line.geometry.attributes.position.needsUpdate=true;});if(netRipple.ticks<=0){netRipple=null;goalNets.forEach(n=>{n.line.geometry.attributes.position.array.set(n.base);n.line.geometry.attributes.position.needsUpdate=true;});}}
-    if(specialPSequence.active){drawSpecialPSequence();if(specialPSequence.stage>0){camFollow();renderer.render(scene,camera);if(!firstRenderedFrame){cv.style.visibility='visible';firstRenderedFrame=true;window.DartyStartup.ready();}return;}}
+    if(specialPSequence.active){drawSpecialPSequence();if(specialPSequence.stage>0){camFollow();if(renderFrame)renderVideoFrame();return;}}
     if(celebrationMobGroup){
       const active=celebrate>0&&celebrationMode===2&&celebrationMobTarget;
       celebrationMobGroup.visible=!!active;
@@ -7566,7 +7586,7 @@ function buildGoal(gx){
     // not remain stuck on an earlier controlled player.
     camFollow();
     drawRadar();
-    renderer.render(scene,camera);if(!firstRenderedFrame){cv.style.visibility='visible';firstRenderedFrame=true;window.DartyStartup.ready();}
+    if(renderFrame)renderVideoFrame();
     // ---- debug readout ----
     const dbg=document.getElementById('dbg'); if(dbg){
       const own = ball.owner ? (ball.owner.isGK?ball.owner.team+'-GK':ball.owner.team+'-'+ball.owner.role) : 'LOOSE';
@@ -8492,16 +8512,37 @@ function buildGoal(gx){
   let build173ShadowRenderFrameSequence=0,build173ShadowSimulationStepIndex=0;
   let DT=1,_lastT=0,_acc=0;const STEP=1000/60;
   const build173SimulationTick=build173V2Shadow?build173V2Shadow.selectTickRunner(update,()=>({renderFrameSequence:build173ShadowRenderFrameSequence,simulationStepIndex:build173ShadowSimulationStepIndex,simulationStepsPerRender:SIM_STEPS})):update;
+
+  if(video)video.bind({
+    started:()=>started,
+    time:()=>5400*Number(clockFrames||0)/MATCH_FRAMES,
+    baseCamera:()=>cameraMode,
+    camera:()=>({mode:cameraMode,rig:goalReplay.active?goalReplay.kind:disciplineReplay.active?disciplineReplay.kind:diveReplay.active?'dive-replay':celebrate>0?'celebration':matchPhase==='walkout'?'walkout':kickoffHeld?restartMsg:cameraMode}),
+    setCamera:mode=>{setCameraMode(mode,false);restartCameraCut=true;},
+    replay:()=>goalReplay.active?goalReplay.kind:disciplineReplay.active?disciplineReplay.kind:diveReplay.active?'dive-replay':null,
+    celebration:()=>celebrate>0&&!goalReplay.active,
+    canReplayPop:()=>started&&matchPhase==='play'&&!paused&&!matchOver&&!kickoffHeld&&!foulSequence&&!pendingDiveDecision&&!offsidePresentation&&!confrontationSequence&&!externalSetPieceActive&&officialPauseUntil<=performance.now(),
+    replayPop:pop=>{
+      const target=liveV2PlayerById(pop.playerId),actor=liveV2PlayerById(pop.actorId),frames=replayBuffer.slice();
+      if(!target||frames.length<2)return;
+      startDisciplineReplay({replayFrames:frames,foulingTeam:actor&&actor.team,offender:actor,x:target.x,y:target.y,contactAt:performance.now()-700},{kind:'ordinary-foul-replay',label:'DARTY POP REPLAY',duration:3200,onComplete:()=>{}});
+    },
+    tick:()=>{DT=1;build173ShadowSimulationStepIndex=0;build173SimulationTick();build173ShadowRenderFrameSequence++;},
+    sample:()=>recordReplayFrame(performance.now()),draw,render:renderVideoFrame,
+    check:()=>{if(liveV2StrictStopped)throw new Error('FL V2 stopped: '+(liveV2AttachFailure||'invalid launch contract'));},
+    forceGoal:()=>{const enabled=instantGoalEnabled,previous=instantGoalShot;try{instantGoalEnabled=true;triggerInstantGoal();return !!instantGoalShot&&instantGoalShot!==previous;}finally{instantGoalEnabled=enabled;}}
+  });
   function loop(now){
     pollGamepad();
     const t=now||performance.now(),rawElapsed=_lastT?Math.max(0,t-_lastT):0;if(!_lastT)_lastT=t;_acc+=Math.min(100,rawElapsed);_lastT=t;
     let fixedTicks=0;
-    try{while(_acc>=STEP){DT=1;for(let n=0;n<SIM_STEPS;n++){build173ShadowSimulationStepIndex=n;build173SimulationTick();}build173ShadowRenderFrameSequence++;_acc-=STEP;fixedTicks++;}recordReplayFrame(t);draw();}
+    try{while(_acc>=STEP){DT=1;for(let n=0;n<SIM_STEPS;n++){build173ShadowSimulationStepIndex=n;build173SimulationTick();}build173ShadowRenderFrameSequence++;_acc-=STEP;fixedTicks++;}recordReplayFrame(t);if(video)video.update();draw();}
     catch(err){window.DartyStartup.fail('The game stopped while building the pitch.');console.error(err);errorBox.style.display='block';errorBox.textContent='Runtime error: '+err.message+'\n'+(err.stack||'');return;}
     if(report&&report.performance&&started&&!paused&&!matchOver&&document.visibilityState==='visible'&&rawElapsed>0&&rawElapsed<5000){const perf=report.performance,sample=+rawElapsed.toFixed(2),renderInfo=renderer.info&&renderer.info.render||{};perf.renderFrames++;perf.simulation.ticks+=fixedTicks*SIM_STEPS;if(fixedTicks>1)perf.simulation.catchUpFrames++;perf.simulation.maximumTicksInRender=Math.max(perf.simulation.maximumTicksInRender,fixedTicks*SIM_STEPS);if(rawElapsed>100)perf.simulation.clampedElapsedFrames++;if(sample>25)perf.longFrames.over25Ms++;if(sample>40)perf.longFrames.over40Ms++;if(sample>80)perf.longFrames.over80Ms++;perf.renderer.maximumDrawCalls=Math.max(perf.renderer.maximumDrawCalls,Number(renderInfo.calls)||0);perf.renderer.maximumTriangles=Math.max(perf.renderer.maximumTriangles,Number(renderInfo.triangles)||0);perf.renderer.canvasWidth=cv.width;perf.renderer.canvasHeight=cv.height;perf.samples.push(sample);if(perf.samples.length>3600)perf.samples.splice(0,perf.samples.length-3600);}
     requestAnimationFrame(loop);
   }
-  requestAnimationFrame(loop);
+  if(video&&video.capture){/* Advanced explicitly by dartyCapture.step(). */}
+  else{requestAnimationFrame(loop);}
 })();
 </script>
 <script src="set-piece-system.js"></script>
