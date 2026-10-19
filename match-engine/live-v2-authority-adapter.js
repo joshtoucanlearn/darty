@@ -1836,7 +1836,10 @@
             knuckleOscillationFrequencyHz: Number.isFinite(intent.knuckleOscillationFrequencyHz)
               ? intent.knuckleOscillationFrequencyHz : 3.5 } });
         state = resolved.state; launchSequence = String(intent.sequence);
-      } else if (!state || ballMismatch(snapshot.ball)) {
+      } else if (!state || ballMismatch(snapshot.ball) ||
+          // A host skill or slide can release a carried ball with no launch intent;
+          // a loose ball must never keep the carrier's controlled regime.
+          state.regime === dependencies.ball.REGIMES.CONTROLLED) {
         state = dependencies.ball.createBallState({ id: snapshot.ball.id, position: metric.position, velocity: metric.velocity,
           angularVelocity: state ? state.angularVelocity : { x: 0, y: 0, z: 0 }, grounded: metric.position.z <= .111 && metric.velocity.z <= .65,
           metadata: { resynchronizedFromBuild173Contact: true } });
