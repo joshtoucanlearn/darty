@@ -109,7 +109,7 @@
         "live-v2-match-control-composition.js",
         "live-v2-authority-adapter.js"
       ],
-      "scriptCacheVersion": "174-fl-v2-final-candidate-5-joe-gameplay-1",
+      "scriptCacheVersion": "174-fl-v2-final-candidate-5-joe-shots-1",
       "workflowRemovalAllowed": true
     },
     "liveShadowAttachment": {
@@ -192,7 +192,7 @@
         "online/index.html": "84085c9fcedbd70964d8f8c7705752418fe8a73165c4220b86beeb01fc9e09dc"
       },
       "regressionGates": {
-        "tests/controller-reconnect-and-quick-play-launch.mjs": "8c8541ad15e810bf63638fcabe4b312d2937d710eb0880cefac6ef16955df364",
+        "tests/controller-reconnect-and-quick-play-launch.mjs": "9c0319e7d8f9d1bc06150e3f238cd2e27d828c6c5fbfeb83a444bfc76e1d9d70",
         "tests/online-quality-stability.mjs": "c2628da68e5f9ed13f1184b0dcff92a04d3f5e8955035f97da64373267921f32",
         "tests/online-controller-hotfix.mjs": "542cc3005d0cb85ada5cde81859a4ea7197c55ec2bd52c7f3dd9ecb55280896c"
       }
@@ -203,7 +203,7 @@
       "path": "index.html",
       "purpose": "main menu with V2-only playable match routes and unavailable multiplayer notices",
       "baselineSha256": "a86ce73e7221560c384ba3f87c6befff0e35b54edc838ce4a869c5c45e70c81b",
-      "candidateSha256": "6d0b3ca3813499dcd9d56a8f8f98a3c5601f6af64a6ee2148ae645444ca9d869",
+      "candidateSha256": "52a140d38821124cb10b030c71ea4f8b37f99fb75f506ff248bf7e4b578a02f4",
       "expectedRelation": "v2-only-entry-routing-and-no-previous-engine-playpath"
     },
     {
@@ -238,7 +238,7 @@
       "path": "match-engine/match.html",
       "purpose": "V2-only playable host with exact three-workflow fail-closed preflight",
       "baselineSha256": "8380734db3a142293c5bca2a22f6b6cc9e6a0fa658f9f0c26cce8ad1801cf678",
-      "candidateSha256": "789328ec56e133a68c23143b26139bd08df89219911c52d03ffbf6e9f6185233",
+      "candidateSha256": "f41de989c41c26e62a44de8e205fd884879490cc6fc66d0d74b0b23d218261c8",
       "pinState": "frozen",
       "expectedRelation": "authoritative-v2-only-three-workflow-host-plus-nonplayable-compatibility-scaffold"
     },
@@ -288,14 +288,14 @@
       "path": "quick-play/index.html",
       "purpose": "Quick Play launcher with fixed FL V2 authority and unsupported multiplayer modes disabled",
       "baselineSha256": "6732f88581b00dfb5651d3bdfae4bc440b7891c3763b9b8e13e482a4fe04fef1",
-      "candidateSha256": "ce84797df2320b072a93b9bd2c0bcc0536515d8cf2da7a560dd5e673df1288df",
+      "candidateSha256": "3aea551bdf3615ca183c83f19d1a14bc208f62676072ffe48e8ac4894cc3f478",
       "expectedRelation": "v2-only-three-workflow-launcher-plus-controller-and-gameplay-cache-bust"
     },
     {
       "path": "quick-play/app.js",
       "purpose": "Quick Play mode, controller, deterministic seed and exact V2-only payload routing",
       "baselineSha256": "ae18e09bb8fef49c3da25b5187cf26b9b2d7bbb91c46f51dd044a8e75fd44ac6",
-      "candidateSha256": "b46c921a78001ae2c3bcf5ff4c31a5de7a68cc3fafd9f6575fdd4123aa377abd",
+      "candidateSha256": "7ba10dd88031f702bb02253cd58410ffa1507d97137c5a734aa2ce41f5fa05d1",
       "expectedRelation": "v2-only-three-workflow-engine-payload-routing"
     },
     {
@@ -423,7 +423,7 @@
       "path": "match-engine/cpu-intelligence-v2.js",
       "purpose": "deterministic FL V2 player and team decision authority",
       "baselineAbsent": true,
-      "candidateSha256": "98c573ec6050c4a8dc2ade32cadb156ca64b42c97d1868be48cdd806f75287b4",
+      "candidateSha256": "39fb19c079e5513152bf788b4a1dfd3ecedfbcc2abfddf27a39ce4d2d2df7c4b",
       "authorityScope": ["single-player-quick-play", "cpu-versus-cpu", "v2-shadow"]
     },
     {
@@ -500,7 +500,7 @@
       "path": "match-engine/live-v2-authority-adapter.js",
       "purpose": "outer offline normal-match gameplay transaction with rollback and host-level strict-stop enforcement",
       "baselineAbsent": true,
-      "candidateSha256": "355b0b0759f693f6fa6ab277f7176c902a03dedb3e42413b0b18a51cc71d2dfc",
+      "candidateSha256": "327590aa6e618d05d8aa971d89f61cb56075b7dba75e08febdeba1e14ace65bc",
       "pinState": "frozen",
       "authorityScope": ["single-player-quick-play", "cpu-versus-cpu"]
     },

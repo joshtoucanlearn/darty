@@ -105,8 +105,12 @@
   // 1.95v - 19.4 metres, at 28 degrees about 2.1v - 17.6 metres. The old fixed
   // 18-23 m/s at ~22 degrees only ever carried 25-38 m, so every 40-70 m
   // release failed its own race and the carrier ran into pressure instead.
+  // Releases of 20-30 m stay on the ground as driven passes (a defender standing
+  // on the line can still cut them out); only longer releases are lofted.
   function cpuLongPassLaunch(distanceMetres) {
-    const drop = clamp(finite(distanceMetres, 20) - 1.5, 15, 46);
+    const distance = finite(distanceMetres, 20);
+    if (distance <= 30) return { speed: clamp(11 + distance * 0.45, 17, 24), liftAngleDeg: 0 };
+    const drop = clamp(distance - 1.5, 15, 46);
     if (drop <= 31) return { speed: clamp((drop + 19.4) / 1.95, 17, 31), liftAngleDeg: 22 };
     return { speed: clamp((drop + 17.6) / 2.1, 17, 31), liftAngleDeg: 28 };
   }
@@ -1353,7 +1357,7 @@
         liftAngleDeg,
         sideSpinRpm: 0,
         topSpinRpm: 0,
-        source: long ? 'long-pass' : 'ground-pass',
+        source: longLaunch && longLaunch.liftAngleDeg > 0 ? 'long-pass' : 'ground-pass',
         metadata: { adapterVersion: VERSION, targetPlayerId: intent.targetPlayerId || null }
       });
     }

@@ -4,6 +4,16 @@ Updated 17 October 2026 from Joe Baker's DARTY lesson notes and Josh's follow-up
 
 This log deliberately separates **code presence** from **playtest proof**. Josh's existing comments below remain the human acceptance authority; a browser check or CPU simulation cannot silently overwrite them.
 
+## Josh's requests — 19 October 2026
+
+Published 19 October 2026 on Josh's instruction ("put it live in joe's game"). Autonomous evidence only; Joe/Josh feel acceptance is open.
+
+- **"shots look weak and the keeper saves a lot… theyre like, little spunks"** / **"the shots kinda balloon and dont retain any sortve flight, they feel like soft little lofts"**: the old engine flew the ball (about three times real gravity, 26% speed lost per bounce) whenever any player was mid-skill, mid-slide or diving, so shots taken after a skill ballooned and died. Shots now use real gravity in that path and keep 88% of their pace on a bounce. Shot height is solved from distance, pace and power for human and CPU shots (checked against Ball V2: within 0.1–0.3 m at 12–30 m). A full-power 20 m strike now rises steadily to about 1.9 m at the goal. **Implemented and autonomously tested.**
+- **Shot presentation:** the camera holds nearly still for the first 0.6 s of a live shot so the strike crosses the screen, a short streak trails the ball, and the strike gives a small camera punch. Presentation only; physics and outcomes are unchanged. **Implemented; visual acceptance open.**
+- **Keeper:** save model base .64 → .52, ceiling .94 → .90, distance counts more. Keeper-only 20-shot drill: 13 of 18 on-target shots saved before (including 3 of 4 from 12 m), 9 of 20 after. **Implemented and autonomously tested; balance acceptance open.**
+- **CPU attacking:** CPU players almost never got within 20 m of goal because every 40–70 m release was kicked at a capped 23 m/s that only carries about 38 m, so it failed its own safety check and the carrier ran into pressure. Long CPU passes are now solved to come down at the runner, and releases beyond about 46 m are no longer attempted. Match lab, seed 173: 79 → 134 passes, 5 → 15 shots, 1 → 3 goals, pops kept. **Implemented and autonomously tested.**
+- **Commentary:** a template for Joe's lines is in Josh's Google Drive ("DARTY commentary – Joe's lines"). Joe writes every line; the in-game subtitle/voice system follows.
+
 ## Joe Baker lesson requests — 14 October 2026
 
 - **Goalkeepers are too good:** reduce unrealistic keeper reach and make powerful or well-placed shots more capable of beating the goalkeeper, while keeping routine central saves credible. **Completed and published 14 October 2026.**
