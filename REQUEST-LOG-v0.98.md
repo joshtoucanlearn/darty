@@ -4,6 +4,15 @@ Updated 17 October 2026 from Joe Baker's DARTY lesson notes and Josh's follow-up
 
 This log deliberately separates **code presence** from **playtest proof**. Josh's existing comments below remain the human acceptance authority; a browser check or CPU simulation cannot silently overwrite them.
 
+## Josh's request — 19 October 2026 (evening): "fix this"
+
+The three open items from the shots release. Autonomous evidence only; Joe/Josh feel acceptance is open.
+
+- **"The engine still switches over whenever someone does a skill or slide"**: a skill, slide, dive, flair trip, flick or header no longer hands the whole match to the old engine. Only the player doing the move is animated by the old code until it ends; everyone else (and the ball) stays in FL V2. The skiller keeps the ball through the move. Drill: stepover, knock-on, drag-back, ball roll, body feint and five human slides, with FL V2 live on every frame and no restarts. **Implemented and autonomously tested.**
+- **"Fouls and free kicks in the new engine"**: FL V2 tackles, slides and shoulder charges on the ball carrier now go to the referee: a lost contest is the likely foul, a won one mainly from behind, and faster contacts are judged harder. Fouls use the existing free-kick, card and replay flow. Human slides can also foul a carrier who has the ball a touch ahead. Lab: 2, 2 and 7 fouls in three CPU matches, with yellow cards, free kicks taken and play resumed. **Implemented and autonomously tested; foul-rate acceptance open.**
+- **"The computer doesn't use skills or dives yet"**: CPU carriers now try a fake shot, roulette, stepover or flick-up on a defender in front of them (the old engine's take-on rules and cooldowns): 4–8 per lab match. FL V2 tackles that just miss the carrier now count as near misses, so the old engine's CPU dive choice can fire; dives stay deliberately rare. **Implemented and autonomously tested; dive frequency acceptance open.**
+- **Known, not changed:** holding straight forward through a stepover (which exits to the side) can still cost a heavy touch afterwards. The old hand-off did the same.
+
 ## Josh's requests — 19 October 2026
 
 Published 19 October 2026 on Josh's instruction ("put it live in joe's game"). Autonomous evidence only; Joe/Josh feel acceptance is open.
