@@ -74,7 +74,9 @@
   const CPU_PASS_PROGRESSION_MIN_CONFIDENCE = 0.72;
   const CPU_PASS_PROGRESSION_MIN_METRES = 4;
   const CPU_PASS_PROGRESSION_MIN_OPPONENT_MARGIN_TICKS = -2;
-  const CPU_PASS_RACE_MAX_TICKS = 150;
+  // D1 (19 Oct 2026): long balls take up to 2.4 s to come down, so the race
+  // must follow them that far plus the receiver's six-tick margin.
+  const CPU_PASS_RACE_MAX_TICKS = 180;
   const CPU_PASS_RACE_MAX_CONTACT_HEIGHT_METRES = 1.45;
   const CPU_PASS_MIN_DISTANCE_METRES = 5.5;
   const CPU_PASS_TARGET_BOUNDARY_MARGIN_METRES = 4.5;
@@ -95,6 +97,18 @@
 
   function clamp(value, minimum, maximum) {
     return Math.max(minimum, Math.min(maximum, value));
+  }
+
+  // D1 (19 Oct 2026): a CPU long pass is solved so the ball comes down through
+  // contact height at the runner. Fitted to Ball V2 itself
+  // (tools/pass-calibration.cjs): at 22 degrees the drop point is about
+  // 1.95v - 19.4 metres, at 28 degrees about 2.1v - 17.6 metres. The old fixed
+  // 18-23 m/s at ~22 degrees only ever carried 25-38 m, so every 40-70 m
+  // release failed its own race and the carrier ran into pressure instead.
+  function cpuLongPassLaunch(distanceMetres) {
+    const drop = clamp(finite(distanceMetres, 20) - 1.5, 15, 46);
+    if (drop <= 31) return { speed: clamp((drop + 19.4) / 1.95, 17, 31), liftAngleDeg: 22 };
+    return { speed: clamp((drop + 17.6) / 2.1, 17, 31), liftAngleDeg: 28 };
   }
 
   function cpuPassPaceMetresPerSecond(distanceMetres, shortSupport, long) {
@@ -1323,10 +1337,9 @@
       // Pace is authored once in real metres per second. The prior host-world
       // formula varied with pitch-axis scaling and could turn a tiny pass into
       // a 14-15 m/s release. The committed host consumes this exact race pace.
-      const speedMetresPerSecond = cpuPassPaceMetresPerSecond(metricDistance, shortSupport, long);
-      const loftWorld = long ? clamp(1.8 + (liveDistance - 610) * .004, 1.8, 4.8) : 0;
-      const verticalMetresPerSecond = loftWorld * 60 / snapshot.units.zPerMetre;
-      const liftAngleDeg = Math.atan2(verticalMetresPerSecond, Math.max(.05, speedMetresPerSecond)) * 180 / Math.PI;
+      const longLaunch = long ? cpuLongPassLaunch(metricDistance) : null;
+      const speedMetresPerSecond = longLaunch ? longLaunch.speed : cpuPassPaceMetresPerSecond(metricDistance, shortSupport, long);
+      const liftAngleDeg = longLaunch ? longLaunch.liftAngleDeg : 0;
       const originMetric = {
         x: (originLive.x - snapshot.pitch.xMin) / snapshot.units.xPerMetre,
         y: (originLive.y - (snapshot.pitch.yMin + snapshot.pitch.yMax) / 2) / snapshot.units.yPerMetre,

@@ -1551,8 +1551,10 @@
     // The previous 45-unit progress floor produced full-strength passes to a
     // teammate almost standing on the ball, which MR correctly carried far
     // beyond the nominal rendezvous.
+    // D1 (19 Oct 2026): a release beyond ~46 m (1390 canonical units) cannot be
+    // delivered by Ball V2 as a playable pass, so it is not a real option.
     }).filter(option => option.runner && option.clearance >= config.minimumPassLaneClearance &&
-      option.progress > 75 && option.passDistance >= 105)
+      option.progress > 75 && option.passDistance >= 105 && option.passDistance <= 1390)
       .sort((a, b) => b.score - a.score || a.run.playerId.localeCompare(b.run.playerId));
     const releaseRun = best => ({
       type: 'pass', targetPlayerId: best.run.playerId,
