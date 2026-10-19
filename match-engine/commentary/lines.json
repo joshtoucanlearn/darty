@@ -1,0 +1,32 @@
+{
+  "schema": "darty-commentary-lines-v1",
+  "source": "Joe's lines, copied from the Google Doc \"DARTY commentary – Joe's lines\". Each line: {\"text\": \"...\", \"audio\": \"audio/<file>.mp3\"} (audio optional).",
+  "moments": {
+    "kick-off": [],
+    "half-time": [],
+    "full-time": [],
+    "goal": [],
+    "long-range-goal": [],
+    "header-goal": [],
+    "own-goal": [],
+    "equaliser": [],
+    "late-winner": [],
+    "shot-saved": [],
+    "shot-wide": [],
+    "woodwork": [],
+    "big-chance-missed": [],
+    "great-save": [],
+    "keeper-mistake": [],
+    "pop": [],
+    "slide-tackle": [],
+    "foul": [],
+    "yellow-card": [],
+    "red-card": [],
+    "corner": [],
+    "free-kick": [],
+    "penalty": [],
+    "substitution": [],
+    "comeback": [],
+    "late-drama": []
+  }
+}
