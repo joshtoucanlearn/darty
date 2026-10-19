@@ -1690,6 +1690,24 @@
     const runs = selectNewRuns(current, memory, candidates, playersById, active, config, telemetry);
     observeCirculationOutcome(current, memory, telemetry);
     const intent = carrierIntent(current, runs, memory, config);
+    // Match lab only: count carrier decisions when the lab provides a ledger.
+    const labLedger = typeof globalThis !== 'undefined' && globalThis.__dartyLabIntents;
+    if (labLedger && current.carrierId && current.possessionTeamId === current.teamId) {
+      const key = intent.type + ':' + intent.reason;
+      labLedger[key] = (labLedger[key] || 0) + 1;
+      const carrier = current.players.find(player => player.id === current.carrierId);
+      if (carrier) {
+        const space = pitchSpace(current.pitch);
+        const goal = { x: current.attackingDirection > 0 ? current.pitch.xMax : current.pitch.xMin, y: (current.pitch.yMin + current.pitch.yMax) / 2 };
+        const metres = distance(carrier, goal, space) * 105 / (CANONICAL_PITCH.xMax - CANONICAL_PITCH.xMin);
+        const bucket = 'dist:' + String(Math.min(60, Math.floor(metres / 5) * 5)).padStart(2, '0');
+        labLedger[bucket] = (labLedger[bucket] || 0) + 1;
+        if (metres <= 25) {
+          const shotKey = 'near:' + intent.type + ':' + intent.reason;
+          labLedger[shotKey] = (labLedger[shotKey] || 0) + 1;
+        }
+      }
+    }
     rememberCirculationPass(current, intent, memory);
     const defensiveIntents = buildDefensiveIntents(current, memory, config, telemetry);
     telemetry.carrier = cloneObject(intent);

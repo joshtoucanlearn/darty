@@ -1425,6 +1425,7 @@
       });
       let ballArrivalTick = null, receiverContactTick = null, opponentContactTick = null, opponentId = null;
       let receiverEtaAtArrivalTick = null, projectedFlightTicks = 0;
+      let closestApproach = null;
       const environment = goalEnvironment();
       // Ball V2 is pinned to four 1/240 substeps per 1/60 gameplay tick. Twelve
       // ticks stay below its 0.25-second call bound while retaining exact tick
@@ -1441,6 +1442,10 @@
           const tick = projectedFlightTicks + localTick;
           const physicsSample = samples[Math.min(localTick * samplesPerTick, samples.length) - 1];
           completedTicks = localTick;
+          {
+            const gap = Math.hypot(physicsSample.position.x - target.x, physicsSample.position.y - target.y);
+            if (!closestApproach || gap < closestApproach.gap) closestApproach = { gap, z: physicsSample.position.z, tick };
+          }
           if (physicsSample.position.z <= CPU_PASS_RACE_MAX_CONTACT_HEIGHT_METRES) {
             const sample = { x: physicsSample.position.x, y: physicsSample.position.y };
             const targetDistanceNow = Math.hypot(sample.x - target.x, sample.y - target.y);
@@ -1472,6 +1477,14 @@
       }
       const marginTicks = receiverContactTick == null || opponentContactTick == null
         ? null : opponentContactTick - receiverContactTick;
+      const labMisses = typeof globalThis !== 'undefined' && globalThis.__dartyLabMisses;
+      if (labMisses && ballArrivalTick == null && labMisses.length < 400) {
+        const finalGapAlong = ((state.position.x - launch.state.position.x) * (target.x - launch.state.position.x) +
+          (state.position.y - launch.state.position.y) * (target.y - launch.state.position.y)) / Math.max(1e-6, targetDistance);
+        labMisses.push({ d: +targetDistance.toFixed(1), v: +launch.intent.speed.toFixed(1), lift: +launch.intent.liftAngleDeg.toFixed(1),
+          window: +targetWindowMetres.toFixed(2), gap: closestApproach && +closestApproach.gap.toFixed(2), z: closestApproach && +closestApproach.z.toFixed(2),
+          travelled: +finalGapAlong.toFixed(1), settled: !!state.settled, ticks: projectedFlightTicks, reason: String(intent.reason || '') });
+      }
       let reason = 'receiver-arrives-with-six-tick-margin';
       if (receiverContactTick == null) reason = ballArrivalTick == null ? 'trajectory-misses-target-window' : 'receiver-cannot-arrive';
       else if (ballArrivalTick == null || receiverTargetEtaTicks > ballArrivalTick - CPU_PASS_RECEIVER_READY_BUFFER_TICKS) {
@@ -1698,6 +1711,13 @@
       }
       const carrierIntent = acceptedRace.accepted ? { ...clone(selectedIntent), passRace: acceptedRace }
         : rejectedPassFallback(snapshot, owner, originalRace);
+      // Match lab only: count pass-check outcomes when the lab provides a ledger.
+      const labLedger = typeof globalThis !== 'undefined' && globalThis.__dartyLabIntents;
+      if (labLedger) {
+        const raceKey = 'race:' + String(candidateIntent.reason || '') + ':' + (acceptedRace.accepted ? 'accepted' : originalRace.reason) +
+          (acceptedRace.accepted ? '' : '->' + carrierIntent.type + ':' + carrierIntent.reason);
+        labLedger[raceKey] = (labLedger[raceKey] || 0) + 1;
+      }
       const acceptedFallbackPass = carrierIntent.type === 'pass' && carrierIntent.passRace &&
         carrierIntent.passRace.accepted === true;
       commitments[owner.teamId] = acceptedRace.accepted || acceptedFallbackPass ? null : {

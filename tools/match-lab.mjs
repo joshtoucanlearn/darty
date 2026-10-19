@@ -97,6 +97,7 @@ async function runMatch(browser, seed) {
   page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
   await page.setViewport({ width: 640, height: 360 });
   await serve(page);
+  await page.evaluateOnNewDocument(() => { window.__dartyLabIntents = {}; window.__dartyLabMisses = []; });
   const started = Date.now();
   await page.goto(matchUrl(await getLaunchTemplate(browser), seed, extraParams), { waitUntil: 'load', timeout: 120000 });
   await page.waitForFunction(() => window.dartyCapture, { timeout: 60000 });
@@ -115,8 +116,10 @@ async function runMatch(browser, seed) {
   }
   const report = await page.evaluate(() => window.FLMatch.getReport());
   const events = await page.evaluate(() => window.dartyCapture.events());
+  const intents = await page.evaluate(() => window.__dartyLabIntents || {});
+  const passMisses = await page.evaluate(() => window.__dartyLabMisses || []);
   await page.close();
-  return { seed, minutes, preflight, wallSeconds: Math.round((Date.now() - started) / 1000), frames: chunks * 150, finalPhase: state && state.phase, score: state && state.score, errors: errors.slice(0, 20), report, captureEvents: events, samples };
+  return { seed, minutes, preflight, intents, passMisses, wallSeconds: Math.round((Date.now() - started) / 1000), frames: chunks * 150, finalPhase: state && state.phase, score: state && state.score, errors: errors.slice(0, 20), report, captureEvents: events, samples };
 }
 
 const browser = await puppeteer.launch({ headless: true, executablePath: CHROME, args: ['--use-angle=metal', '--enable-webgl', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'] });
