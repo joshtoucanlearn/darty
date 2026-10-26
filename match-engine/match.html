@@ -163,7 +163,7 @@
 <script src="instant-replay-review-v2.js?v=174-pause-review"></script>
 <script src="playtest-full-state-replay-v1.js?v=174-final-candidate-2"></script>
 <script src="darty-impact-v1.js?v=1.2.0-slide-impact"></script>
-<script src="darty-commentary.js?v=1.1.0-joe-lines"></script>
+<script src="darty-commentary.js?v=1.1.1-audio-ready"></script>
 <script>if(!window.THREE){document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>')}</script>
 <script id="build173V2ShadowPreflight">
 (function(){
@@ -510,7 +510,7 @@
   }
   // Joe's commentary: team names, keepers, live score and a player-to-team lookup for his magic words.
   function dartyCommentaryContext(){const roster=[...you,...opp,ykeep,okeep].filter(Boolean),config=report&&report.config||{};return{teams:{you:config.homeTeam||'',opp:config.awayTeam||''},keepers:{you:ykeep&&ykeep.name||null,opp:okeep&&okeep.name||null},score:{you:youScore,opp:oppScore},teamOf:id=>{const p=roster.find(x=>x.id===id);return p?p.team:null;}};}
-  let dartyCommentaryReady=Promise.resolve(0);if(window.DartyCommentary){const commentaryParam=new URLSearchParams(location.search).get('commentary'),captureRun=!!(window.DartyVideo&&window.DartyVideo.capture);dartyCommentaryReady=window.DartyCommentary.init({url:'commentary/lines.json?v=joe-20261026-1',base:'commentary/',enabled:captureRun?commentaryParam==='1':commentaryParam!=='0',muted:()=>audioMuted||AUDIO_LEVEL===0,volume:()=>AUDIO_LEVEL});}
+  let dartyCommentaryReady=Promise.resolve(0);if(window.DartyCommentary){const commentaryParam=new URLSearchParams(location.search).get('commentary'),captureRun=!!(window.DartyVideo&&window.DartyVideo.capture);dartyCommentaryReady=window.DartyCommentary.init({url:'commentary/lines.json?v=joe-20261026-1',base:'commentary/',enabled:captureRun?commentaryParam==='1':commentaryParam!=='0',captions:false,muted:()=>audioMuted||AUDIO_LEVEL===0,volume:()=>AUDIO_LEVEL});}
   function forcePlaytestPersistence(type){return ['goal','shot','foul','yellow-card','red-card','dive','restart','half-time','full-time','keeper-save','keeper-error'].includes(type);}
   function trackLivePossession(){
     const owner=logicalLivePossessionOwner();if(!owner){lastLoggedOwnerId=null;lastLoggedOwnerZone=null;lastLoggedOwnerZone18=null;lastLoggedOwnerZone20=null;return;}resolvePendingPassTerminal(owner,'logical-possession-acquired');const zone=pitchZone(owner.x,owner.team),zone18=pitchZone18(owner.x,owner.y,owner.team),zone20=pitchZone20(owner.x,owner.y,owner.team);

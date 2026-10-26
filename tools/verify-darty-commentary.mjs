@@ -31,6 +31,8 @@ try {
   const kickoff = await page.evaluate(() => window.DartyCommentary.status().log.findLast(entry => entry.key === 'kick-off'));
   assert.equal(kickoff.key, 'kick-off');
   assert.ok(kickoff.text === 'Cheers Jeff' || kickoff.text?.startsWith('Its a lovely day today jeff'));
+  assert.equal(await page.evaluate(() => window.DartyCommentary.status().captions), false);
+  assert.equal(await page.locator('.darty-commentary').count(), 0);
 
   await page.waitForFunction(() => {
     const hint = document.getElementById('setPieceHint');
@@ -46,13 +48,14 @@ try {
   await page.getByRole('button', { name: 'Resume match' }).click();
   await page.keyboard.press('g');
   await page.waitForFunction(() => window.DartyCommentary.status().log.some(entry => entry.key === 'goal'));
-  const goal = await page.locator('.darty-commentary').evaluate(node => {
+  const goal = await page.evaluate(() => {
     const entry = window.DartyCommentary.status().log.findLast(item => item.key === 'goal');
-    return { ...entry, visible: node.classList.contains('is-visible'), subtitle: node.textContent };
+    const subtitle = document.querySelector('.darty-commentary');
+    return { ...entry, subtitlePresent: !!subtitle, subtitleVisible: !!subtitle?.classList.contains('is-visible') };
   });
   assert.ok(['What a fantastic goal', 'What a wonderful goal'].includes(goal.text));
-  assert.equal(goal.visible, true);
-  assert.equal(goal.subtitle, goal.text);
+  assert.equal(goal.subtitlePresent, false);
+  assert.equal(goal.subtitleVisible, false);
   assert.deepEqual(errors, []);
   assert.deepEqual(failedRequests, []);
   await page.screenshot({ path: path.join(output, 'joe-goal-commentary.png') });

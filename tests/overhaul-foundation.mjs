@@ -137,7 +137,7 @@ test('Quick Play fixes FL V2 as the sole authority for exactly three playable mo
   assert.match(quickPlayApp, /if\(selection\.effective!==FL_V2_ENGINE\)throw new Error/);
   assert.match(quickPlayApp, /function finalizeMatchPayload\(payload,requested,online=false\)[\s\S]*?result\.simulationSeed=deterministicSimulationSeed\(result\)/);
   assert.match(quickPlayApp, /params\.set\('simulationSeed',String\(simulationSeed\)\)/);
-  assert.match(quickPlayApp, /if\(engine\?\.effective===FL_V2_ENGINE\)\{params\.set\('engine',FL_V2_ENGINE\);params\.set\('candidate',FL_V2_CANDIDATE\);params\.set\('release','joe-20261026-commentary'\);\}else\{params\.delete\('engine'\);params\.delete\('candidate'\);params\.delete\('release'\);\}/);
+  assert.match(quickPlayApp, /if\(engine\?\.effective===FL_V2_ENGINE\)\{params\.set\('engine',FL_V2_ENGINE\);params\.set\('candidate',FL_V2_CANDIDATE\);params\.set\('release','joe-20261026-audio-ready'\);\}else\{params\.delete\('engine'\);params\.delete\('candidate'\);params\.delete\('release'\);\}/);
   assert.match(quickPlayApp, /if\(data\.matchType==='spectator'\)params\.set\('autoplay','1'\)/);
 });
 

@@ -16,7 +16,7 @@ function load() {
     console
   };
   vm.runInNewContext(source, { window, console });
-  return { api: window.DartyCommentary, tick: ms => { clock += ms; }, bar };
+  return { api: window.DartyCommentary, tick: ms => { clock += ms; }, bar, added };
 }
 const ctx = { teams: { you: 'Arsenal', opp: 'Chelsea' }, keepers: { you: 'Lehmann', opp: 'Courtois' }, score: { you: 1, opp: 0 }, teamOf: id => id.startsWith('ars') ? 'you' : 'opp' };
 
@@ -69,6 +69,14 @@ test('an early kick-off event waits for Joe’s line pack instead of consuming t
   assert.equal(api.onEvent({ type: 'restart', kind: 'KICK OFF' }, ctx), null);
   api.load(joeLines);
   assert.equal(api.onEvent({ type: 'restart', kind: 'KICK OFF' }, ctx), 'kick-off');
+});
+
+test('the live audio-ready mode suppresses the subtitle element', async () => {
+  const { api, added } = load();
+  await api.init({ lines: joeLines, captions: false });
+  assert.equal(api.status().captions, false);
+  assert.equal(api.onEvent({ type: 'goal', team: 'you', playerId: 'ars-henry', player: 'Henry', minute: 12 }, { ...ctx, score: { you: 2, opp: 0 } }), 'goal');
+  assert.equal(added.length, 0);
 });
 
 test('special goal moments with no Joe-specific line fall back to his general goal calls', () => {

@@ -43,6 +43,7 @@
 
   const state = {
     enabled: true,
+    captions: true,
     lines: Object.fromEntries(MOMENTS.map(key => [key, []])),
     recent: Object.fromEntries(MOMENTS.map(key => [key, []])),
     lastShot: { you: null, opp: null },
@@ -140,7 +141,7 @@
     state.currentTier = tier;
     state.log.push({ key, text, minute: event.minute || null });
     if (state.log.length > 50) state.log.shift();
-    const bar = ensureBar();
+    const bar = state.captions ? ensureBar() : null;
     if (bar) {
       bar.textContent = text;
       bar.classList.add('is-visible');
@@ -251,6 +252,7 @@
 
   function init(options = {}) {
     state.enabled = options.enabled !== false;
+    state.captions = options.captions !== false;
     state.base = typeof options.base === 'string' ? options.base : '';
     if (typeof options.muted === 'function') state.muted = options.muted;
     if (typeof options.volume === 'function') state.volume = options.volume;
@@ -267,6 +269,6 @@
   root.DartyCommentary = Object.freeze({
     SCHEMA, MOMENTS, init, load, onEvent,
     momentFor: (event, ctx) => momentFor(event, ctx),
-    status: () => ({ enabled: state.enabled, lines: Object.fromEntries(MOMENTS.map(key => [key, state.lines[key].length])), log: state.log.slice() })
+    status: () => ({ enabled: state.enabled, captions: state.captions, lines: Object.fromEntries(MOMENTS.map(key => [key, state.lines[key].length])), log: state.log.slice() })
   });
 })(typeof window === 'object' ? window : null);
