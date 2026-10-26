@@ -4,6 +4,7 @@ import vm from 'node:vm';
 import test from 'node:test';
 
 const source = readFileSync(new URL('../match-engine/darty-commentary.js', import.meta.url), 'utf8');
+const joeLines = JSON.parse(readFileSync(new URL('../match-engine/commentary/lines.json', import.meta.url), 'utf8'));
 function load() {
   let clock = 0;
   const added = [];
@@ -44,8 +45,37 @@ test('goal types: own goal, equaliser, late winner, header, long range', () => {
   assert.equal(m({ type: 'goal', team: 'opp', playerId: 'che-costa', minute: 30 }, { you: 0, opp: 2 }), 'header-goal');
   api.momentFor({ type: 'shot', team: 'opp', distance: 820 }, ctx);
   assert.equal(m({ type: 'goal', team: 'opp', playerId: 'che-hazard', minute: 50 }, { you: 0, opp: 3 }), 'long-range-goal');
+  assert.equal(m({ type: 'goal', team: 'you', playerId: 'ars-henry', player: 'Henry', minute: 50, freeKickGoal: true }, { you: 2, opp: 0 }), 'free-kick-goal');
   assert.equal(api.momentFor({ type: 'darty-toy-pop', team: 'opp' }, ctx), 'pop');
   assert.equal(api.momentFor({ type: 'restart', kind: 'CORNER' }, ctx), 'corner');
+});
+
+test('Joe remains the author of every populated line and unwritten periods stay silent', () => {
+  const { api } = load();
+  assert.match(joeLines.source, /Joe Baker's lines/);
+  assert.equal(api.load(joeLines), 11);
+  assert.deepEqual(joeLines.moments['half-time'], []);
+  assert.deepEqual(joeLines.moments['full-time'], []);
+  assert.deepEqual(joeLines.moments.goal, ['What a fantastic goal', 'What a wonderful goal']);
+  assert.equal(joeLines.moments['free-kick-goal'][0], 'What a free kick! Aaawhh, from {player} !');
+  assert.equal(joeLines.moments['great-save'][0].text, 'Fantastic save');
+  assert.equal(joeLines.moments['great-save'][0].sourceText, 'Fantastic save (in a very british voice)');
+  assert.equal(joeLines.moments['great-save'][0].deliveryNote, 'in a very british voice');
+});
+
+test('an early kick-off event waits for Joe’s line pack instead of consuming the cue', () => {
+  const { api } = load();
+  api.load({ schema: api.SCHEMA, moments: {} });
+  assert.equal(api.onEvent({ type: 'restart', kind: 'KICK OFF' }, ctx), null);
+  api.load(joeLines);
+  assert.equal(api.onEvent({ type: 'restart', kind: 'KICK OFF' }, ctx), 'kick-off');
+});
+
+test('special goal moments with no Joe-specific line fall back to his general goal calls', () => {
+  const { api, bar } = load();
+  api.load(joeLines);
+  assert.equal(api.onEvent({ type: 'goal', team: 'you', playerId: 'ars-henry', player: 'Henry', minute: 88 }, { ...ctx, score: { you: 2, opp: 1 } }), 'goal');
+  assert.ok(joeLines.moments.goal.includes(bar.textContent));
 });
 
 test('cooldown holds routine lines, goals cut in, no line repeats back to back', () => {

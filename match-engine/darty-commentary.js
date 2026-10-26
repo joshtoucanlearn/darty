@@ -22,7 +22,7 @@
   const SCHEMA = 'darty-commentary-lines-v1';
   const MOMENTS = Object.freeze([
     'kick-off', 'half-time', 'full-time',
-    'goal', 'long-range-goal', 'header-goal', 'own-goal', 'equaliser', 'late-winner',
+    'goal', 'long-range-goal', 'free-kick-goal', 'header-goal', 'own-goal', 'equaliser', 'late-winner',
     'shot-saved', 'shot-wide', 'woodwork', 'big-chance-missed', 'great-save', 'keeper-mistake',
     'pop',
     'slide-tackle', 'foul', 'yellow-card', 'red-card',
@@ -31,7 +31,7 @@
   ]);
   // Higher tiers interrupt lower ones; tier 3 (goals) interrupts anything.
   const TIER = Object.freeze({
-    'goal': 3, 'long-range-goal': 3, 'header-goal': 3, 'own-goal': 3, 'equaliser': 3, 'late-winner': 3, 'comeback': 3,
+    'goal': 3, 'long-range-goal': 3, 'free-kick-goal': 3, 'header-goal': 3, 'own-goal': 3, 'equaliser': 3, 'late-winner': 3, 'comeback': 3,
     'pop': 2, 'red-card': 2, 'penalty': 2, 'full-time': 2, 'half-time': 2, 'kick-off': 2,
     'great-save': 1, 'big-chance-missed': 1, 'keeper-mistake': 1, 'woodwork': 1, 'yellow-card': 1, 'late-drama': 1,
     'shot-saved': 1, 'shot-wide': 1, 'slide-tackle': 1, 'foul': 1, 'substitution': 1,
@@ -176,7 +176,13 @@
       return null;
     }
     if (type === 'restart') {
-      if (event.kind === 'KICK OFF' && !state.kickOffSaid) { state.kickOffSaid = true; return 'kick-off'; }
+      if (event.kind === 'KICK OFF' && !state.kickOffSaid) {
+        // Quick Play can reach the opening restart before the separate Joe-lines
+        // JSON request finishes. Do not consume the one-shot cue while silent.
+        if (!state.lines['kick-off'].length) return null;
+        state.kickOffSaid = true;
+        return 'kick-off';
+      }
       if (event.kind === 'CORNER') return 'corner';
       if (event.kind === 'FREE KICK') return 'free-kick';
       if (event.kind === 'PENALTY') return 'penalty';
@@ -189,6 +195,7 @@
       const shot = state.lastShot[team];
       if (team === 'you' || team === 'opp') state.lastShot[team] = null;
       if (scorerTeam && team && scorerTeam !== team) return 'own-goal';
+      if (event.freeKickGoal) return 'free-kick-goal';
       if (score) {
         const mine = score[team], theirs = score[other(team)];
         if (late && mine === theirs + 1) return 'late-winner';
@@ -235,7 +242,11 @@
     try { key = momentFor(event, ctx || null); } catch (error) { return null; }
     if (!key) return null;
     const subject = key === 'pop' && event.actorName ? { ...event, player: event.actorName } : event;
-    return say(key, subject, ctx || null) ? key : null;
+    const genericGoalFallbacks = new Set(['header-goal', 'equaliser', 'late-winner', 'comeback']);
+    const spokenKey = state.lines[key] && state.lines[key].length
+      ? key
+      : genericGoalFallbacks.has(key) && state.lines.goal.length ? 'goal' : key;
+    return say(spokenKey, subject, ctx || null) ? spokenKey : null;
   }
 
   function init(options = {}) {

@@ -541,6 +541,44 @@ test('a defender under genuine pressure may still use the emergency return pass'
   assert.equal(decision.carrierIntent.reason, 'short-support-circulation');
 });
 
+test('unpressured defenders remember a repeated pair beyond only the latest pass', () => {
+  const players = [
+    player('defender-a', 'home', 1040, 1070, {
+      role: 'centre-back', position: 'CB', duty: 'stay-back', passing: 90, control: 88
+    }),
+    player('defender-b', 'home', 1260, 1070, {
+      role: 'centre-back', position: 'CB', duty: 'stay-back', passing: 91, control: 90
+    }),
+    player('midfielder-c', 'home', 1350, 720, {
+      role: 'central-midfielder', position: 'CM', passing: 87, control: 90
+    }),
+    player('away-left', 'away', 2520, 360, { role: 'striker', position: 'ST' }),
+    player('away-right', 'away', 2520, 1780, { role: 'striker', position: 'ST' })
+  ];
+  const memory = Intelligence.createMemory();
+  Object.assign(memory, { teamId: 'home', lastTick: 119 });
+  Object.assign(memory.circulation, {
+    lastCompletedPasserId: 'midfielder-c',
+    lastCompletedReceiverId: 'defender-a',
+    lastCompletedTick: 119,
+    recentPasses: [
+      { passerId: 'defender-a', receiverId: 'defender-b', tick: 90 },
+      { passerId: 'defender-b', receiverId: 'defender-a', tick: 96 },
+      { passerId: 'midfielder-c', receiverId: 'defender-a', tick: 119 }
+    ]
+  });
+  const decision = Intelligence.decide(snapshot({
+    tick: 120,
+    carrierId: 'defender-a',
+    players,
+    ball: { x: 1040, y: 1070 },
+    offsideLine: 2850
+  }), memory, { maximumCommittedRuns: 0 });
+  assert.equal(decision.carrierIntent.type, 'pass', JSON.stringify(decision.carrierIntent));
+  assert.equal(decision.carrierIntent.targetPlayerId, 'midfielder-c');
+  assert.equal(decision.carrierIntent.reason, 'defender-pair-history-break-support');
+});
+
 test('a clearly superior progressive coordinated run beats routine short circulation', () => {
   const players = [
     player('carrier', 'home', 1500, 1070, {

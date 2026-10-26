@@ -75,6 +75,9 @@
     routineProgressiveRunMinimumDistance: 260,
     routineProgressiveRunClearanceBonus: 18,
     routineProgressiveRunScoreAdvantage: 10,
+    circulationHistoryPasses: 6,
+    circulationHistoryTicks: 720,
+    circulationRepeatedPairLimit: 2,
     pitchInset: 18
   });
 
@@ -193,9 +196,12 @@
     }
     for (const key of ['openingMemoryTicks', 'minimumCommitTicks', 'maximumCommitTicks', 'abortBlockedTicks',
       'maximumCommittedRuns', 'restDefenseMinimum', 'offsideMistakeMaxEarlyTicks',
-      'defensivePressLeadTicks', 'defensiveActionCooldownTicks']) {
+      'defensivePressLeadTicks', 'defensiveActionCooldownTicks', 'circulationHistoryPasses',
+      'circulationHistoryTicks', 'circulationRepeatedPairLimit']) {
       if (!Number.isInteger(config[key]) || config[key] < 0) throw new RangeError(key + ' must be a non-negative integer');
     }
+    if (config.circulationHistoryPasses < 2) throw new RangeError('circulationHistoryPasses must be at least 2');
+    if (config.circulationRepeatedPairLimit < 1) throw new RangeError('circulationRepeatedPairLimit must be at least 1');
     if (config.maximumCommitTicks < config.minimumCommitTicks) {
       throw new RangeError('maximumCommitTicks must be at least minimumCommitTicks');
     }
@@ -428,7 +434,8 @@
       pendingIssuedTick: null,
       lastCompletedPasserId: null,
       lastCompletedReceiverId: null,
-      lastCompletedTick: null
+      lastCompletedTick: null,
+      recentPasses: []
     };
   }
 
@@ -447,6 +454,15 @@
     const completed = [circulation.lastCompletedPasserId, circulation.lastCompletedReceiverId,
       circulation.lastCompletedTick].filter(value => value != null).length;
     if (completed !== 0 && completed !== 3) throw new RangeError('memory completed circulation pass is incomplete');
+    if (circulation.recentPasses != null && !Array.isArray(circulation.recentPasses)) {
+      throw new TypeError('memory.circulation.recentPasses must be an array');
+    }
+    for (const [index, pass] of (circulation.recentPasses || []).entries()) {
+      if (!isRecord(pass)) throw new TypeError('memory.circulation.recentPasses.' + index + ' must be an object');
+      validateMemoryString(pass.passerId, 'memory.circulation.recentPasses.' + index + '.passerId');
+      validateMemoryString(pass.receiverId, 'memory.circulation.recentPasses.' + index + '.receiverId');
+      validateMemoryInteger(pass.tick, 'memory.circulation.recentPasses.' + index + '.tick', 0);
+    }
   }
 
   function validateDefenseMemory(defense) {
@@ -599,6 +615,7 @@
     const circulation = fresh || source.circulation == null
       ? emptyCirculationMemory()
       : cloneObject(source.circulation);
+    if (!Array.isArray(circulation.recentPasses)) circulation.recentPasses = [];
     return {
       schema: MEMORY_SCHEMA,
       teamId: fresh || source.teamId == null ? null : source.teamId,
@@ -1450,8 +1467,18 @@
         left.player.id.localeCompare(right.player.id));
   }
 
-  function observeCirculationOutcome(snapshot, memory, telemetry) {
+  function observeCirculationOutcome(snapshot, memory, telemetry, config) {
     const circulation = memory.circulation;
+    if (snapshot.possessionTeamId !== snapshot.teamId) {
+      circulation.pendingPasserId = null;
+      circulation.pendingReceiverId = null;
+      circulation.pendingIssuedTick = null;
+      circulation.lastCompletedPasserId = null;
+      circulation.lastCompletedReceiverId = null;
+      circulation.lastCompletedTick = null;
+      circulation.recentPasses = [];
+      return;
+    }
     if (!circulation.pendingPasserId) return;
     const completed = snapshot.possessionTeamId === snapshot.teamId &&
       snapshot.carrierId === circulation.pendingReceiverId;
@@ -1459,6 +1486,14 @@
       circulation.lastCompletedPasserId = circulation.pendingPasserId;
       circulation.lastCompletedReceiverId = circulation.pendingReceiverId;
       circulation.lastCompletedTick = snapshot.tick;
+      circulation.recentPasses.push({
+        passerId: circulation.pendingPasserId,
+        receiverId: circulation.pendingReceiverId,
+        tick: snapshot.tick
+      });
+      circulation.recentPasses = circulation.recentPasses
+        .filter(pass => snapshot.tick - pass.tick <= config.circulationHistoryTicks)
+        .slice(-config.circulationHistoryPasses);
       telemetry.transitions.push({
         type: 'circulation-pass-completed',
         passerId: circulation.pendingPasserId,
@@ -1482,6 +1517,13 @@
     memory.circulation.pendingPasserId = snapshot.carrierId;
     memory.circulation.pendingReceiverId = intent.targetPlayerId;
     memory.circulation.pendingIssuedTick = snapshot.tick;
+  }
+
+  function recentCirculationPairCount(circulation, playerA, playerB, tick, config) {
+    return (circulation.recentPasses || []).filter(pass =>
+      tick - pass.tick <= config.circulationHistoryTicks &&
+      ((pass.passerId === playerA && pass.receiverId === playerB) ||
+        (pass.passerId === playerB && pass.receiverId === playerA))).length;
   }
 
   function carrierIntent(snapshot, runs, memory, config) {
@@ -1577,8 +1619,15 @@
       previousPasser && previousPasser.teamId === carrier.teamId &&
       isRestDefender(carrier) && isRestDefender(previousPasser);
     const suppressDirectReturn = recentDefenderReceipt && carrierPressure >= 82;
-    const alternativeSupport = suppressDirectReturn
-      ? supportOptions.filter(option => option.player.id !== previousPasser.id)
+    const repeatedDefenderPairs = new Set(supportOptions.filter(option =>
+      isRestDefender(carrier) && isRestDefender(option.player) && carrierPressure >= 82 &&
+      recentCirculationPairCount(memory.circulation, carrier.id, option.player.id,
+        snapshot.tick, config) >= config.circulationRepeatedPairLimit).map(option => option.player.id));
+    const suppressHistoricalPair = repeatedDefenderPairs.size > 0;
+    const alternativeSupport = suppressDirectReturn || suppressHistoricalPair
+      ? supportOptions.filter(option =>
+        (!previousPasser || !suppressDirectReturn || option.player.id !== previousPasser.id) &&
+        !repeatedDefenderPairs.has(option.player.id))
       : supportOptions;
     const preferredSupportOptions = alternativeSupport.length ? alternativeSupport : supportOptions;
     // Circulation remains the default, but it must not erase an independently
@@ -1604,12 +1653,12 @@
       y: carrier.y + ((pitch.yMin + pitch.yMax) / 2 - carrier.y) * 0.08
     };
     const carryClearance = nearestOpponentClearance(carrier, carryTarget, snapshot);
-    if (suppressDirectReturn && !alternativeSupport.length &&
+    if ((suppressDirectReturn || suppressHistoricalPair) && !alternativeSupport.length &&
         carryClearance >= config.minimumCarryLaneClearance) {
       return {
         type: 'carry', targetPlayerId: null, target: carryTarget,
         confidence: rounded(clamp(0.43 + carrier.control / 195 + carryClearance / 1250, 0, 0.95)),
-        reason: 'defender-return-loop-break-carry'
+        reason: suppressHistoricalPair ? 'defender-pair-history-break-carry' : 'defender-return-loop-break-carry'
       };
     }
     const assertiveCarrier = ['attacking-midfielder', 'winger', 'striker'].includes(carrierFamily);
@@ -1630,9 +1679,11 @@
         type: 'pass', targetPlayerId: best.player.id, target: { ...best.target }, offsideTiming: null,
         confidence: rounded(clamp(.36 + carrier.passing / 300 + best.lane / 2200 + best.receiverSpace / 3000,
           .58, .94)),
-        reason: suppressDirectReturn && best.player.id !== previousPasser.id
-          ? 'defender-return-loop-break-support'
-          : 'short-support-circulation',
+        reason: suppressHistoricalPair && !repeatedDefenderPairs.has(best.player.id)
+          ? 'defender-pair-history-break-support'
+          : suppressDirectReturn && best.player.id !== previousPasser.id
+            ? 'defender-return-loop-break-support'
+            : 'short-support-circulation',
         supportKind: best.progress < -45 ? 'recycle' : 'support',
         supportMetrics: {
           distance: rounded(best.passDistance),
@@ -1690,7 +1741,7 @@
     perceiveOpenings(current, memory, candidates, playersById, config, telemetry);
     const active = persistCommitments(current, memory, candidates, playersById, config, telemetry);
     const runs = selectNewRuns(current, memory, candidates, playersById, active, config, telemetry);
-    observeCirculationOutcome(current, memory, telemetry);
+    observeCirculationOutcome(current, memory, telemetry, config);
     const intent = carrierIntent(current, runs, memory, config);
     // Match lab only: count carrier decisions when the lab provides a ledger.
     const labLedger = typeof globalThis !== 'undefined' && globalThis.__dartyLabIntents;

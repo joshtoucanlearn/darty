@@ -1,21 +1,43 @@
 {
   "schema": "darty-commentary-lines-v1",
-  "source": "Joe's lines, copied from the Google Doc \"DARTY commentary – Joe's lines\". Each line: {\"text\": \"...\", \"audio\": \"audio/<file>.mp3\"} (audio optional).",
+  "source": "Joe Baker's lines, copied verbatim from JOE DARTY PROJECT.pptx on 26 October 2026. Audio is optional and is added only after Joe records it.",
   "moments": {
-    "kick-off": [],
+    "kick-off": [
+      "Cheers Jeff",
+      "Its a lovely day today jeff, i think its going to go well, i think its going to go really well, and i think its going to be a tough match today, jeff"
+    ],
     "half-time": [],
     "full-time": [],
-    "goal": [],
-    "long-range-goal": [],
+    "goal": [
+      "What a fantastic goal",
+      "What a wonderful goal"
+    ],
+    "long-range-goal": [
+      "How’s he hit that from outside the box??? Ohhhh what a goal! *clap clap clap* everyones cheering like he’s won the world cup!!! I cant believe it"
+    ],
+    "free-kick-goal": [
+      "What a free kick! Aaawhh, from {player} !"
+    ],
     "header-goal": [],
-    "own-goal": [],
+    "own-goal": [
+      "It’s a silly mistake",
+      "Ah, I think my grandma could do better than that.",
+      "What an own goal"
+    ],
     "equaliser": [],
     "late-winner": [],
     "shot-saved": [],
     "shot-wide": [],
     "woodwork": [],
     "big-chance-missed": [],
-    "great-save": [],
+    "great-save": [
+      {
+        "text": "Fantastic save",
+        "sourceText": "Fantastic save (in a very british voice)",
+        "deliveryNote": "in a very british voice"
+      },
+      "He saved his team from conceding a goal"
+    ],
     "keeper-mistake": [],
     "pop": [],
     "slide-tackle": [],

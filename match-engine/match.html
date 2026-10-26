@@ -65,9 +65,9 @@
   @media(max-width:760px){.playerCard{width:calc(50vw - 20px);padding-left:9px}.playerCard.away{padding-right:9px}.playerAction{display:none}#radar{bottom:150px!important;width:190px;height:auto}#setPieceHint{bottom:148px;max-width:calc(100vw - 24px);white-space:normal;text-align:center}}
 
   /* Joe's commentary lines (darty-commentary.js): one subtitle at a time, above the hint bar. */
-  .darty-commentary{position:absolute;left:50%;bottom:88px;z-index:30;max-width:min(720px,70vw);padding:10px 18px;border-left:4px solid var(--orange);border-radius:6px;background:rgba(6,24,44,.88);color:var(--cream);font:700 17px/1.35 Arial,Helvetica,sans-serif;text-align:center;transform:translate(-50%,8px);opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;}
+  .darty-commentary{position:absolute;left:50%;bottom:140px;z-index:50;max-width:min(720px,70vw);padding:10px 18px;border-left:4px solid var(--orange);border-radius:6px;background:rgba(6,24,44,.92);color:var(--cream);font:700 17px/1.35 Arial,Helvetica,sans-serif;text-align:center;box-shadow:0 8px 24px rgba(0,0,0,.28);transform:translate(-50%,8px);opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;}
   .darty-commentary.is-visible{opacity:1;transform:translate(-50%,0);}
-  @media (max-width:700px){.darty-commentary{bottom:118px;font-size:14px;max-width:86vw;}}
+  @media (max-width:900px){.darty-commentary{bottom:178px;font-size:14px;max-width:86vw;}}
 </style>
 <!-- Bundled CC0 Poly Haven Stadium 01 environment. See ASSET-SOURCES-v0.61.txt. -->
 <link rel="stylesheet" href="darty-video-capture.css"/>
@@ -163,7 +163,7 @@
 <script src="instant-replay-review-v2.js?v=174-pause-review"></script>
 <script src="playtest-full-state-replay-v1.js?v=174-final-candidate-2"></script>
 <script src="darty-impact-v1.js?v=1.2.0-slide-impact"></script>
-<script src="darty-commentary.js?v=1.0.0-joe-lines"></script>
+<script src="darty-commentary.js?v=1.1.0-joe-lines"></script>
 <script>if(!window.THREE){document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>')}</script>
 <script id="build173V2ShadowPreflight">
 (function(){
@@ -254,7 +254,7 @@
     'first-touch-v2.js','first-touch-authority-adapter-v2.js','aerial-contact-v2.js','live-v2-contact-authority-composer.js',
     'match-clock-v2.js','restart-presentation-v2.js','set-piece-coordinate-contract-v2.js','set-piece-suite-v2.js',
     'live-v2-match-control-composition.js','live-v2-authority-adapter.js'];
-  pieces.forEach(src=>document.write('<script src="'+src+'?v=174-fl-v2-final-candidate-5-joe-fouls-1"><\/script>'));
+  pieces.forEach(src=>document.write('<script src="'+src+'?v=174-fl-v2-final-candidate-5-joe-commentary-1"><\/script>'));
 })();
 </script>
 <script>
@@ -510,7 +510,7 @@
   }
   // Joe's commentary: team names, keepers, live score and a player-to-team lookup for his magic words.
   function dartyCommentaryContext(){const roster=[...you,...opp,ykeep,okeep].filter(Boolean),config=report&&report.config||{};return{teams:{you:config.homeTeam||'',opp:config.awayTeam||''},keepers:{you:ykeep&&ykeep.name||null,opp:okeep&&okeep.name||null},score:{you:youScore,opp:oppScore},teamOf:id=>{const p=roster.find(x=>x.id===id);return p?p.team:null;}};}
-  if(window.DartyCommentary){const commentaryParam=new URLSearchParams(location.search).get('commentary'),captureRun=!!(window.DartyVideo&&window.DartyVideo.capture);window.DartyCommentary.init({url:'commentary/lines.json',base:'commentary/',enabled:captureRun?commentaryParam==='1':commentaryParam!=='0',muted:()=>audioMuted||AUDIO_LEVEL===0,volume:()=>AUDIO_LEVEL});}
+  let dartyCommentaryReady=Promise.resolve(0);if(window.DartyCommentary){const commentaryParam=new URLSearchParams(location.search).get('commentary'),captureRun=!!(window.DartyVideo&&window.DartyVideo.capture);dartyCommentaryReady=window.DartyCommentary.init({url:'commentary/lines.json?v=joe-20261026-1',base:'commentary/',enabled:captureRun?commentaryParam==='1':commentaryParam!=='0',muted:()=>audioMuted||AUDIO_LEVEL===0,volume:()=>AUDIO_LEVEL});}
   function forcePlaytestPersistence(type){return ['goal','shot','foul','yellow-card','red-card','dive','restart','half-time','full-time','keeper-save','keeper-error'].includes(type);}
   function trackLivePossession(){
     const owner=logicalLivePossessionOwner();if(!owner){lastLoggedOwnerId=null;lastLoggedOwnerZone=null;lastLoggedOwnerZone18=null;lastLoggedOwnerZone20=null;return;}resolvePendingPassTerminal(owner,'logical-possession-acquired');const zone=pitchZone(owner.x,owner.team),zone18=pitchZone18(owner.x,owner.y,owner.team),zone20=pitchZone20(owner.x,owner.y,owner.team);
@@ -1112,7 +1112,7 @@
   function setWalkoutCameraBeat(beat){if(beat!==walkoutCameraBeat){walkoutCameraBeat=beat;walkoutCameraCut=true;}}
   let D0 = DIFF.ultimate;
   function aiDifficultyFor(){return D0;}
-  function focusGame(diff){ CONFIG.difficulty=normaliseDifficulty(diff);D0=DIFF[CONFIG.difficulty]||DIFF.ultimate; cv.focus(); initAudio();dartyResetMatch(); matchTemperature=clamp(18+Number(savedMatchConfig.rivalryIntensity||0)*.45,10,52);temperatureBand=temperatureLabel();activeShirtPulls.clear();pendingFreeKickReplay=null;replayBuffer=[];replayLastSampleAt=0;latestOpenPlayShotReplayAnchor=null;openPlayShotReplaySequence=0;pendingGoalKickoffTeam=null;postGoalAutoKickoffPending=false;postGoalWatchdogAt=0;kickoffWatchdogAt=0;goalBroadcastHoldUntil=0;goalBroadcastHoldTarget=null;pauseStartedAt=0;youScore=0;oppScore=0;youS.textContent=0;oppS.textContent=0;clockFrames=0;matchOver=false;halfDone=false;halfTimeUntil=0;fullTimePresentationUntil=0;firstHalfAdded=null;secondHalfAdded=null;addedShownHalf=0;halfHardStopFrame=0;fullHardStopFrame=0;liveV2AuthorityTotals={candidateTicks:0,lastCommittedTick:0,gameplayEpochs:0};Object.assign(TEAM_BRAIN.you,makeTeamBrain());Object.assign(TEAM_BRAIN.opp,makeTeamBrain());you=[];opp=[];ykeep=okeep=null;bench=[];resetReport(); kickoff('you'); started=true;if(liveV2StrictStopped){liveV2RecordStrictStop();recordLiveV2Authority('strict-playtest-stop');return;}recordLiveV2Authority('match-start');if(build173V2Shadow)build173V2Shadow.resetForNewMatch();
+  function focusGame(diff){ CONFIG.difficulty=normaliseDifficulty(diff);D0=DIFF[CONFIG.difficulty]||DIFF.ultimate; cv.focus(); initAudio();dartyResetMatch(); matchTemperature=clamp(18+Number(savedMatchConfig.rivalryIntensity||0)*.45,10,52);temperatureBand=temperatureLabel();activeShirtPulls.clear();pendingFreeKickReplay=null;replayBuffer=[];replayLastSampleAt=0;latestOpenPlayShotReplayAnchor=null;openPlayShotReplaySequence=0;pendingGoalKickoffTeam=null;postGoalAutoKickoffPending=false;postGoalWatchdogAt=0;kickoffWatchdogAt=0;goalBroadcastHoldUntil=0;goalBroadcastHoldTarget=null;pauseStartedAt=0;youScore=0;oppScore=0;youS.textContent=0;oppS.textContent=0;clockFrames=0;matchOver=false;halfDone=false;halfTimeUntil=0;fullTimePresentationUntil=0;firstHalfAdded=null;secondHalfAdded=null;addedShownHalf=0;halfHardStopFrame=0;fullHardStopFrame=0;liveV2AuthorityTotals={candidateTicks:0,lastCommittedTick:0,gameplayEpochs:0};Object.assign(TEAM_BRAIN.you,makeTeamBrain());Object.assign(TEAM_BRAIN.opp,makeTeamBrain());you=[];opp=[];ykeep=okeep=null;bench=[];resetReport(); kickoff('you');started=true;dartyCommentaryReady.then(()=>{if(window.DartyCommentary)window.DartyCommentary.onEvent({type:'restart',kind:'KICK OFF',team:'you',minute:minuteNow()},dartyCommentaryContext());});if(liveV2StrictStopped){liveV2RecordStrictStop();recordLiveV2Authority('strict-playtest-stop');return;}recordLiveV2Authority('match-start');if(build173V2Shadow)build173V2Shadow.resetForNewMatch();
     if(FREE_KICK_PRACTICE){enterFreeKickPractice();return;}
     // Both teams begin inside the tunnel, pass through the gap in the advertising boards, line up, then spread into formation.
     const colIndex=(p)=>{ const team=p.team==='you'?you:opp; let i=team.indexOf(p); return i<0?10:i; };
@@ -5951,14 +5951,14 @@ function beginDedicatedSetPiece(kind,team,taker,x,y){
     const assist=(assistCandidate&&assistCandidate.team===who&&assistCandidate!==scorer)?assistCandidate:null;
     const minute=Math.min(90,Math.floor(90*clockFrames/MATCH_FRAMES));
     if(scorer){
-      scorer.stats.goals++;scorer.stats.rating+=.45;if(assist){assist.stats.assists++;assist.stats.rating+=.25;}logEvent('goal',who,scorer,{assist:assist?assist.name:null,score:youScore+'-'+oppScore,keeperErrorCandidate,...(keeperContext||{})});
+      scorer.stats.goals++;scorer.stats.rating+=.45;if(assist){assist.stats.assists++;assist.stats.rating+=.25;}logEvent('goal',who,scorer,{assist:assist?assist.name:null,score:youScore+'-'+oppScore,keeperErrorCandidate,freeKickGoal,...(keeperContext||{})});
       celebratingPlayer=scorer;
       document.getElementById('scorerName').textContent=scorer.name;
       document.getElementById('scorerSub').textContent=(scorer.role==='fwd'?'Forward':scorer.role==='mid'?'Midfielder':scorer.role==='def'?'Defender':'Keeper')+' · '+minute+"'";
       document.getElementById('scorerApps').textContent=scorer.seasonApps+1;document.getElementById('scorerGoals').textContent=scorer.seasonGoals+scorer.stats.goals;drawPortrait(scorer);
     }else{
       celebratingPlayer=(who==='you'?(you.find(p=>!p.sentOff)||you[0]):(opp.find(p=>!p.sentOff)||opp[0]));
-      logEvent('goal',who,celebratingPlayer,{ownGoal:true,score:youScore+'-'+oppScore,keeperErrorCandidate,...(keeperContext||{})});
+      logEvent('goal',who,celebratingPlayer,{ownGoal:true,score:youScore+'-'+oppScore,keeperErrorCandidate,freeKickGoal,...(keeperContext||{})});
       document.getElementById('scorerName').textContent=who==='you'?'Own goal':'Goal';document.getElementById('scorerSub').textContent=minute+"'";document.getElementById('scorerApps').textContent='—';document.getElementById('scorerGoals').textContent='—';drawPortrait(null);
     }
     const scoringAnchor=!freeKickGoal&&latestOpenPlayShotReplayAnchor&&latestOpenPlayShotReplayAnchor.team===who&&goalMoment-latestOpenPlayShotReplayAnchor.at<6000?latestOpenPlayShotReplayAnchor:null;goalReplay.kind=freeKickGoal?'free-kick-goal-replay':'goal-replay';goalReplay.anchorAt=scoringAnchor&&scoringAnchor.at||(!freeKickGoal?goalMoment-900:0);goalReplay.eventAt=goalMoment;goalReplay.anchorId=scoringAnchor&&scoringAnchor.id||null;if(freeKickGoal)sealPendingFreeKickReplay('goal');goalReplay.pending=true;document.getElementById('goalCard').classList.remove('show');celebrationChoicePending=false;hideCelebrationMenu();celebrate=1;beginGoalCelebration();
