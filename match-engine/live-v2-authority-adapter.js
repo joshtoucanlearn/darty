@@ -92,6 +92,52 @@
   const CPU_SHORT_SUPPORT_FAST_LANE_CLEARANCE = 60;
   const CPU_SHORT_SUPPORT_FAST_RECEIVER_SPACE = 75;
   const TURNOVER_TACKLE_PROTECTION_TICKS = 30;
+  // Difficulty changes how quickly and ambitiously the CPU reads the match.
+  // It never changes footballer speed, reach, collision, pass accuracy or shot
+  // execution. Professional is byte-for-byte the CPU V2 default so older
+  // callers that do not supply a difficulty keep their existing behaviour.
+  const CPU_DECISION_PROFILES = Object.freeze({
+    amateur: Object.freeze({ minimumReactionTicks: 4, maximumReactionTicks: 8, minimumBidScore: 126,
+      maximumCommittedRuns: 2, defensivePressLeadTicks: 2, defensiveActionCooldownTicks: 42,
+      routineProgressiveRunMinimumProgress: 260, routineProgressiveRunMinimumDistance: 310,
+      routineProgressiveRunClearanceBonus: 26, routineProgressiveRunScoreAdvantage: 18,
+      minimumCarryLaneClearance: 64 }),
+    'semi-pro': Object.freeze({ minimumReactionTicks: 2, maximumReactionTicks: 6, minimumBidScore: 116,
+      maximumCommittedRuns: 2, defensivePressLeadTicks: 3, defensiveActionCooldownTicks: 36,
+      routineProgressiveRunMinimumProgress: 235, routineProgressiveRunMinimumDistance: 285,
+      routineProgressiveRunClearanceBonus: 22, routineProgressiveRunScoreAdvantage: 14,
+      minimumCarryLaneClearance: 59 }),
+    professional: Object.freeze({ minimumReactionTicks: 1, maximumReactionTicks: 5, minimumBidScore: 108,
+      maximumCommittedRuns: 3, defensivePressLeadTicks: 3, defensiveActionCooldownTicks: 30,
+      routineProgressiveRunMinimumProgress: 210, routineProgressiveRunMinimumDistance: 260,
+      routineProgressiveRunClearanceBonus: 18, routineProgressiveRunScoreAdvantage: 10,
+      minimumCarryLaneClearance: 54 }),
+    'world-class': Object.freeze({ minimumReactionTicks: 1, maximumReactionTicks: 4, minimumBidScore: 104,
+      maximumCommittedRuns: 3, defensivePressLeadTicks: 4, defensiveActionCooldownTicks: 28,
+      routineProgressiveRunMinimumProgress: 190, routineProgressiveRunMinimumDistance: 235,
+      routineProgressiveRunClearanceBonus: 14, routineProgressiveRunScoreAdvantage: 8,
+      minimumCarryLaneClearance: 51 }),
+    legendary: Object.freeze({ minimumReactionTicks: 0, maximumReactionTicks: 3, minimumBidScore: 100,
+      maximumCommittedRuns: 4, defensivePressLeadTicks: 4, defensiveActionCooldownTicks: 26,
+      routineProgressiveRunMinimumProgress: 175, routineProgressiveRunMinimumDistance: 225,
+      routineProgressiveRunClearanceBonus: 12, routineProgressiveRunScoreAdvantage: 6,
+      minimumCarryLaneClearance: 49 }),
+    ultimate: Object.freeze({ minimumReactionTicks: 0, maximumReactionTicks: 2, minimumBidScore: 96,
+      maximumCommittedRuns: 4, defensivePressLeadTicks: 5, defensiveActionCooldownTicks: 24,
+      routineProgressiveRunMinimumProgress: 165, routineProgressiveRunMinimumDistance: 220,
+      routineProgressiveRunClearanceBonus: 10, routineProgressiveRunScoreAdvantage: 4,
+      minimumCarryLaneClearance: 48 })
+  });
+  // One shared physical envelope is passed to Movement V2 for every human and
+  // CPU challenge. It makes an already-pressed tackle readable for a little
+  // longer without introducing a difficulty or controller advantage.
+  const LIVE_MOVEMENT_CONTACT_CONFIG = Object.freeze({
+    fixedTickSeconds: FIXED_TICK_SECONDS,
+    tackleContactTicks: 8,
+    tackleReach: 0.60,
+    slideContactTicks: 12,
+    slideReach: 0.90
+  });
   const issuedCapabilities = new WeakSet();
 
   function finite(value, fallback) {
@@ -129,6 +175,13 @@
     if (!transition) return true;
     if (!Number.isSafeInteger(tick) || !Number.isSafeInteger(transition.startedTick)) return false;
     return tick > transition.startedTick + TURNOVER_TACKLE_PROTECTION_TICKS;
+  }
+
+  function cpuDifficultyConfig(value) {
+    const requested = String(value || 'professional').toLowerCase();
+    const level = Object.prototype.hasOwnProperty.call(CPU_DECISION_PROFILES, requested)
+      ? requested : 'professional';
+    return Object.freeze({ level, decisionOnly: true, overrides: CPU_DECISION_PROFILES[level] });
   }
 
   function clone(value) {
@@ -426,7 +479,8 @@
     if (dribbling.actionIntent && dribbling.actionIntent.actorId != null && !ids.has(String(dribbling.actionIntent.actorId))) {
       throw new TypeError('live dribbling action actor is unknown');
     }
-    return { tick: snapshot.tick, fixedTickSeconds: FIXED_TICK_SECONDS, pitch, units, players, ball, teams, humanPlayerIds, contact, dribbling };
+    const difficulty = cpuDifficultyConfig(snapshot.difficulty).level;
+    return { tick: snapshot.tick, fixedTickSeconds: FIXED_TICK_SECONDS, difficulty, pitch, units, players, ball, teams, humanPlayerIds, contact, dribbling };
   }
 
   function metricPoint(player, snapshot) {
@@ -841,6 +895,7 @@
         };
       });
       const ballPoint = metricBall(snapshot.ball, snapshot).position, outputs = {}, memories = {};
+      const difficulty = cpuDifficultyConfig(snapshot.difficulty);
       for (const team of snapshot.teams) {
         const decision = dependencies.cpu.decide({
           tick: snapshot.tick, fixedTickSeconds: FIXED_TICK_SECONDS, teamId: team.id,
@@ -850,8 +905,15 @@
           offsideLine: (team.offsideLine - snapshot.pitch.xMin) / snapshot.units.xPerMetre,
           pitch: METRIC_PITCH, ball: { x: ballPoint.x, y: ballPoint.y }, players: allPlayers,
           events: possession.offsideCandidate ? [{ type: 'offside-candidate', ...clone(possession.offsideCandidate) }] : []
-        }, domain.cpuMemories[team.id], { fixedTickSeconds: FIXED_TICK_SECONDS });
-        outputs[team.id] = decision; memories[team.id] = decision.memory;
+        }, domain.cpuMemories[team.id], { fixedTickSeconds: FIXED_TICK_SECONDS, ...difficulty.overrides });
+        outputs[team.id] = {
+          ...decision,
+          telemetry: {
+            ...decision.telemetry,
+            liveDifficulty: { level: difficulty.level, decisionOnly: true, config: clone(difficulty.overrides) }
+          }
+        };
+        memories[team.id] = decision.memory;
       }
       return { outputs, memories };
     }
@@ -935,6 +997,18 @@
       return snapshot.players.filter(candidate => candidate.teamId !== player.teamId && !candidate.sentOff)
         .map(candidate => ({ candidate, distance: Math.hypot(candidate.x - player.x, candidate.y - player.y) }))
         .sort((a, b) => a.distance - b.distance || a.candidate.id.localeCompare(b.candidate.id))[0]?.candidate || null;
+    }
+    function challengeTarget(player, snapshot, possession) {
+      const carrier = possession && possession.ownerId
+        ? snapshot.players.find(candidate => candidate.id === possession.ownerId &&
+          candidate.teamId !== player.teamId && !candidate.sentOff && !candidate.isGK) || null
+        : null;
+      if (carrier) {
+        const dx = (carrier.x - player.x) / snapshot.units.xPerMetre;
+        const dy = (carrier.y - player.y) / snapshot.units.yPerMetre;
+        if (Math.hypot(dx, dy) <= 4.8) return carrier;
+      }
+      return nearestOpponent(player, snapshot);
     }
     function looseBallRecoveryAssignments(snapshot, world, possession) {
       const gate = snapshot.contact.gate || {};
@@ -1059,7 +1133,7 @@
         if (tackleEdge || shoulderEdge || cpuPhysical) {
           const target = cpuPhysical
             ? snapshot.players.find(player => player.id === String(cpuPhysical.targetPlayerId || defensiveIntent.targetPlayerId || '')) || null
-            : nearestOpponent(livePlayer, snapshot);
+            : challengeTarget(livePlayer, snapshot, possession);
           const direction = target ? unit({ x: target.x - livePlayer.x, y: target.y - livePlayer.y }, statePlayer.facing) : statePlayer.facing;
           const type = cpuPhysical ? cpuPhysical.type : tackleEdge ? 'stand-tackle' : 'shoulder-challenge';
           commands.push({ id: type + ':' + livePlayer.id + ':' + nextTick,
@@ -2262,7 +2336,7 @@
           cpuRejectedPassCommitments = gated.commitments;
         }
         const currentMovement = movementWorld(controlSnapshot), commands = movementCommands(controlSnapshot, currentMovement.world, formations, cpu.outputs, possession);
-        const movement = dependencies.movement.advance(currentMovement.world, commands.commands, 1, { fixedTickSeconds: FIXED_TICK_SECONDS });
+        const movement = dependencies.movement.advance(currentMovement.world, commands.commands, 1, LIVE_MOVEMENT_CONTACT_CONFIG);
         const movementProjection = movement.state.players.map(player => {
           const position = livePoint(player.position, snapshot), velocity = liveVelocity(player.velocity, snapshot);
           return { id: player.id, x: position.x, y: position.y, vx: velocity.x, vy: velocity.y, fx: player.facing.x, fy: player.facing.y,
@@ -2615,8 +2689,9 @@
   return Object.freeze({
     VERSION, ACKNOWLEDGEMENT, SUPPORTED_WORKFLOWS, REQUIRED_DEPENDENCIES, DEPENDENCY_CONTRACTS,
     FIXED_TICK_SECONDS, METRIC_PITCH, TURNOVER_TACKLE_PROTECTION_TICKS,
+    CPU_DECISION_PROFILES, LIVE_MOVEMENT_CONTACT_CONFIG,
     HUMAN_RECEPTION_GUIDANCE_MAX_DISTANCE_METRES, HUMAN_RECEPTION_GUIDANCE_STRONG_INPUT,
     HUMAN_RECEPTION_GUIDANCE_OPPOSING_DOT,
-    cpuPhysicalActionAllowed, stableHash, createCapability, createAttachment
+    cpuPhysicalActionAllowed, cpuDifficultyConfig, stableHash, createCapability, createAttachment
   });
 });

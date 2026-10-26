@@ -25,7 +25,7 @@
     'goal', 'long-range-goal', 'free-kick-goal', 'header-goal', 'own-goal', 'equaliser', 'late-winner',
     'shot-saved', 'shot-wide', 'woodwork', 'big-chance-missed', 'great-save', 'keeper-mistake',
     'pop',
-    'slide-tackle', 'foul', 'yellow-card', 'red-card',
+    'slide-tackle', 'foul', 'yellow-card', 'red-card', 'offside',
     'corner', 'free-kick', 'penalty',
     'substitution', 'comeback', 'late-drama'
   ]);
@@ -34,7 +34,7 @@
     'goal': 3, 'long-range-goal': 3, 'free-kick-goal': 3, 'header-goal': 3, 'own-goal': 3, 'equaliser': 3, 'late-winner': 3, 'comeback': 3,
     'pop': 2, 'red-card': 2, 'penalty': 2, 'full-time': 2, 'half-time': 2, 'kick-off': 2,
     'great-save': 1, 'big-chance-missed': 1, 'keeper-mistake': 1, 'woodwork': 1, 'yellow-card': 1, 'late-drama': 1,
-    'shot-saved': 1, 'shot-wide': 1, 'slide-tackle': 1, 'foul': 1, 'substitution': 1,
+    'shot-saved': 1, 'shot-wide': 1, 'slide-tackle': 1, 'foul': 1, 'offside': 1, 'substitution': 1,
     'corner': 0, 'free-kick': 0
   });
   const COOLDOWN_MS = 3800;
@@ -129,17 +129,17 @@
     return bar;
   }
 
-  function say(key, event, ctx) {
+  function say(key, event, ctx, lineKey = key) {
     const tier = TIER[key] == null ? 0 : TIER[key];
     const now = state.now();
     if (now < state.busyUntil && tier <= state.currentTier && tier < 3) return false;
-    const line = pick(key);
+    const line = pick(lineKey);
     if (!line) return false;
     const text = fill(line.text, event, ctx);
     const showMs = Math.max(2400, Math.min(6000, 900 + text.length * 55));
     state.busyUntil = now + Math.max(showMs, COOLDOWN_MS);
     state.currentTier = tier;
-    state.log.push({ key, text, minute: event.minute || null });
+    state.log.push({ key, lineKey, text, minute: event.minute || null });
     if (state.log.length > 50) state.log.shift();
     const bar = state.captions ? ensureBar() : null;
     if (bar) {
@@ -195,7 +195,7 @@
       const score = ctx && ctx.score ? ctx.score : null;
       const shot = state.lastShot[team];
       if (team === 'you' || team === 'opp') state.lastShot[team] = null;
-      if (scorerTeam && team && scorerTeam !== team) return 'own-goal';
+      if (event.ownGoal || (scorerTeam && team && scorerTeam !== team)) return 'own-goal';
       if (event.freeKickGoal) return 'free-kick-goal';
       if (score) {
         const mine = score[team], theirs = score[other(team)];
@@ -205,7 +205,7 @@
       }
       // The match flags a possible keeper error on many goals, so Joe's keeper-mistake lines
       // only sometimes replace the goal call.
-      if (event.keeperErrorCandidate && state.lines['keeper-mistake'].length && state.random() < 0.3) return 'keeper-mistake';
+      if (event.keeperErrorCandidate && state.random() < 0.3) return 'keeper-mistake';
       if (shot && /header/i.test(String(shot.shotType || ''))) return 'header-goal';
       const metres = metresFrom(shot);
       if (metres != null && metres >= 25) return 'long-range-goal';
@@ -229,6 +229,7 @@
     if (type === 'darty-toy-pop') return 'pop';
     if (type === 'tackle' && event.slide) return 'slide-tackle';
     if (type === 'foul') return 'foul';
+    if (type === 'offside') return 'offside';
     if (type === 'yellow-card') return 'yellow-card';
     if (type === 'red-card') return 'red-card';
     if (type === 'substitution') return 'substitution';
@@ -244,10 +245,12 @@
     if (!key) return null;
     const subject = key === 'pop' && event.actorName ? { ...event, player: event.actorName } : event;
     const genericGoalFallbacks = new Set(['header-goal', 'equaliser', 'late-winner', 'comeback']);
-    const spokenKey = state.lines[key] && state.lines[key].length
+    const mistakeFallbacks = new Set(['keeper-mistake', 'big-chance-missed', 'foul', 'offside']);
+    const lineKey = state.lines[key] && state.lines[key].length
       ? key
-      : genericGoalFallbacks.has(key) && state.lines.goal.length ? 'goal' : key;
-    return say(spokenKey, subject, ctx || null) ? spokenKey : null;
+      : genericGoalFallbacks.has(key) && state.lines.goal.length ? 'goal'
+        : mistakeFallbacks.has(key) && state.lines['own-goal'].length ? 'own-goal' : key;
+    return say(key, subject, ctx || null, lineKey) ? key : null;
   }
 
   function init(options = {}) {

@@ -1,5 +1,13 @@
 # Football Legacy — Changelog
 
+## DARTY Joe commentary and gameplay pass — 26 October 2026
+
+- Added Joe Baker's ten recorded commentary clips for kick-off, goals, a long-range goal, a free-kick goal, mistakes and great saves. The unrecorded “What an own goal” line remains absent, subtitles stay off, and Joe's two recorded mistake calls also cover obvious misses, keeper mistakes, fouls and offsides.
+- A carried ball can now cross either goal line between the posts. This permits a player to dribble the ball into the attacking goal and still records a backwards carry over the other line as a genuine own goal.
+- Human standing tackles and shoulder challenges now prefer the nearby ball carrier over a closer off-ball opponent. The shared standing- and slide-contact windows are slightly longer and wider for both human and CPU players, without a difficulty or controller advantage.
+- Quick Play difficulty now reaches the live CPU V2 decision layer. Ultimate reads openings sooner, commits one more runner, progresses with less hesitation and coordinates pressure more often; pace, acceleration, physical reach, passing execution, shooting execution and keeper outcomes remain unchanged.
+- Two complete Ultimate CPU-v-CPU lab matches produced 19 shots apiece, active sprint routes, 15 reported tackles apiece and no browser or strict-authority errors. A same-seed Professional control produced 13 shots and 8 tackles. These are autonomous direction checks, not a replacement for Josh and Joe judging the normal-speed feel.
+
 ## DARTY CPU possession races and sprinting — 26 October 2026
 
 - Loose-ball collectors now lead a moving ball from their own position and pace instead of sharing one tiny chase point. An expired pass no longer gives its former target a large selection advantage.

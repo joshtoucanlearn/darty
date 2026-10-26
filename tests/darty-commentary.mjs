@@ -39,6 +39,7 @@ test('goal types: own goal, equaliser, late winner, header, long range', () => {
   const { api } = load();
   const m = (event, score) => api.momentFor(event, { ...ctx, score });
   assert.equal(m({ type: 'goal', team: 'you', playerId: 'che-terry', minute: 20 }, { you: 1, opp: 0 }), 'own-goal');
+  assert.equal(m({ type: 'goal', team: 'you', playerId: 'ars-henry', ownGoal: true, minute: 21 }, { you: 2, opp: 0 }), 'own-goal');
   assert.equal(m({ type: 'goal', team: 'you', playerId: 'ars-henry', minute: 40 }, { you: 1, opp: 1 }), 'equaliser');
   assert.equal(m({ type: 'goal', team: 'you', playerId: 'ars-henry', minute: 88 }, { you: 2, opp: 1 }), 'late-winner');
   api.momentFor({ type: 'shot', team: 'opp', shotType: 'header' }, ctx);
@@ -53,14 +54,19 @@ test('goal types: own goal, equaliser, late winner, header, long range', () => {
 test('Joe remains the author of every populated line and unwritten periods stay silent', () => {
   const { api } = load();
   assert.match(joeLines.source, /Joe Baker's lines/);
-  assert.equal(api.load(joeLines), 11);
+  assert.equal(api.load(joeLines), 10);
   assert.deepEqual(joeLines.moments['half-time'], []);
   assert.deepEqual(joeLines.moments['full-time'], []);
-  assert.deepEqual(joeLines.moments.goal, ['What a fantastic goal', 'What a wonderful goal']);
-  assert.equal(joeLines.moments['free-kick-goal'][0], 'What a free kick! Aaawhh, from {player} !');
+  assert.deepEqual(joeLines.moments.goal.map(row => row.text), ['What a fantastic goal', 'What a wonderful goal']);
+  assert.equal(joeLines.moments['free-kick-goal'][0].text, 'What a free kick! Aaawhh, from {player} !');
   assert.equal(joeLines.moments['great-save'][0].text, 'Fantastic save');
   assert.equal(joeLines.moments['great-save'][0].sourceText, 'Fantastic save (in a very british voice)');
   assert.equal(joeLines.moments['great-save'][0].deliveryNote, 'in a very british voice');
+  assert.equal(joeLines.moments['own-goal'].some(row => row.text === 'What an own goal'), false);
+  assert.deepEqual(joeLines.moments['own-goal'].map(row => row.audio), ['audio/mistake-1.m4a', 'audio/mistake-2.m4a']);
+  for (const rows of Object.values(joeLines.moments)) {
+    for (const row of rows) assert.match(row.audio, /^audio\/[\w-]+\.m4a$/);
+  }
 });
 
 test('an early kick-off event waits for Joe’s line pack instead of consuming the cue', () => {
@@ -82,8 +88,37 @@ test('the live audio-ready mode suppresses the subtitle element', async () => {
 test('special goal moments with no Joe-specific line fall back to his general goal calls', () => {
   const { api, bar } = load();
   api.load(joeLines);
-  assert.equal(api.onEvent({ type: 'goal', team: 'you', playerId: 'ars-henry', player: 'Henry', minute: 88 }, { ...ctx, score: { you: 2, opp: 1 } }), 'goal');
-  assert.ok(joeLines.moments.goal.includes(bar.textContent));
+  assert.equal(api.onEvent({ type: 'goal', team: 'you', playerId: 'ars-henry', player: 'Henry', minute: 88 }, { ...ctx, score: { you: 2, opp: 1 } }), 'late-winner');
+  assert.equal(api.status().log.at(-1).lineKey, 'goal');
+  assert.ok(joeLines.moments.goal.some(row => row.text === bar.textContent));
+});
+
+test('Joe’s recorded mistake calls cover fouls, offsides and obvious errors without invented lines', () => {
+  const { api, tick } = load();
+  api.load(joeLines);
+  for (const event of [
+    { type: 'foul', team: 'opp', minute: 12 },
+    { type: 'offside', team: 'you', minute: 18 },
+    { type: 'shot', team: 'you', xg: .44, distance: 240 },
+    { type: 'shot-off-target', team: 'you', minute: 23 },
+    { type: 'goal', team: 'you', playerId: 'che-terry', minute: 31 }
+  ]) {
+    tick(10000);
+    const spoken = api.onEvent(event, ctx);
+    if (event.type !== 'shot') {
+      assert.ok(['foul', 'offside', 'big-chance-missed', 'own-goal'].includes(spoken));
+      const last = api.status().log.at(-1);
+      assert.equal(last.lineKey, 'own-goal');
+      assert.ok(joeLines.moments['own-goal'].some(row => row.text === last.text));
+    }
+  }
+});
+
+test('a keeper error can select Joe’s shared mistake bank even though its dedicated bank is blank', async () => {
+  const { api } = load();
+  await api.init({ lines: joeLines, random: () => 0 });
+  assert.equal(api.onEvent({ type: 'goal', team: 'you', playerId: 'ars-henry', keeperErrorCandidate: true, minute: 44 }, ctx), 'keeper-mistake');
+  assert.equal(api.status().log.at(-1).lineKey, 'own-goal');
 });
 
 test('cooldown holds routine lines, goals cut in, no line repeats back to back', () => {

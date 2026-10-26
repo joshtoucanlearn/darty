@@ -109,7 +109,7 @@
         "live-v2-match-control-composition.js",
         "live-v2-authority-adapter.js"
       ],
-      "scriptCacheVersion": "174-fl-v2-final-candidate-5-joe-cpu-races-1",
+      "scriptCacheVersion": "174-fl-v2-final-candidate-5-joe-voice-gameplay-1",
       "workflowRemovalAllowed": true
     },
     "liveShadowAttachment": {
@@ -192,7 +192,7 @@
         "online/index.html": "84085c9fcedbd70964d8f8c7705752418fe8a73165c4220b86beeb01fc9e09dc"
       },
       "regressionGates": {
-        "tests/controller-reconnect-and-quick-play-launch.mjs": "273eaa507a580c000a4e0307cc69097968011ba1e273cdf6489c8b70eac97a24",
+        "tests/controller-reconnect-and-quick-play-launch.mjs": "995b04b0a6403515c5b8c83ef4b7e8a99f65a080cff1f445a3e952d4b2be5c50",
         "tests/online-quality-stability.mjs": "c2628da68e5f9ed13f1184b0dcff92a04d3f5e8955035f97da64373267921f32",
         "tests/online-controller-hotfix.mjs": "542cc3005d0cb85ada5cde81859a4ea7197c55ec2bd52c7f3dd9ecb55280896c"
       }
@@ -203,7 +203,7 @@
       "path": "index.html",
       "purpose": "main menu with V2-only playable match routes and unavailable multiplayer notices",
       "baselineSha256": "a86ce73e7221560c384ba3f87c6befff0e35b54edc838ce4a869c5c45e70c81b",
-      "candidateSha256": "cbc60b4a462d6273478e6f1067044bcfb57db39d029ad9714ad261810a2e6ec3",
+      "candidateSha256": "57c77228f254069f6ce6e9abe9932b833be16116908bcf298f6499fb9cd7f3fd",
       "expectedRelation": "v2-only-entry-routing-and-no-previous-engine-playpath"
     },
     {
@@ -238,7 +238,7 @@
       "path": "match-engine/match.html",
       "purpose": "V2-only playable host with exact three-workflow fail-closed preflight",
       "baselineSha256": "8380734db3a142293c5bca2a22f6b6cc9e6a0fa658f9f0c26cce8ad1801cf678",
-      "candidateSha256": "c200520afc3016ff46080ba325239f392b2251528c615180d8e31ed097a1bcb2",
+      "candidateSha256": "2db86f230af73c9d4cf0560ebee1e32ca337fd161ec5d4634793e60f62b3e148",
       "pinState": "frozen",
       "expectedRelation": "authoritative-v2-only-three-workflow-host-plus-nonplayable-compatibility-scaffold"
     },
@@ -288,14 +288,14 @@
       "path": "quick-play/index.html",
       "purpose": "Quick Play launcher with fixed FL V2 authority and unsupported multiplayer modes disabled",
       "baselineSha256": "6732f88581b00dfb5651d3bdfae4bc440b7891c3763b9b8e13e482a4fe04fef1",
-      "candidateSha256": "3658ee7d24fd007d2781500ea17fbadc049bd56557c44f2c31b25b0c6ed4d8bb",
+      "candidateSha256": "c56b826895e3668ef5731908b7526bb7678a6832156ee49ee1eef5bd8f0e3fed",
       "expectedRelation": "v2-only-three-workflow-launcher-plus-controller-and-gameplay-cache-bust"
     },
     {
       "path": "quick-play/app.js",
       "purpose": "Quick Play mode, controller, deterministic seed and exact V2-only payload routing",
       "baselineSha256": "ae18e09bb8fef49c3da25b5187cf26b9b2d7bbb91c46f51dd044a8e75fd44ac6",
-      "candidateSha256": "6ffc7b06e06064586ac34e7fa5ce4e4a7dc749927da51d13c7e317a646a2893c",
+      "candidateSha256": "c3fcf5ed9160130b0f9a19a23c84314b81c08c532332053af9c3607e75cf76c2",
       "expectedRelation": "v2-only-three-workflow-engine-payload-routing"
     },
     {
@@ -500,7 +500,7 @@
       "path": "match-engine/live-v2-authority-adapter.js",
       "purpose": "outer offline normal-match gameplay transaction with rollback and host-level strict-stop enforcement",
       "baselineAbsent": true,
-      "candidateSha256": "17a2464c8f4840c749b3ac8727537bd2ffd0e8fdeb7236d459cfa8adcef6c729",
+      "candidateSha256": "02a701efd49de0a3cdea13776b6596c3d7fe2a00877937e190a5b5495f69d478",
       "pinState": "frozen",
       "authorityScope": ["single-player-quick-play", "cpu-versus-cpu"]
     },

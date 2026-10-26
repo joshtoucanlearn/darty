@@ -45,7 +45,7 @@ async function getLaunchTemplate(browser) {
   if (launchTemplate) return launchTemplate;
   const page = await browser.newPage();
   await serve(page);
-  await page.goto(`${ORIGIN}/quick-play/index.html?${opt('qp', 'mode=spectator&engine=fl-v2&candidate=5&release=joe-20261026-cpu-races')}`, { waitUntil: 'load' });
+  await page.goto(`${ORIGIN}/quick-play/index.html?${opt('qp', 'mode=spectator&engine=fl-v2&candidate=5&release=joe-20261026-voice-gameplay')}`, { waitUntil: 'load' });
   await page.waitForFunction(() => typeof window.buildMatchData === 'function' || typeof buildMatchData === 'function', { timeout: 30000 });
   const nav = page.waitForNavigation({ timeout: 30000 });
   await page.evaluate(() => saveAndLaunch(buildMatchData()));
