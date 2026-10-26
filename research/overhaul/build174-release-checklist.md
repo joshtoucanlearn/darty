@@ -40,8 +40,8 @@ Entry-point requirements:
 
 ## Candidate 5 cache boundary
 
-- Quick Play application URL: `174-fl-v2-final-candidate-5`.
-- Dynamically loaded V2 runtime URL: `174-fl-v2-final-candidate-5`.
+- Quick Play application URL: `174-fl-v2-final-candidate-5-joe-lesson-ready-2`.
+- Dynamically loaded V2 runtime URL: `174-fl-v2-final-candidate-5-joe-lesson-ready-2`.
 - Quick Play writes `engine=fl-v2&candidate=5` to every supported match URL.
 - Unchanged historical-squad and replay-export assets retain their previous content tokens; their bytes did not change.
 - GitHub Pages previously served `Cache-Control: max-age=600`; public verification must use Candidate 5 URLs and compare bytes after merge.
@@ -50,16 +50,16 @@ Entry-point requirements:
 
 The final manifest must match these SHA-256 values after the last edit:
 
-- `match-engine/match.html`: `2db86f230af73c9d4cf0560ebee1e32ca337fd161ec5d4634793e60f62b3e148`
+- `match-engine/match.html`: `e30479ddd5accbab4d2edf014e5992dbee4439c14e2452f38603c02221759654`
 - `match-engine/ball-engine-v2.js`: `e2b6776a12ebcf8353e322c181e2f38dbb18c1c41d10c1cebf134418a296a819`
 - `match-engine/movement-engine-v2.js`: `e8848db45518ef54ed5cec5e65091160605decfb9995d23b9769395f1eafa0b3`
 - `match-engine/dribbling-state-v2.js`: `84ae72d02125b2bdf273dc838258ce6b26d9dfe59d52e568e262d1550ab72a42`
 - `match-engine/live-v2-authority-adapter.js`: `02a701efd49de0a3cdea13776b6596c3d7fe2a00877937e190a5b5495f69d478`
 - `match-engine/live-v2-contact-authority-composer.js`: `15f87890f25012412dff34d1d8f0dcdf44694d14d107b859f260cde3c4e6c10b`
-- `quick-play/app.js`: `c3fcf5ed9160130b0f9a19a23c84314b81c08c532332053af9c3607e75cf76c2`
-- `quick-play/index.html`: `c56b826895e3668ef5731908b7526bb7678a6832156ee49ee1eef5bd8f0e3fed`
+- `quick-play/app.js`: `5cb2ce72ebe1f24571509fb492943df37e635c92eaf065d4daf11d152319b0e9`
+- `quick-play/index.html`: `74ac8ccd4a4b6d6dd6ae14d565fa7d6778f1bac8269734203c09c4612b3dc8a0`
 - `quick-play/styles.css`: `ed49a7f9f80f876373c38feafa1599b3a1248faa513b39d67788f5221fc53532`
-- `index.html`: `57c77228f254069f6ce6e9abe9932b833be16116908bcf298f6499fb9cd7f3fd`
+- `index.html`: `752f02e4da9112e5e456b9024a3c62e6f19bef062e93e3bd16cb83485263a052`
 - `styles.css`: `a60b5b114ce5d41ddd4d54717dce27ce51ba5bea0fedf14e11d42da2010e40b4`
 - `online/index.html`: `84085c9fcedbd70964d8f8c7705752418fe8a73165c4220b86beeb01fc9e09dc`
 - `match-engine/index.html`: `ca35d6f816c652f569799072463c35563895573afd67122fc644d7688ad8cc61`

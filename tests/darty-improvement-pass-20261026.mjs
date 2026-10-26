@@ -18,6 +18,13 @@ const Contact = require(path.join(engine, 'live-v2-contact-authority-composer.js
 const Dribbling = require(path.join(engine, 'dribbling-state-v2.js'));
 const matchSource = readFileSync(path.join(engine, 'match.html'), 'utf8');
 
+function sourceBetween(start, end) {
+  const from = matchSource.indexOf(start);
+  const to = matchSource.indexOf(end, from + start.length);
+  assert.ok(from >= 0 && to > from, `missing source window: ${start}`);
+  return matchSource.slice(from, to);
+}
+
 function liveSnapshot() {
   const pitch = { xMin: 0, xMax: 105, yMin: -34, yMax: 34 };
   const teams = ['you', 'opp'].map(teamId => ({
@@ -108,6 +115,71 @@ test('a carried ball can cross either goal line only inside the goal mouth', () 
   assert.deepEqual(Array.from(context.result), ['you', 'opp', null, null]);
   assert.match(matchSource, /logEvent\('dribble-goal-entry'[\s\S]*score\(carriedGoalTeam\)/);
 });
+
+test('slide tackles have a bounded ball-first chance instead of an automatic win', () => {
+  const declaration = sourceBetween('function slideBallFirstDecision', 'function completeSlideWin');
+  const context = {
+    clamp: (value, low, high) => Math.max(low, Math.min(high, value)),
+    rad: 18,
+    aiChallengeGeometry: offender => ({ fromBehind: Boolean(offender.behind), facingTo: offender.behind ? -0.4 : 0.8 }),
+    result: null
+  };
+  vm.runInNewContext(`${declaration};
+    const victim={attrs:{control:82,balance:82,strength:78}};
+    const profile={cleanReach:58,entrySpeed:4.4};
+    const front={attrs:{defend:84,aggression:80,strength:82},behind:false};
+    const rear={...front,behind:true};
+    result={
+      clean:slideBallFirstDecision(front,victim,43,profile,1,0),
+      missed:slideBallFirstDecision(front,victim,43,profile,1,.99),
+      rear:slideBallFirstDecision(rear,victim,43,profile,1,.5)
+    };`, context);
+  assert.equal(context.result.clean.clean, true);
+  assert.equal(context.result.missed.clean, false);
+  assert.ok(context.result.clean.chance <= 0.82);
+  assert.ok(context.result.rear.chance < context.result.clean.chance);
+  assert.match(matchSource, /if\(decision\.clean\)completeSlideWin\(controlled,o,decision\);else completeSlideFoul\(controlled,o,decision\)/);
+});
+
+test('off-ball tackle contacts become fouls while incidental low-speed shoulders remain legal', () => {
+  const declaration = sourceBetween('function offBallContactFoulDecision', '// FL V2 tackles');
+  const context = { result: null };
+  vm.runInNewContext(`${declaration};result=[
+    offBallContactFoulDecision({type:'slide-contact',approachSpeedMps:0},false),
+    offBallContactFoulDecision({type:'tackle-contact',approachSpeedMps:0},false),
+    offBallContactFoulDecision({type:'shoulder-contact',approachSpeedMps:5.11},false),
+    offBallContactFoulDecision({type:'shoulder-contact',approachSpeedMps:.09},false)
+  ]`, context);
+  assert.deepEqual(Array.from(context.result, row => row.foul), [true, true, true, false]);
+  assert.match(matchSource, /target===liveV2TickCarrier/);
+  assert.match(matchSource, /offBall:\!\!f\.info\.offBall/);
+});
+
+test('keeper dive follows the real shot flight and recovery retains the prior contact shape', () => {
+  const recoveryAction = sourceBetween('function keeperRecoveryContactAction', 'function keeperShotContactEnvelope');
+  const envelope = sourceBetween('function keeperShotContactEnvelope', 'function keeperIncomingShotFrames');
+  const incoming = sourceBetween('function keeperIncomingShotFrames', 'function keeperFollowThroughFrames');
+  const followThrough = sourceBetween('function keeperFollowThroughFrames', '// D2');
+  const context = {
+    M: 100,
+    W: 3500,
+    rad: 18,
+    ball: null,
+    keeperAnimationAction: animation => animation === 'full-stretch-low' ? 'keeperLowDive' : 'idle',
+    keeperDivingAction: action => action === 'keeperLowDive',
+    result: null
+  };
+  vm.runInNewContext(`${recoveryAction}${envelope}${incoming}${followThrough};
+    const keeper={team:'opp',action:'keeperRecover',lastSaveAnimation:'full-stretch-low',diveT:0};
+    const shot={owner:null,isShot:true,shooter:{team:'you'},x:3270,vx:10,z:12};
+    result={envelope:keeperShotContactEnvelope(keeper),hold:keeperFollowThroughFrames(keeper,shot),wrongWay:keeperIncomingShotFrames(keeper,{...shot,vx:-10})};`, context);
+  assert.equal(context.result.envelope.recovering, true);
+  assert.ok(context.result.envelope.reach > 36);
+  assert.equal(context.result.hold, 8);
+  assert.equal(context.result.wrongWay, null);
+  assert.match(matchSource, /keeper-dive-follow-through/);
+});
+
 test('ultimate CPU tuning changes decisions only and preserves the shared physical model', () => {
   const professional = Adapter.cpuDifficultyConfig('professional');
   const ultimate = Adapter.cpuDifficultyConfig('ultimate');

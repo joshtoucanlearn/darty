@@ -1,5 +1,12 @@
 # Football Legacy — Changelog
 
+## DARTY lesson-ready foul, slide and keeper pass — 26 October 2026
+
+- Restored referee decisions for off-ball tackles, slides, forceful shoulder charges and pushes from behind, while leaving negligible incidental contact legal.
+- Replaced guaranteed close-range slide wins with a bounded ball-first contest using defending, control, balance, angle, timing and approach speed. Failed close slides enter the existing foul and discipline flow.
+- Kept each goalkeeper's chosen dive active through the remaining shot flight and retained a reduced matching contact shape during early recovery, preventing an animation from collapsing just before the ball arrives.
+- A browser proof covered the foul, incidental-contact, slide and keeper paths. A 40-shot grid produced 21 goals and 19 saves with no browser errors, and 309 targeted regressions passed; real-play feel remains for Josh and Joe's lesson acceptance.
+
 ## DARTY Joe commentary and gameplay pass — 26 October 2026
 
 - Added Joe Baker's ten recorded commentary clips for kick-off, goals, a long-range goal, a free-kick goal, mistakes and great saves. The unrecorded “What an own goal” line remains absent, subtitles stay off, and Joe's two recorded mistake calls also cover obvious misses, keeper mistakes, fouls and offsides.
