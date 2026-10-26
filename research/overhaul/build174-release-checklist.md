@@ -50,16 +50,16 @@ Entry-point requirements:
 
 The final manifest must match these SHA-256 values after the last edit:
 
-- `match-engine/match.html`: `ef4af6424b0d00df1e31ae18fd0fe7bc822fb022b1800d160b9407cfaaa2b96f`
+- `match-engine/match.html`: `c200520afc3016ff46080ba325239f392b2251528c615180d8e31ed097a1bcb2`
 - `match-engine/ball-engine-v2.js`: `e2b6776a12ebcf8353e322c181e2f38dbb18c1c41d10c1cebf134418a296a819`
 - `match-engine/movement-engine-v2.js`: `e8848db45518ef54ed5cec5e65091160605decfb9995d23b9769395f1eafa0b3`
 - `match-engine/dribbling-state-v2.js`: `84ae72d02125b2bdf273dc838258ce6b26d9dfe59d52e568e262d1550ab72a42`
-- `match-engine/live-v2-authority-adapter.js`: `204dc528cfae88641c06d271a5a195f003ef9058f36ba3220587788d031ac521`
+- `match-engine/live-v2-authority-adapter.js`: `17a2464c8f4840c749b3ac8727537bd2ffd0e8fdeb7236d459cfa8adcef6c729`
 - `match-engine/live-v2-contact-authority-composer.js`: `15f87890f25012412dff34d1d8f0dcdf44694d14d107b859f260cde3c4e6c10b`
-- `quick-play/app.js`: `4af679fc2e63404e93da8e5e2afec6876acc853a20720d74cfd9193e5eb7a801`
-- `quick-play/index.html`: `a9c1787b8841746ad94c544bbd87b88178972fa87195329cff8bd6d0e3250d75`
+- `quick-play/app.js`: `6ffc7b06e06064586ac34e7fa5ce4e4a7dc749927da51d13c7e317a646a2893c`
+- `quick-play/index.html`: `3658ee7d24fd007d2781500ea17fbadc049bd56557c44f2c31b25b0c6ed4d8bb`
 - `quick-play/styles.css`: `ed49a7f9f80f876373c38feafa1599b3a1248faa513b39d67788f5221fc53532`
-- `index.html`: `8ef78c210448f08f026e57711093da5bc0e95b8d95ff841df7b756c26135da50`
+- `index.html`: `cbc60b4a462d6273478e6f1067044bcfb57db39d029ad9714ad261810a2e6ec3`
 - `styles.css`: `a60b5b114ce5d41ddd4d54717dce27ce51ba5bea0fedf14e11d42da2010e40b4`
 - `online/index.html`: `84085c9fcedbd70964d8f8c7705752418fe8a73165c4220b86beeb01fc9e09dc`
 - `match-engine/index.html`: `ca35d6f816c652f569799072463c35563895573afd67122fc644d7688ad8cc61`

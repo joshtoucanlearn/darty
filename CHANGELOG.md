@@ -1,5 +1,11 @@
 # Football Legacy — Changelog
 
+## DARTY CPU possession races and sprinting — 26 October 2026
+
+- Loose-ball collectors now lead a moving ball from their own position and pace instead of sharing one tiny chase point. An expired pass no longer gives its former target a large selection advantage.
+- CPU carriers sprint into committed open space when the target is genuinely distant, then come back under control near it. Recovery, reception, defensive and off-ball run sprint paths remain independent.
+- Added regressions for carrier pace, expired-route neutrality and opposing interception geometry, plus match-lab locomotion counts. The post-change seed-173 full match completed with no browser errors; real-play difficulty and feel remain for Josh to judge.
+
 ## DARTY one-hit playtest — 28 September 2026
 
 - One qualifying hard tackle or shoulder clash now triggers the toy-part pop immediately. Contact strength, winning-contact checks, per-player state and duplicate protection are preserved.

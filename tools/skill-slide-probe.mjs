@@ -38,7 +38,7 @@ const encode = o => Buffer.from(JSON.stringify(o), 'utf8').toString('base64').re
 async function launchUrl(browser, seed) {
   const page = await browser.newPage(); await serve(page);
   // Single Player (human v CPU), not spectator.
-  await page.goto(`${ORIGIN}/quick-play/index.html?engine=fl-v2&candidate=5&release=joe-20261026-audio-ready`, { waitUntil: 'load' });
+  await page.goto(`${ORIGIN}/quick-play/index.html?engine=fl-v2&candidate=5&release=joe-20261026-cpu-races`, { waitUntil: 'load' });
   await page.waitForFunction(() => typeof buildMatchData === 'function', { timeout: 30000 });
   const nav = page.waitForNavigation({ timeout: 30000 });
   await page.evaluate(() => saveAndLaunch(buildMatchData()));

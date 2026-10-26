@@ -44,7 +44,7 @@ async function getLaunchTemplate(browser) {
   if (launchTemplate) return launchTemplate;
   const page = await browser.newPage();
   await serve(page);
-  await page.goto(`${ORIGIN}/quick-play/index.html?${opt('qp', 'mode=spectator&engine=fl-v2&candidate=5&release=joe-20261026-audio-ready')}`, { waitUntil: 'load' });
+  await page.goto(`${ORIGIN}/quick-play/index.html?${opt('qp', 'mode=spectator&engine=fl-v2&candidate=5&release=joe-20261026-cpu-races')}`, { waitUntil: 'load' });
   await page.waitForFunction(() => typeof window.buildMatchData === 'function' || typeof buildMatchData === 'function', { timeout: 30000 });
   const nav = page.waitForNavigation({ timeout: 30000 });
   await page.evaluate(() => saveAndLaunch(buildMatchData()));
@@ -97,7 +97,11 @@ async function runMatch(browser, seed) {
   page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
   await page.setViewport({ width: 640, height: 360 });
   await serve(page);
-  await page.evaluateOnNewDocument(() => { window.__dartyLabIntents = {}; window.__dartyLabMisses = []; });
+  await page.evaluateOnNewDocument(() => {
+    window.__dartyLabIntents = {};
+    window.__dartyLabMisses = [];
+    window.__dartyLabLocomotion = {};
+  });
   const started = Date.now();
   await page.goto(matchUrl(await getLaunchTemplate(browser), seed, extraParams), { waitUntil: 'load', timeout: 120000 });
   await page.waitForFunction(() => window.dartyCapture, { timeout: 60000 });
@@ -118,8 +122,12 @@ async function runMatch(browser, seed) {
   const events = await page.evaluate(() => window.dartyCapture.events());
   const intents = await page.evaluate(() => window.__dartyLabIntents || {});
   const passMisses = await page.evaluate(() => window.__dartyLabMisses || []);
+  const locomotion = await page.evaluate(() => window.__dartyLabLocomotion || {});
   await page.close();
-  return { seed, minutes, preflight, intents, passMisses, wallSeconds: Math.round((Date.now() - started) / 1000), frames: chunks * 150, finalPhase: state && state.phase, score: state && state.score, errors: errors.slice(0, 20), report, captureEvents: events, samples };
+  return { seed, minutes, preflight, intents, passMisses, locomotion,
+    wallSeconds: Math.round((Date.now() - started) / 1000), frames: chunks * 150,
+    finalPhase: state && state.phase, score: state && state.score,
+    errors: errors.slice(0, 20), report, captureEvents: events, samples };
 }
 
 const browser = await puppeteer.launch({ headless: true, executablePath: CHROME, args: ['--use-angle=metal', '--enable-webgl', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'] });

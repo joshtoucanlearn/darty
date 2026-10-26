@@ -89,6 +89,25 @@ function forcedShortSupportCpu(target, supportMetrics = null) {
   };
 }
 
+function forcedCarryCpu(target) {
+  return {
+    ...CPU,
+    decide(snapshot, previousMemory, options) {
+      const decision = CPU.decide(snapshot, previousMemory, options);
+      if (snapshot.teamId !== snapshot.possessionTeamId || snapshot.carrierId == null) return decision;
+      return {
+        ...decision,
+        carrierIntent: {
+          type: 'carry',
+          target: { ...target },
+          confidence: .9,
+          reason: 'forced-open-space-carry-fixture'
+        }
+      };
+    }
+  };
+}
+
 function sequencedCpu(firstTarget, nextIntent) {
   let controlledDecision = 0;
   return {
@@ -243,6 +262,17 @@ function shortSupportAttachment(target, supportMetrics = null) {
     seed: 201022,
     dependencies: { ball: Ball, movement: Movement, cpu: forcedShortSupportCpu(target, supportMetrics),
       formation: Formation, contact: Contact, dribbling: Dribbling },
+    host: { prepareTick() { return { commit() {}, rollback() {} }; } }
+  });
+}
+
+function carryAttachment(target) {
+  return Adapter.createAttachment({
+    enabled: true,
+    capability: capability('cpu-v-cpu'),
+    seed: 201024,
+    dependencies: { ball: Ball, movement: Movement, cpu: forcedCarryCpu(target), formation: Formation,
+      contact: Contact, dribbling: Dribbling },
     host: { prepareTick() { return { commit() {}, rollback() {} }; } }
   });
 }
@@ -724,6 +754,20 @@ test('overlapping CPU support stays under controlled carry instead of launching 
   assert.ok(intent.passRace.distanceMetres < 5.5);
 });
 
+test('a CPU carrier sprints into distant open space but keeps a nearby carry controlled', () => {
+  const farFixture = snapshotFixture({ target: { x: 55, y: 0 } });
+  const far = runTick(carryAttachment({ x: 55, y: 0 }), farFixture.snapshot);
+  const farCarrier = far.hostProjection.movement.find(row => row.id === OWNER_ID);
+  assert.equal(far.cpu.you.carrierIntent.type, 'carry');
+  assert.equal(farCarrier.locomotionState, 'sprint', JSON.stringify(farCarrier));
+
+  const nearFixture = snapshotFixture({ target: { x: 34.6, y: 0 } });
+  const near = runTick(carryAttachment({ x: 34.6, y: 0 }), nearFixture.snapshot);
+  const nearCarrier = near.hostProjection.movement.find(row => row.id === OWNER_ID);
+  assert.equal(near.cpu.you.carrierIntent.type, 'carry');
+  assert.notEqual(nearCarrier.locomotionState, 'sprint', JSON.stringify(nearCarrier));
+});
+
 test('the accepted receiver rendezvous persists after the one-frame carrier intent has gone', () => {
   assert.match(ADAPTER_SOURCE,
     /possession\s*&&\s*possession\.inFlight\s*&&\s*possession\.intendedReceiverId\s*&&\s*possession\.intendedTarget/);
@@ -848,6 +892,8 @@ test('a missed offside-pending rendezvous becomes a physical loose-ball race ins
   assert.ok(missedFrame.hostProjection.recoveryAssignments.some(row =>
     row.authority === 'v2-loose-ball-recovery'),
   JSON.stringify(missedFrame.hostProjection.recoveryAssignments));
+  assert.equal(missedFrame.hostProjection.recoveryAssignments.some(row => row.intended), false,
+    'an expired route must not keep biasing the loose-ball race toward its old receiver');
   assert.equal(missedFrame.hostProjection.contact?.ownerCandidateId ?? null, null,
     'recovery movement must not grant possession while the host still adjudicates offside involvement');
   assert.match(MATCH_SOURCE,

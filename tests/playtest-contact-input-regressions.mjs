@@ -346,6 +346,49 @@ test('neutral V2 play assigns one collector per team and assists the intended hu
     'a strong opposite input must reduce/reverse the assisted movement instead of being overridden');
 });
 
+test('each CPU team chases a moving loose ball at its own interception point', () => {
+  const snapshot = goalkeeperPossessionSnapshot();
+  snapshot.humanPlayerIds = [];
+  snapshot.contact.gate.keeperAuthority = false;
+  snapshot.contact.intendedReceiverId = null;
+  for (const [index, player] of snapshot.players.entries()) {
+    if (player.isGK) continue;
+    player.x = player.teamId === 'you' ? 7 + index * .08 : 98 - index * .08;
+    player.y = player.teamId === 'you' ? -28 : 28;
+  }
+  const chasingFromBehind = snapshot.players.find(player => player.id === 'you-CAM');
+  const meetingFromAhead = snapshot.players.find(player => player.id === 'opp-CAM');
+  assert.ok(chasingFromBehind && meetingFromAhead);
+  Object.assign(chasingFromBehind, { x: 44, y: 0 });
+  Object.assign(meetingFromAhead, { x: 54, y: 0 });
+  Object.assign(snapshot.ball, {
+    x: 50, y: 0, z: 0, vx: 4 / 60, vy: 0, zv: 0,
+    ownerId: null, targetId: null, lastKickerId: 'you-ST',
+    flightType: 'ground-pass', launchIntent: null
+  });
+
+  const live = Adapter.createAttachment({
+    enabled: true,
+    capability: Adapter.createCapability({ acknowledgement: Adapter.ACKNOWLEDGEMENT,
+      workflow: 'cpu-v-cpu', online: false, onlineMarkers: {},
+      controlOwnership: { humanPlayerIds: [], cpuTeamIds: ['you', 'opp'] } }),
+    seed: 173174,
+    dependencies: { ball: Ball, movement: Movement, cpu: CPU, formation: Formation, contact: Composer },
+    host: { prepareTick() { return { commit() {}, rollback() {} }; } }
+  });
+  const frame = live.planTick(snapshot);
+  assert.ok(frame, JSON.stringify(live.status()));
+  const behind = frame.hostProjection.recoveryAssignments.find(row => row.playerId === chasingFromBehind.id);
+  const ahead = frame.hostProjection.recoveryAssignments.find(row => row.playerId === meetingFromAhead.id);
+  assert.ok(behind && ahead, JSON.stringify(frame.hostProjection.recoveryAssignments));
+  assert.ok(behind.target.x > ahead.target.x + 1,
+    `collectors shared a naive chase point: ${JSON.stringify(frame.hostProjection.recoveryAssignments)}`);
+  for (const player of [chasingFromBehind, meetingFromAhead]) {
+    const movement = frame.hostProjection.movement.find(row => row.id === player.id);
+    assert.equal(movement.locomotionState, 'sprint', JSON.stringify(movement));
+  }
+});
+
 test('goalkeeper possession resolves the owning team to buildup and the opponent to defend', () => {
   const live = Adapter.createAttachment({
     enabled: true,

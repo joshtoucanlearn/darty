@@ -62,6 +62,9 @@
   const LOOSE_BALL_MAX_HEIGHT_METRES = 1.05;
   const LOOSE_BALL_MAX_SPEED_METRES_PER_SECOND = 28;
   const LOOSE_BALL_MAX_ETA_SECONDS = 3.2;
+  const LOOSE_BALL_INTENDED_ANTICIPATION_SECONDS = 0.28;
+  const LOOSE_BALL_INTERCEPT_MIN_SECONDS = 0.1;
+  const LOOSE_BALL_INTERCEPT_MAX_SECONDS = 0.85;
   const HUMAN_LOOSE_BALL_GUIDANCE_MAX_DISTANCE_METRES = 5.2;
   const HUMAN_LOOSE_BALL_GUIDANCE_MAX_ETA_SECONDS = 1.45;
   const HUMAN_RECEPTION_GUIDANCE_MAX_DISTANCE_METRES = 18;
@@ -948,12 +951,12 @@
       if (ball.position.z > LOOSE_BALL_MAX_HEIGHT_METRES || speed > LOOSE_BALL_MAX_SPEED_METRES_PER_SECOND) {
         return { byId: {}, rows: [] };
       }
-      const horizon = clamp(0.08 + Math.min(speed, 16) * 0.012, 0.08, 0.28);
-      const target = {
-        x: clamp(ball.position.x + ball.velocity.x * horizon, METRIC_PITCH.xMin + 0.4, METRIC_PITCH.xMax - 0.4),
-        y: clamp(ball.position.y + ball.velocity.y * horizon, METRIC_PITCH.yMin + 0.4, METRIC_PITCH.yMax - 0.4)
-      };
-      const intendedId = String(snapshot.contact.intendedReceiverId || snapshot.ball.targetId || '');
+      // A route that expires on this tick is already a neutral race. Do not
+      // let its stale host target keep the old receiver artificially selected
+      // until the host clears ball.target during commit.
+      const intendedId = possession && possession.routeExpiredAtTick === snapshot.tick ? '' :
+        String(possession && possession.inFlight && possession.intendedReceiverId ||
+          snapshot.contact.intendedReceiverId || snapshot.ball.targetId || '');
       const byId = {}, rows = [];
       for (const team of snapshot.teams) {
         const candidates = world.players.map(statePlayer => {
@@ -965,12 +968,35 @@
           // opponents may actively close the travelling ball.
           if (possession && possession.inFlight && livePlayer.teamId === possession.teamId &&
               !(possession.arrivalWindowEntered && livePlayer.id === possession.intendedReceiverId)) return null;
-          const distance = Math.hypot(target.x - statePlayer.position.x, target.y - statePlayer.position.y);
           const attrs = livePlayer.attrs || {}, pace = clamp(finite(attrs.pace, 70), 1, 99);
           const awareness = clamp(finite(attrs.awareness, 70), 1, 99), topSpeed = 5.1 + pace / 99 * 2.25;
+          // A collector behind a rolling ball and one meeting it from ahead
+          // cannot share the same short look-ahead point. Estimate each
+          // player's closing time, then lead the physical ball by a bounded
+          // fraction of that time. This remains a movement target only;
+          // First Touch still decides possession from real contact.
+          const toBall = {
+            x: ball.position.x - statePlayer.position.x,
+            y: ball.position.y - statePlayer.position.y
+          };
+          const distanceToBall = Math.hypot(toBall.x, toBall.y);
+          const towardBall = distanceToBall > 1e-6
+            ? { x: toBall.x / distanceToBall, y: toBall.y / distanceToBall }
+            : statePlayer.facing;
+          const ballEscapeSpeed = ball.velocity.x * towardBall.x + ball.velocity.y * towardBall.y;
+          const closingSpeed = Math.max(1.8, topSpeed - ballEscapeSpeed);
+          const estimatedMeetingSeconds = distanceToBall / closingSpeed;
+          const horizon = clamp(estimatedMeetingSeconds * 0.72 + Math.min(speed, 16) * 0.01,
+            LOOSE_BALL_INTERCEPT_MIN_SECONDS, LOOSE_BALL_INTERCEPT_MAX_SECONDS);
+          const target = {
+            x: clamp(ball.position.x + ball.velocity.x * horizon, METRIC_PITCH.xMin + 0.4, METRIC_PITCH.xMax - 0.4),
+            y: clamp(ball.position.y + ball.velocity.y * horizon, METRIC_PITCH.yMin + 0.4, METRIC_PITCH.yMax - 0.4)
+          };
+          const distance = Math.hypot(target.x - statePlayer.position.x, target.y - statePlayer.position.y);
           const intended = livePlayer.id === intendedId;
           const goalSide = team.attackingDirection * (target.x - statePlayer.position.x) >= 0;
-          const etaSeconds = Math.max(0, distance / topSpeed + (99 - awareness) * 0.0035 - (intended ? 1.35 : 0) - (goalSide ? 0.06 : 0));
+          const etaSeconds = Math.max(0, distance / topSpeed + (99 - awareness) * 0.0035 -
+            (intended ? LOOSE_BALL_INTENDED_ANTICIPATION_SECONDS : 0) - (goalSide ? 0.06 : 0));
           return { playerId: livePlayer.id, teamId: team.id, target, distance, etaSeconds, intended,
             human: snapshot.humanPlayerIds.has(livePlayer.id) };
         }).filter(Boolean).sort((left, right) => left.etaSeconds - right.etaSeconds ||
@@ -1040,7 +1066,7 @@
             tick: nextTick, playerId: livePlayer.id, type,
             targetId: target && target.id, direction }); continue;
         }
-        let desired = { x: 0, y: 0 }, intensity = 0, mode = 'idle';
+        let desired = { x: 0, y: 0 }, intensity = 0, mode = 'idle', cpuMovementRoute = null;
         const leaseRecovery = leaseTarget && livePlayer.id === leaseOwnerId ? (() => {
           const distance = Math.hypot(leaseTarget.x - statePlayer.position.x,
             leaseTarget.y - statePlayer.position.y);
@@ -1164,6 +1190,8 @@
           const carrierTarget = snapshot.ball.ownerId === livePlayer.id ? maps.carrier[livePlayer.teamId] : null;
           const defensiveTarget = defensiveIntent && defensiveIntent.target || null;
           const target = recoveryIntent && recoveryIntent.target || defensiveTarget || receptionTarget || runTarget || carrierTarget || maps.shape[livePlayer.id];
+          cpuMovementRoute = recoveryIntent ? 'recovery' : defensiveIntent ? 'defensive' :
+            receptionTarget ? 'reception' : runTarget ? 'run' : carrierTarget ? 'carrier' : 'shape';
           if (target) {
             const toward = { x: target.x - metric.x, y: target.y - metric.y }, distance = vectorLength(toward);
             desired = unit(toward, statePlayer.facing);
@@ -1226,10 +1254,22 @@
                 stoppingDistanceMetres: +stoppingDistance.toFixed(3)
               });
             } else {
-              intensity = clamp(distance / (runTarget ? 7 : 12), runTarget ? 0.74 : 0.12, runTarget ? 1 : 0.72);
-              mode = runTarget || intensity > 0.74 ? 'sprint' : intensity > 0.2 ? 'run' : 'walk';
+              // A carrier with a committed open-space target should attack it
+              // at sprint pace, then come back under control near the point.
+              // Previously carrierTarget fell through to the formation cap of
+              // 0.72, making sprint mathematically impossible with the ball.
+              const carrierSprint = Boolean(carrierTarget && distance > 2.2);
+              intensity = carrierTarget
+                ? clamp(distance / 5, 0.58, 1)
+                : clamp(distance / (runTarget ? 7 : 12), runTarget ? 0.74 : 0.12, runTarget ? 1 : 0.72);
+              mode = runTarget || carrierSprint || intensity > 0.74 ? 'sprint' : intensity > 0.2 ? 'run' : 'walk';
             }
           }
+        }
+        const labMovementModes = typeof globalThis !== 'undefined' && globalThis.__dartyLabLocomotion;
+        if (labMovementModes && !isHuman && mode === 'sprint') {
+          const key = 'cpu-' + (cpuMovementRoute || 'unknown') + '-sprint';
+          labMovementModes[key] = (labMovementModes[key] || 0) + 1;
         }
         commands.push(mode === 'idle' ? { id: 'stop:' + livePlayer.id + ':' + nextTick, tick: nextTick, playerId: livePlayer.id, type: 'stop' }
           : { id: 'move:' + livePlayer.id + ':' + nextTick, tick: nextTick, playerId: livePlayer.id, type: 'move', move: desired, facing: desired, mode, intensity, durationTicks: 1,
@@ -2228,6 +2268,13 @@
           return { id: player.id, x: position.x, y: position.y, vx: velocity.x, vy: velocity.y, fx: player.facing.x, fy: player.facing.y,
             stamina: player.stamina, locomotionState: player.locomotionState, visibleAction: player.visibleAction, action: player.action ? clone(player.action) : null };
         });
+        const labLocomotion = typeof globalThis !== 'undefined' && globalThis.__dartyLabLocomotion;
+        if (labLocomotion) {
+          for (const player of movementProjection) {
+            const state = String(player.locomotionState || 'unknown');
+            labLocomotion[state] = (labLocomotion[state] || 0) + 1;
+          }
+        }
         const intelligence = intelligenceProjection(controlSnapshot, cpu.outputs);
         const movementOwnerId = movement.state.ballOwnerId == null ? null : String(movement.state.ballOwnerId);
         const snapshotOwner = controlSnapshot.ball.ownerId && snapshot.players.find(player => player.id === controlSnapshot.ball.ownerId);
