@@ -238,7 +238,7 @@
       "path": "match-engine/match.html",
       "purpose": "V2-only playable host with exact three-workflow fail-closed preflight",
       "baselineSha256": "8380734db3a142293c5bca2a22f6b6cc9e6a0fa658f9f0c26cce8ad1801cf678",
-      "candidateSha256": "27b61cd20d132819917de1ff7c16a8d3071d26517a6457da95ebf4c22f1965c4",
+      "candidateSha256": "36db8bbbbd893684529c4ee628be1456fc5c4e9e9b42ea0f18e199cc2ee0e33e",
       "pinState": "frozen",
       "expectedRelation": "authoritative-v2-only-three-workflow-host-plus-nonplayable-compatibility-scaffold"
     },
@@ -388,7 +388,7 @@
       "path": "match-engine/instant-replay-review-v2.js",
       "purpose": "pause-only immutable replay review controller with no simulation authority",
       "baselineAbsent": true,
-      "candidateSha256": "d7f628289917b134137e9bf41c67255a71a57a9f1c48635e3c90273137fe1c18",
+      "candidateSha256": "380e8fc534e7b79b5ec45c655533dc8828dc2af93446de15f85dd54e1a40823a",
       "authorityScope": ["offline-pause-review"]
     },
     {

@@ -46,7 +46,7 @@ export function countsAsFullTime(state, { stalled = false, capped = false } = {}
     state.progress.maximumLiveTicksWithoutCommit < 600 && state.progress.commitCounterRegressions === 0;
 }
 
-export function createHeadlessMatch(inputUrl, { seed, minutes } = {}) {
+export function createHeadlessMatch(inputUrl, { seed, minutes, keeperTrace = false } = {}) {
   const url = new URL(inputUrl);
   const payload = JSON.parse(Buffer.from(new URLSearchParams(url.hash.slice(1)).get('flMatch'), 'base64url'));
   seed ??= payload.simulationSeed;
@@ -121,7 +121,32 @@ export function createHeadlessMatch(inputUrl, { seed, minutes } = {}) {
   const start = html.indexOf('<script>\n(function(){') + '<script>'.length;
   const end = html.lastIndexOf('</script>\n<script src="set-piece-system.js"');
   const bridge = `
+    const keeperTraceEnabled=${!!keeperTrace},keeperTraceRows=[];
+    let keeperTraceShot=0;
+    const keeperTraceLog=logEvent;
+    logEvent=function(type,team,player,extra){
+      keeperTraceLog(type,team,player,extra);
+      if(!keeperTraceEnabled)return;
+      if(type==='shot')keeperTraceShot=actionSequence;
+      if(type==='shot'||type==='goal'||type==='shot-off-target'||type.startsWith('keeper-')){
+        const event=report.events[report.events.length-1];
+        const {player:playerName,shooter,carrier,...safe}=event;
+        keeperTraceRows.push({...safe,shotId:keeperTraceShot,hostMs:performance.now(),
+          action:player&&player.action,actionT:player&&player.actionT,
+          duration:player&&player.keeperAnimationDuration,diveT:player&&player.diveT});
+      }
+    };
+    const keeperTraceUpdate=updateGoalkeeper;
+    updateGoalkeeper=function(gk){
+      const before={action:gk.action,actionT:gk.actionT||0};
+      keeperTraceUpdate(gk);
+      if(keeperTraceEnabled&&(keeperDivingAction(gk.action)||['keeperLowScoop','keeperCatchChest','keeperParry'].includes(gk.action))&&
+        (before.action!==gk.action||(gk.actionT||0)>before.actionT+1))
+        keeperTraceRows.push({type:'animation-transition',shotId:keeperTraceShot,frame:clockFrames,hostMs:performance.now(),
+          playerId:gk.id,team:gk.team,animation:gk.saveAnimation,action:gk.action,actionT:gk.actionT,duration:gk.keeperAnimationDuration});
+    };
     window.__headless={
+      keeperTrace:()=>({events:keeperTraceRows,teams:report.teams}),
       tick(){const live=matchPhase==='play'&&liveV2ControlPhase()==='live';
         try{DT=1;update();recordReplayFrame(performance.now());}catch(error){liveV2Stop(error);}
         return{live,committed:liveV2AuthorityTotals.lastCommittedTick};},
@@ -138,6 +163,7 @@ export function createHeadlessMatch(inputUrl, { seed, minutes } = {}) {
   execute(html.slice(start, end).replace('  setCameraMode(cameraMode,false);', bridge + '\n  setCameraMode(cameraMode,false);'), 'match-host.js');
   clock.advance(200); // The host's existing 180 ms automatic start.
   return {
+    keeperTrace: () => context.__headless.keeperTrace(),
     state: () => ({ ...context.__headless.state(), progress: progress.snapshot() }),
     step() { clock.advance(1000 / 60); const sample = context.__headless.tick(); progress.observe(sample.live, sample.committed); }
   };
@@ -157,7 +183,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const match = createHeadlessMatch(url, { seed, minutes });
     let state, tick = 0, stationaryTicks = 0, stalled = false;
     for (; tick < maxTicks; tick++) {
-      if (tick % 600 === 0 && fs.statfsSync(root).bavail * fs.statfsSync(root).bsize < 5 * 1024 ** 3) throw new Error('free disk below 5 GiB');
+      if (tick % 600 === 0 && fs.statfsSync(root).bavail * fs.statfsSync(root).bsize < 6 * 1024 ** 3) throw new Error('free disk below 6 GiB');
       match.step();
       if (tick % 120 === 0) {
         state = match.state();
