@@ -126,13 +126,15 @@
 </style>
 <div id="matchLoading" role="status" aria-live="polite"><section>
   <h1 id="matchLoadingTitle">Loading your match…</h1>
-  <p id="matchLoadingText">Getting the pitch and players ready. You can play with a keyboard or a controller.</p>
+  <p id="matchLoadingText">Getting the pitch and players ready. You can play with a controller.</p>
   <div id="matchLoadingActions" hidden><button class="menuButton primary" id="retryMatchLoad">Reload match</button><a href="../darty.html">Back to DARTY</a></div>
 </section></div>
 <script id="dartyStartupGuard">
 (function(){
   const panel=document.getElementById('matchLoading'),title=document.getElementById('matchLoadingTitle'),text=document.getElementById('matchLoadingText'),actions=document.getElementById('matchLoadingActions');
   let ready=false,failed=false;
+  // CPU v CPU spectating has no player, so it shows no control hint.
+  if(new URLSearchParams(location.search).get('autoplay')==='1')text.textContent='Getting the pitch and players ready.';
   function fail(message){
     if(ready)return;
     failed=true;title.textContent='The match could not start';text.textContent=message+' Reload the match to try again, or go back to DARTY.';actions.hidden=false;
