@@ -423,7 +423,7 @@
       "path": "match-engine/cpu-intelligence-v2.js",
       "purpose": "deterministic FL V2 player and team decision authority",
       "baselineAbsent": true,
-      "candidateSha256": "9d85a7df2d07dd4d0db59ea6fa0f45309bb405b6157e44a7603a75300c3c4d1b",
+      "candidateSha256": "7e98b2cde90cb67f0fc7f3a2a33dcbd110a1232f25878f31b1020987ed8f06cd",
       "authorityScope": ["single-player-quick-play", "cpu-versus-cpu", "v2-shadow"]
     },
     {
@@ -500,7 +500,7 @@
       "path": "match-engine/live-v2-authority-adapter.js",
       "purpose": "outer offline normal-match gameplay transaction with rollback and host-level strict-stop enforcement",
       "baselineAbsent": true,
-      "candidateSha256": "24f628f97a6853603c7dca424abcb5d24b315fc5b3a675b9ae4afaf9597f477a",
+      "candidateSha256": "859902e59682ba7ef8b9c2fe4af0ebc40dba1757c8d7e2f890f339cfa9f8797d",
       "pinState": "frozen",
       "authorityScope": ["single-player-quick-play", "cpu-versus-cpu"]
     },

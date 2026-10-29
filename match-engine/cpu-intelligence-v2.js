@@ -1672,6 +1672,17 @@
       .sort((a, b) => b.score - a.score || a.player.id.localeCompare(b.player.id));
     if (!options.length) return null;
     const best = options[0], quality = (carrier.passing + carrier.control + carrier.awareness) / 297;
+    const driveTarget = boundedDefensivePoint({ x: carrier.x + dir * space.xFromCanonical(240), y: carrier.y }, snapshot, config);
+    const driveQuality = (carrier.control + carrier.pace) / 198;
+    // Keep a wide route to the byline when the carrier has real running room.
+    // A fixed possession-scale draw prevents reconsidering the early cross on
+    // every step of the same drive; pressure can still end it with a delivery.
+    if (depth > 360 && nearestOpponentClearance(carrier, carrier, snapshot) >= 110 &&
+        nearestOpponentClearance(carrier, driveTarget, snapshot) >= config.minimumCarryLaneClearance &&
+        stableUnit(carrier.id + ':wide-drive:' + Math.floor(snapshot.tick / 360)) < .25 + driveQuality * .5) {
+      return { type: 'carry', targetPlayerId: null, target: driveTarget, confidence: .6 + driveQuality * .25,
+        reason: 'wide-carrier-drive-for-byline' };
+    }
     // Ratings affect frequency and delivery quality, never eligibility.
     if (stableUnit(carrier.id + ':cross:' + Math.floor(snapshot.tick / 36)) > .35 + quality * .6) return null;
     return { type: 'cross', targetPlayerId: best.player.id, target: best.target, confidence: .62 + quality * .26,
@@ -1824,7 +1835,6 @@
     const combination = combinationPass(snapshot, carrier, memory, config);
     if (combination) return combination;
     const switchPass = switchOption(snapshot, carrier, config);
-    if (switchPass) return switchPass;
     const passOptions = runs.map(run => {
       const runner = snapshot.players.find(player => player.id === run.playerId);
       const releaseTarget = run.continuationTarget || run.target;
@@ -1894,6 +1904,9 @@
       option.clearance >= config.minimumPassLaneClearance + config.routineProgressiveRunClearanceBonus &&
       (!bestSupport || option.score >= bestSupport.score + config.routineProgressiveRunScoreAdvantage));
     if (progressiveRoutineRun) return releaseRun(progressiveRoutineRun);
+    const safeForwardLink = preferredSupportOptions.some(option => option.progress > 75 &&
+      option.passDistance <= 620 && option.risk.probability < .28);
+    if (switchPass && !safeForwardLink) return switchPass;
     const circulationRole = ['centre-back', 'full-back', 'wing-back', 'defensive-midfielder', 'midfielder']
       .includes(carrierFamily);
     const xInset = space.xFromCanonical(config.pitchInset);

@@ -1294,3 +1294,28 @@ test('an attacker who meets an opposing clearance near goal may finish instead o
   assert.ok(contact);assert.equal(contact.presentation.playerId,RECEIVER_ID);
   assert.equal(contact.presentation.intent,'shoot');assert.equal(contact.sourceFlight,'clearance');
 });
+
+test('an unpressured high-ball receiver can wait for a rated chest absorption instead of heading clear at first reach',()=>{
+  let chestFound=false;
+  for(const sequence of ['settle-a','settle-b','settle-c','settle-d']){
+    const target={x:60,y:0},fixture=snapshotFixture({receiver:target,target}),origin=worldPoint({x:60.05,y:0});
+    fixture.snapshot.ball={...fixture.snapshot.ball,...origin,z:2.05*UNITS.zPerMetre,ownerId:null,targetId:RECEIVER_ID,
+      lastKickerId:OWNER_ID,lastKickerTeamId:'you',flightType:'long-pass',launchIntent:{sequence,sourcePlayerId:OWNER_ID,sourceTeamId:'you',
+      targetPlayerId:RECEIVER_ID,origin:{...origin,z:2.05*UNITS.zPerMetre},target:origin,direction:{x:1,y:0},speedMetresPerSecond:.05,liftAngleDeg:0,sideSpinRpm:0,topSpinRpm:0,source:'long-pass'}};
+    const live=attachment('cpu-v-cpu',target);let snapshot=fixture.snapshot,pending=0;
+    for(let tick=1;tick<=45;tick++){
+      const frame=runTick(live,snapshot),contact=frame.hostProjection.contact;
+      if(contact?.status==='aerial-pending'&&contact.consumedAerialIds.length===0)pending++;
+      if(contact?.presentation?.duel){
+        if(contact.presentation.technique==='chest-control'){
+          assert.ok(pending>=5,'the receiver must actually let the ball descend');
+          assert.equal(contact.presentation.duel.winnerId,RECEIVER_ID);chestFound=true;
+        }
+        break;
+      }
+      snapshot=advanceFlightSnapshot(snapshot,frame);
+    }
+    if(chestFound)break;
+  }
+  assert.ok(chestFound,'a reachable, unpressured long ball should admit chest control');
+});

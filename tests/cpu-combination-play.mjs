@@ -84,8 +84,9 @@ test('wide final-third carriers choose early crosses, byline service and cutback
     Object.assign(state.players[2], { position: 'ST', x: 93, y: 41 });
     state.players.push({ ...state.players[1], id: 'spot', position: 'AM', x: 91, y: 30 },
       { ...state.players[1], id: 'edge', position: 'CM', x: 87, y: 43 });
+    if(x===80)Object.assign(state.players.at(-3),{x:82,y:7});
     state.offsideLine = 103; state.ball = { x, y: 7 };
-    const decision = CPU.decide(state);
+    const decision = CPU.decide(state,null,{maximumCommittedRuns:0});
     const slots = decision.supportIntents.filter(p => p.type.startsWith('box-'));
     assert.equal(slots.length, 4);
     assert.equal(new Set(slots.map(p => p.playerId)).size, 4);
@@ -101,13 +102,13 @@ test('switches need near-side congestion and a genuinely distant far-side outlet
   Object.assign(state.players[1], { x: 58, y: 48 });
   Object.assign(state.players.at(-1), { x: 56, y: 12 });
   state.players.push({ ...state.players.at(-1), id: 'near-two', x: 59, y: 9 });
-  const decision = CPU.decide(state);
+  const decision = CPU.decide(state,null,{maximumCommittedRuns:0});
   assert.equal(decision.carrierIntent.supportKind, 'switch', JSON.stringify(decision.carrierIntent));
   assert.equal(decision.carrierIntent.targetPlayerId, 'link');
   state.players.at(-1).x = 95;
-  assert.notEqual(CPU.decide(state).carrierIntent.supportKind, 'switch');
+  assert.notEqual(CPU.decide(state,null,{maximumCommittedRuns:0}).carrierIntent.supportKind, 'switch');
   state.players.at(-1).x = 59; state.players[1].y = 20;
-  assert.notEqual(CPU.decide(state).carrierIntent.supportKind, 'switch');
+  assert.notEqual(CPU.decide(state,null,{maximumCommittedRuns:0}).carrierIntent.supportKind, 'switch');
 });
 test('box runners continue through service, retain rest defenders and exclude sent-off players', () => {
   const state = fixture(); Object.assign(state, { carrierId: null, inFlight: true, intendedReceiverId: 'link', flightType: 'cross' });
@@ -125,4 +126,27 @@ test('a two-player combination without an available third runner remains JSON ch
   assert.equal(flight.memory.combination.move.thirdId,null);
   state.tick=3;
   assert.deepEqual(CPU.decide(state,flight.memory),CPU.decide(state,JSON.parse(JSON.stringify(flight.memory))));
+});
+
+test('a safe progressive local link takes precedence over a merely available far-side switch',()=>{
+  const state=fixture();Object.assign(state.players[0],{x:55,y:8});Object.assign(state.players[1],{x:58,y:48});
+  Object.assign(state.players.at(-1),{x:56,y:12});state.players.push({...state.players.at(-1),id:'near-two',x:59,y:9});
+  state.players.push({...state.players[1],id:'inside-link',position:'CM',x:64,y:1,formationAnchor:{x:64,y:1}});
+  const decision=CPU.decide(state,null,{maximumCommittedRuns:0});
+  assert.equal(decision.carrierIntent.type,'pass');assert.notEqual(decision.carrierIntent.supportKind,'switch');
+  assert.ok(decision.carrierIntent.target.x>55,JSON.stringify(decision.carrierIntent));
+});
+test('wide carriers can keep width on a real drive and then deliver from the byline',()=>{
+  let driver;
+  for(const id of ['wide-a','wide-b','wide-c','wide-d','wide-e','wide-f','wide-g','wide-h']){
+    const state=fixture();state.carrierId=id;Object.assign(state.players[0],{id,position:'RW',x:80,y:7});
+    Object.assign(state.players[1],{position:'ST',x:94,y:34});Object.assign(state.players[2],{position:'ST',x:93,y:41});
+    state.offsideLine=103;state.ball={x:80,y:7};
+    const d=CPU.decide(state);
+    if(d.carrierIntent.reason==='wide-carrier-drive-for-byline'){driver=state;assert.equal(d.carrierIntent.target.y,7);assert.ok(d.carrierIntent.target.x>80);break;}
+  }
+  assert.ok(driver,'rated wide-drive choices should exist');
+  driver.tick=2;driver.players[0].x=96;driver.ball.x=96;
+  const delivery=CPU.decide(driver).carrierIntent;
+  assert.equal(delivery.type,'cross');assert.ok(['byline','cut-back'].includes(delivery.crossKind));
 });

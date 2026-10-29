@@ -1166,7 +1166,7 @@
         // forecast; neither the real ball nor the match's random context moves.
         while (ticks < 240) {
           const step = dependencies.ball.step(state, context, 15 * FIXED_TICK_SECONDS, goalEnvironment());
-          const hit = step.trace.samples.findIndex(sample => sample.position.z <= 1.7 && sample.velocity.z <= 0);
+          const hit = step.trace.samples.findIndex(sample => sample.position.z <= 1.4 && sample.velocity.z <= 0);
           if (hit >= 0) {
             const sample = step.trace.samples[hit]; landing = { x: sample.position.x, y: sample.position.y };
             ticks += Math.ceil((hit + 1) / 4); break;
@@ -2140,13 +2140,19 @@
       const distanceToGoal = direction > 0 ? 105 - ball.x : ball.x;
       const shoot = distanceToGoal < 21 && Math.abs(ball.y) < 20.16;
       const technique = ball.z >= 1.05 ? 'header' : 'volley';
+      const opponentGap = Math.min(...movementState.players.filter(p => p.teamId !== selected.player.teamId)
+        .map(p => Math.hypot(p.position.x - ball.x, p.position.y - ball.y)), Infinity);
+      const preferChest = !shoot && (direction > 0 ? ball.x : 105 - ball.x) > 12 && opponentGap > 1.8 &&
+        stableHash([flight.key, selected.player.id, 'chest'].join(':')) / 0xffffffff <
+          .15 + finite(selected.roster.attrs.control, 70) / 99 * .65;
+      // With time and space, receive the delivery rather than heading an
+      // uncontested ball straight back into another loose contest. A nearby
+      // opponent cancels the wait and the aerial model resolves the challenge.
+      if (preferChest && (ball.z > 1.6 || ball.z >= 1.05 && selected.gap > .5)) return null;
       return { sequence: ['cpu-high', stableHash(flight.key), selected.player.id].join(':'), epoch: resetEpoch,
         commandTick: Math.max(1, snapshot.tick - (technique === 'header' ? 4 : 5)), actorId: selected.player.id,
         technique, intent: shoot ? 'shoot' : 'clear',
-        receiveMode: !shoot && selected.gap <= .5 && (direction > 0 ? ball.x : 105 - ball.x) > 12 &&
-          ball.z >= 1.05 && ball.z <= 1.6 &&
-          stableHash([flight.key, selected.player.id, 'chest'].join(':')) / 0xffffffff <
-          .15 + finite(selected.roster.attrs.control, 70) / 99 * .65 ? 'chest' : null,
+        receiveMode: preferChest && ball.z >= 1.05 && ball.z <= 1.6 ? 'chest' : null,
         target: shoot ? { x: direction > 0 ? 105 : 0, y: ball.y > 0 ? -1.6 : 1.6, z: .85 }
           : { x: clamp(ball.x + direction * 25, 2, 103), y: clamp(ball.y + (ball.y <= 0 ? -8 : 8), -30, 30), z: 1.8 } };
     }
