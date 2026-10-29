@@ -134,7 +134,7 @@
   const panel=document.getElementById('matchLoading'),title=document.getElementById('matchLoadingTitle'),text=document.getElementById('matchLoadingText'),actions=document.getElementById('matchLoadingActions');
   let ready=false,failed=false;
   // CPU v CPU spectating has no player, so it shows no control hint.
-  if(new URLSearchParams(location.search).get('autoplay')==='1')text.textContent='Getting the pitch and players ready.';
+  if(new URLSearchParams(location.search).get('autoplay')==='1')text.textContent='CPU vs CPU match loading.';
   function fail(message){
     if(ready)return;
     failed=true;title.textContent='The match could not start';text.textContent=message+' Reload the match to try again, or go back to DARTY.';actions.hidden=false;
