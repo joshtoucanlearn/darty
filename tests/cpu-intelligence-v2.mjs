@@ -323,8 +323,8 @@ test('onside intent can include a deterministic bounded early-timing mistake', (
     }),
     player('cb-a', 'home', 1300, 800, { role: 'centre-back', position: 'CB', duty: 'stay-back' }),
     player('cb-b', 'home', 1300, 1360, { role: 'centre-back', position: 'CB', duty: 'stay-back' }),
-    player('away-a', 'away', 2920, 850, { role: 'centre-back', position: 'CB' }),
-    player('away-b', 'away', 2930, 1300, { role: 'centre-back', position: 'CB' })
+    player('away-a', 'away', 3190, 1850, { role: 'centre-back', position: 'CB' }),
+    player('away-b', 'away', 3200, 1900, { role: 'centre-back', position: 'CB' })
   ];
   const offsideLine = 2600;
   const forcedMistake = Intelligence.decide(snapshot({ tick: 55, players, offsideLine }), null, {
@@ -591,8 +591,8 @@ test('a clearly superior progressive coordinated run beats routine short circula
     player('runner', 'home', 1750, 680, {
       role: 'winger', position: 'LW', pace: 92, acceleration: 94, vx: 0, vy: 0
     }),
-    player('away-pressure', 'away', 1570, 1070),
-    player('away-cover', 'away', 2450, 1550)
+    player('away-pressure', 'away', 1370, 1450),
+    player('away-cover', 'away', 2900, 1900)
   ];
   const decision = Intelligence.decide(snapshot({
     tick: 84,

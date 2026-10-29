@@ -2,6 +2,7 @@
 // presentations, restarts and the V2 period clock. No browser or network.
 // node tools/headless-cpu-match.mjs --url-file /path/match-url.txt --seeds 1,2 --minutes 2
 import fs from 'node:fs';
+import { createCombinationMetrics } from './combination-metrics.mjs';
 import { createCohesionMetrics } from './cohesion-metrics.mjs';
 import path from 'node:path';
 import vm from 'node:vm';
@@ -65,6 +66,7 @@ export function createHeadlessMatch(inputUrl, { seed, minutes, passRace = true, 
   const clock = createClock(seed);
   const progress = createCommitProgressMonitor();
   const cohesion = createCohesionMetrics();
+  const actions = createCombinationMetrics();
   const canvasContext = new Proxy({}, {
     get(object, key) {
       if (key === 'measureText') return text => ({ width: String(text).length * 8 });
@@ -92,7 +94,7 @@ export function createHeadlessMatch(inputUrl, { seed, minutes, passRace = true, 
   };
   const context = vm.createContext(vm.constants.DONT_CONTEXTIFY);
   Object.assign(context, {
-    console, document, __cohesion: cohesion, location: url, navigator: { getGamepads: () => [], userAgent: 'Node fixed-tick host' },
+    console, document, __cohesion: cohesion, __actions: actions, location: url, navigator: { getGamepads: () => [], userAgent: 'Node fixed-tick host' },
     localStorage: { getItem: () => null, setItem: noop, removeItem: noop },
     URL, URLSearchParams, TextEncoder, TextDecoder, Uint8Array,
     atob: text => Buffer.from(text, 'base64').toString('binary'),
@@ -132,6 +134,9 @@ export function createHeadlessMatch(inputUrl, { seed, minutes, passRace = true, 
   const bridge = `
     const observedLogEvent=logEvent;
     logEvent=function(...args){observedLogEvent(...args);const event=report.events[report.events.length-1];
+      if(event){const actor=args[2],target=event.targetId&&[...you,...opp].find(p=>p.id===event.targetId),progress=attackDirection(event.team)===1?(ball.x-M)/(W-2*M):1-(ball.x-M)/(W-2*M);
+        __actions.event({...event,actorId:actor&&actor.id,time:performance.now(),progress,inBox:progress>=1-16.5/105&&Math.abs(ball.y*68/H-34)<=20.16,
+          distanceMetres:target?Math.hypot((Number(event.intendedX||target.x)-ball.x)*105/(W-2*M),(Number(event.intendedY||target.y)-ball.y)*68/H):null});}
       if(event&&(event.type==='pass'||event.type==='pass-resolved'))__cohesion.event({...event,
         progress:attackDirection(event.team)===1?(ball.x-M)/(W-2*M):1-(ball.x-M)/(W-2*M)});};
     let cohesionTicks=0;
@@ -139,6 +144,9 @@ export function createHeadlessMatch(inputUrl, { seed, minutes, passRace = true, 
       tick(){const live=matchPhase==='play'&&liveV2ControlPhase()==='live';
         try{DT=1;update();recordReplayFrame(performance.now());}catch(error){liveV2Stop(error);}
         const owner=logicalLivePossessionOwner();
+        __actions.possession(owner&&{id:owner.id,team:owner.team,time:performance.now(),y:owner.y*68/H,
+          progress:attackDirection(owner.team)===1?(owner.x-M)/(W-2*M):1-(owner.x-M)/(W-2*M),
+          defenderBehind:teamList(other(owner.team)).some(p=>!p.sentOff&&D(p,owner)<180&&attackDirection(owner.team)*(owner.x-p.x)>45)},live);
         if(live)__cohesion.possession({owner:owner&&{family:positionFamily(owner)},loose:!owner&&!ball.target});
         else __cohesion.possession({owner:null,loose:false});
         if(live&&++cohesionTicks%60===0){const source=owner||ball.lastKicker;
@@ -162,7 +170,7 @@ export function createHeadlessMatch(inputUrl, { seed, minutes, passRace = true, 
   execute(html.slice(start, end).replace('  setCameraMode(cameraMode,false);', bridge + '\n  setCameraMode(cameraMode,false);'), 'match-host.js');
   clock.advance(200); // The host's existing 180 ms automatic start.
   return {
-    state: () => ({ ...context.__headless.state(), progress: progress.snapshot(), cohesion: cohesion.snapshot() }),
+    state: () => ({ ...context.__headless.state(), progress: progress.snapshot(), cohesion: cohesion.snapshot(), actions: actions.snapshot() }),
     step() { clock.advance(1000 / 60); const sample = context.__headless.tick(); progress.observe(sample.live, sample.committed); }
   };
 }
@@ -182,7 +190,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const match = createHeadlessMatch(url, { seed, minutes, ...gates });
     let state, tick = 0, stationaryTicks = 0, stalled = false;
     for (; tick < maxTicks; tick++) {
-      if (tick % 600 === 0 && fs.statfsSync(root).bavail * fs.statfsSync(root).bsize < 6 * 1024 ** 3) throw new Error('free disk below 6 GiB');
+      if (tick % 600 === 0 && fs.statfsSync(root).bavail * fs.statfsSync(root).bsize < 20 * 1024 ** 3) throw new Error('free disk below 20 GiB');
       match.step();
       if (tick % 120 === 0) {
         state = match.state();

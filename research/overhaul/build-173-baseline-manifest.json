@@ -238,7 +238,7 @@
       "path": "match-engine/match.html",
       "purpose": "V2-only playable host with exact three-workflow fail-closed preflight",
       "baselineSha256": "8380734db3a142293c5bca2a22f6b6cc9e6a0fa658f9f0c26cce8ad1801cf678",
-      "candidateSha256": "633efa3f96ca87f76f4cd165c7fc8f7b85ccc76c5b55d59bbaffcf2121eee521",
+      "candidateSha256": "bd3be0257c0c784cc96725449a42fd715275b82dad0382334e5800a95d775f1c",
       "pinState": "frozen",
       "expectedRelation": "authoritative-v2-only-three-workflow-host-plus-nonplayable-compatibility-scaffold"
     },
@@ -409,7 +409,7 @@
       "path": "match-engine/dribbling-state-v2.js",
       "purpose": "deterministic physical touch separation, logical possession lease and buffered action authority",
       "baselineAbsent": true,
-      "candidateSha256": "84ae72d02125b2bdf273dc838258ce6b26d9dfe59d52e568e262d1550ab72a42",
+      "candidateSha256": "61d4202d7f99bc29bf57c2769f5f286c36e293706325916eded885dfc74e8377",
       "authorityScope": ["single-player-quick-play", "cpu-versus-cpu"]
     },
     {
@@ -423,7 +423,7 @@
       "path": "match-engine/cpu-intelligence-v2.js",
       "purpose": "deterministic FL V2 player and team decision authority",
       "baselineAbsent": true,
-      "candidateSha256": "f1fe18501bcd22514f45ba15c10134ac89369aaf709ea584fda8b643b8a8564f",
+      "candidateSha256": "ebc3f9f7eb3f7914b73b62033010f7daa2a975792bfdbaa36ce553175996c2bb",
       "authorityScope": ["single-player-quick-play", "cpu-versus-cpu", "v2-shadow"]
     },
     {
@@ -500,7 +500,7 @@
       "path": "match-engine/live-v2-authority-adapter.js",
       "purpose": "outer offline normal-match gameplay transaction with rollback and host-level strict-stop enforcement",
       "baselineAbsent": true,
-      "candidateSha256": "e9616ecca3ea679fc01b4ade7ce4c29a4ca7abafb84858b8c69aa7aa491d42f4",
+      "candidateSha256": "4b3de925866288b697a63c4a0f95b839ab8bfcd10ebdb147cee10103bc4ee6fe",
       "pinState": "frozen",
       "authorityScope": ["single-player-quick-play", "cpu-versus-cpu"]
     },

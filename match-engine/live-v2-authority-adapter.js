@@ -1406,6 +1406,7 @@
           shotProfile: intent.shotProfile ? clone(intent.shotProfile) : null,
           supportKind: intent.supportKind == null ? null : String(intent.supportKind),
           supportMetrics: intent.supportMetrics ? clone(intent.supportMetrics) : null,
+          risk: intent.risk ? clone(intent.risk) : null,
           passRace: intent.passRace ? clone(intent.passRace) : null,
           rejectedPassRace: intent.rejectedPassRace ? clone(intent.rejectedPassRace) : null,
           fallbackFrom: intent.fallbackFrom == null ? null : String(intent.fallbackFrom),
@@ -2138,6 +2139,8 @@
         target: row.target,
         power: clamp(finite(shotProfile && shotProfile.power, finite(row.confidence, 0.65)), 0, 1),
         variant: shotProfile ? String(shotProfile.technique || 'driven') : 'normal',
+        delivery: { supportKind: row.supportKind, supportMetrics: row.supportMetrics, passRace: row.passRace,
+          offsideTiming: row.offsideTiming, reason: row.reason, risk: row.risk },
         source: 'cpu-v2',
         commandTick: snapshot.tick
       };
