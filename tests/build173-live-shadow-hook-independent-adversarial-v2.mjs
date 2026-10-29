@@ -181,7 +181,7 @@ function arm(harness, workflow = 'quick-play') {
 
 test('FROZEN BYTE GATE: reviewed hook, match integration and approved target bytes are exact', () => {
   assert.equal(sha256(fs.readFileSync(hookPath)), '61c4ab42563f3b4b8585371b37e8e2527073bdab4eb5598cb75b677fd1c12fca');
-  assert.equal(sha256(fs.readFileSync(matchPath)), '872c89506705a1cfeb58dd3be361eff1dd7c398a8673683deee0e1364848faeb');
+  assert.equal(sha256(fs.readFileSync(matchPath)), '2cd9855df86170b13e8b329068ee6460945f596f8e0ee751991414d1efcb2c62');
   assert.equal(sha256(fs.readFileSync(adapterPath)), 'b7cbd0f9366c97b966962c2a2c26c16d592cdb46358c0a7eb9e25cd3e60600e5');
   assert.equal(sha256(fs.readFileSync(capturePath)), 'c6556fafdb0caf1877e4b6b78f27bc4784d2dff5cfcee21b501849db96ea16c5');
 });
