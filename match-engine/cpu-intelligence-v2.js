@@ -380,6 +380,8 @@
       teamId: snapshot.teamId,
       possessionTeamId,
       carrierId,
+      intendedReceiverId: snapshot.intendedReceiverId == null ? null : String(snapshot.intendedReceiverId),
+      inFlight: snapshot.inFlight === true,
       attackingDirection: direction,
       offsideLine,
       pitch,
@@ -1428,6 +1430,42 @@
     return laneClearance(start, end, opponents, pitchSpace(snapshot.pitch));
   }
 
+  function midfieldSupportIntents(snapshot, config) {
+    if (snapshot.possessionTeamId !== snapshot.teamId) return [];
+    const referenceId = snapshot.carrierId || (snapshot.inFlight && snapshot.intendedReceiverId);
+    const carrier = snapshot.players.find(player => player.id === referenceId);
+    if (!carrier || carrier.isGK || carrier.sentOff || !carrier.available || carrier.teamId !== snapshot.teamId) return [];
+    const space = pitchSpace(snapshot.pitch), direction = snapshot.attackingDirection;
+    const midfield = eligibleCpuOutfield(snapshot).filter(player => player.id !== referenceId &&
+      (['defensive-midfielder', 'midfielder', 'attacking-midfielder'].includes(familyOf(player)) ||
+        /wide.?mid|\blm\b|\brm\b/i.test(player.position + ' ' + player.role)))
+      .sort((a, b) => distance(a.formationAnchor, carrier, space) - distance(b.formationAnchor, carrier, space) ||
+        a.id.localeCompare(b.id)).slice(0, 2)
+      .sort((a, b) => direction * (a.formationAnchor.x - b.formationAnchor.x) ||
+        a.formationAnchor.y - b.formationAnchor.y || a.id.localeCompare(b.id));
+    return midfield.map((player, index) => {
+      // Keep a return outlet and a forward link rather than bidding every
+      // midfielder into the same forward-running pool. The formation still
+      // limits how far either job can travel from the connected block.
+      const behind = index === 0 || isHoldDuty(player) || familyOf(player) === 'defensive-midfielder';
+      const side = player.formationAnchor.y <= carrier.y ? -1 : 1;
+      const longitudinal = behind ? -180 : 180;
+      const anchorReach = space.xFromCanonical(420);
+      const x = clamp(carrier.x + direction * space.xFromCanonical(longitudinal),
+        player.formationAnchor.x - anchorReach, player.formationAnchor.x + anchorReach);
+      const candidates = [side * 250, -side * 250, side * 360].map(lateral => {
+        const target = boundedDefensivePoint({ x: safeOnsideX(x, snapshot, config),
+          y: carrier.y + space.yFromCanonical(lateral) }, snapshot, config);
+        const clearance = nearestOpponentClearance(carrier, target, snapshot);
+        const receiverSpace = nearestOpponentClearance(target, target, snapshot);
+        const shapeCost = distance(target, player.formationAnchor, space);
+        return { target, score: Math.min(clearance, 150) + Math.min(receiverSpace, 180) * .5 - shapeCost * .12 };
+      }).sort((a, b) => b.score - a.score);
+      return { playerId: player.id, type: behind ? 'return-outlet' : 'forward-link',
+        referencePlayerId: carrier.id, target: candidates[0].target };
+    });
+  }
+
   function shortSupportOptions(snapshot, carrier, config) {
     const space = pitchSpace(snapshot.pitch);
     const opponents = snapshot.players.filter(player => player.teamId !== snapshot.teamId &&
@@ -1763,6 +1801,7 @@
     }
     rememberCirculationPass(current, intent, memory);
     const defensiveIntents = buildDefensiveIntents(current, memory, config, telemetry);
+    const supportIntents = midfieldSupportIntents(current, config);
     telemetry.carrier = cloneObject(intent);
     telemetry.constraints = summarizeConstraints(telemetry);
     memory.lastTick = current.tick;
@@ -1777,6 +1816,7 @@
       runs,
       carrierIntent: intent,
       defensiveIntents,
+      supportIntents,
       memory,
       telemetry
     };

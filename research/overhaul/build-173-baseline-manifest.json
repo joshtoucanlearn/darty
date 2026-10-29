@@ -140,7 +140,7 @@
       "contract": "research/overhaul/build173-live-shadow-hook-v2-contract.md",
       "contractSha256": "cb381a835ee0563658ef16d249e4acefc31d1f4f8b60acfe82b3b7d00dc7c815",
       "regressionGate": "tests/build173-live-shadow-hook-v2.mjs",
-      "regressionGateSha256": "9f0d1dffad11616da5bde4d010f270385fe00c5384c618564b973dd6690b8bd3",
+      "regressionGateSha256": "0f860d63cb089a8ca18f799cbaca753ed1f997895f762cb4e3c53813d67eef2c",
       "liveProjectionAllowed": false,
       "workflowRemovalAllowed": true
     },
@@ -423,7 +423,7 @@
       "path": "match-engine/cpu-intelligence-v2.js",
       "purpose": "deterministic FL V2 player and team decision authority",
       "baselineAbsent": true,
-      "candidateSha256": "d99833a37dcc4facde4849b6738e2e89e7f66e29a8c6fb2f9215e4248b387828",
+      "candidateSha256": "f1fe18501bcd22514f45ba15c10134ac89369aaf709ea584fda8b643b8a8564f",
       "authorityScope": ["single-player-quick-play", "cpu-versus-cpu", "v2-shadow"]
     },
     {
@@ -500,7 +500,7 @@
       "path": "match-engine/live-v2-authority-adapter.js",
       "purpose": "outer offline normal-match gameplay transaction with rollback and host-level strict-stop enforcement",
       "baselineAbsent": true,
-      "candidateSha256": "e195a0454c77df9a2256c29c1fc9d9c129ee37cc3fe25da44e38f616fc91516e",
+      "candidateSha256": "e9616ecca3ea679fc01b4ade7ce4c29a4ca7abafb84858b8c69aa7aa491d42f4",
       "pinState": "frozen",
       "authorityScope": ["single-player-quick-play", "cpu-versus-cpu"]
     },

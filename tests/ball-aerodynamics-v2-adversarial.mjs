@@ -59,8 +59,17 @@ test('MR aerodynamics loads only behind exact V2 preflight and preserves untuned
   const presentationLine = matchHtml.split('\n').find(line => line.includes('config.systems='));
   assert.ok(presentationLine, 'the named-engine presentation config must exist');
   assert.equal((presentationLine.match(/FootballLegacyBallEngineV2/g) || []).length, 2);
-  assert.doesNotMatch(matchHtml.replace(presentationLine, ''), /FootballLegacyBallEngineV2/,
-    'the host may expose the reviewed engine name for presentation but not call Ball V2 directly');
+  const measurementStart = matchHtml.indexOf('  function measureHumanGroundPassRendezvous(');
+  assert.ok(measurementStart >= 0, 'the reviewed trajectory measurement must remain explicit');
+  const measurementEnd = matchHtml.indexOf('\n  function ', measurementStart + 1);
+  assert.ok(measurementEnd > measurementStart);
+  const measurement = matchHtml.slice(measurementStart, measurementEnd);
+  assert.match(measurement, /Ball\.resolveLaunch\(/);
+  assert.match(measurement, /Ball\.step\(/);
+  assert.doesNotMatch(measurement, /\bball\s*(?:\.|\[)/,
+    'trajectory measurement must not access the live host ball');
+  assert.doesNotMatch(matchHtml.replace(presentationLine, '').replace(measurement, ''), /FootballLegacyBallEngineV2/,
+    'Ball V2 host references are limited to presentation and the read-only trajectory measurement');
   assert.match(presentationLine, /ballPhysics:window\.FootballLegacyBallEngineV2&&window\.FootballLegacyBallEngineV2\.ENGINE_NAME/);
   assert.deepEqual(Ball.DEFAULT_CONFIG.dragSurface, [
     { speed: 0, coefficient: 0.20 },

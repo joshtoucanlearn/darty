@@ -967,10 +967,16 @@
       return { world, signature };
     }
     function targetMaps(formations, decisions, snapshot, possession) {
-      const shape = {}, run = {}, reception = {}, carrier = {}, defensive = {};
+      const shape = {}, run = {}, reception = {}, carrier = {}, defensive = {}, support = {};
       for (const teamId of ['you', 'opp']) {
         for (const target of formations[teamId].targets) shape[target.playerId] = target.target;
         for (const committed of decisions[teamId].runs || []) run[committed.playerId] = committed.continuationTarget || committed.target;
+        for (const intent of decisions[teamId].supportIntents || []) {
+          support[intent.playerId] = intent.target;
+          // These two midfield jobs are local combinations, not extra
+          // penetrating runners. Receiver and loose-ball contracts win below.
+          delete run[intent.playerId];
+        }
         const intent = decisions[teamId].carrierIntent;
         // The race gate accepts a pass only when this named receiver can meet
         // the exact authored point. Movement must honour that same point while
@@ -1010,7 +1016,7 @@
           y: (possession.intendedTarget.y - (snapshot.pitch.yMin + snapshot.pitch.yMax) / 2) / snapshot.units.yPerMetre
         };
       }
-      return { shape, run, reception, carrier, defensive };
+      return { shape, run, reception, carrier, defensive, support };
     }
     function nearestOpponent(player, snapshot) {
       return snapshot.players.filter(candidate => candidate.teamId !== player.teamId && !candidate.sentOff)
@@ -1286,7 +1292,7 @@
           const metric = metricPoint(livePlayer, snapshot), runTarget = maps.run[livePlayer.id];
           const carrierTarget = snapshot.ball.ownerId === livePlayer.id ? maps.carrier[livePlayer.teamId] : null;
           const defensiveTarget = defensiveIntent && defensiveIntent.target || null;
-          const target = recoveryIntent && recoveryIntent.target || defensiveTarget || receptionTarget || runTarget || carrierTarget || maps.shape[livePlayer.id];
+          const target = recoveryIntent && recoveryIntent.target || defensiveTarget || receptionTarget || runTarget || carrierTarget || maps.support[livePlayer.id] || maps.shape[livePlayer.id];
           cpuMovementRoute = recoveryIntent ? 'recovery' : defensiveIntent ? 'defensive' :
             receptionTarget ? 'reception' : runTarget ? 'run' : carrierTarget ? 'carrier' : 'shape';
           if (target) {
