@@ -15,6 +15,7 @@
     const base64=raw[0].replace(/-/g,'+').replace(/_/g,'/').padEnd(Math.ceil(raw[0].length/4)*4,'=');
     const payload=JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(base64),c=>c.charCodeAt(0))));
     if(!payload||payload.matchType!=='spectator')return;
+    window.__dartyRandomMatch=true;
     const seed=(crypto.getRandomValues(new Uint32Array(1))[0]%4294967295)+1;
     payload.simulationSeed=seed;
     const bytes=new TextEncoder().encode(JSON.stringify(payload));let binary='';
@@ -65,7 +66,13 @@
   #varPanel{position:fixed;right:22px;top:112px;z-index:28;width:min(360px,calc(100% - 44px));padding:13px 16px;border:1px solid rgba(255,255,255,.17);border-top:4px solid #2fb6ff;background:rgba(3,16,31,.97);box-shadow:0 16px 52px rgba(0,0,0,.46);opacity:0;transform:translateY(-8px);pointer-events:none;transition:.18s}#varPanel.show{opacity:1;transform:none}#varPanel b{display:block;color:#7ed6ff;font-size:.64rem;letter-spacing:.22em;text-transform:uppercase}#varPanel strong{display:block;margin-top:5px;font-size:1.08rem;letter-spacing:.05em;text-transform:uppercase}#varPanel span{display:block;margin-top:4px;color:#bccbd8;font-size:.68rem;line-height:1.45;text-transform:uppercase}
   #deadBallClock{position:fixed;top:111px;left:50%;transform:translateX(-50%);z-index:8;min-width:150px;padding:6px 12px;text-align:center;background:rgba(3,16,31,.78);border:1px solid rgba(255,255,255,.16);font-size:.65rem;font-weight:900;letter-spacing:.12em;text-transform:uppercase;opacity:0;transition:.15s;pointer-events:none}#deadBallClock.show{opacity:1}#setPieceHint{position:fixed;left:50%;bottom:154px;transform:translateX(-50%) translateY(8px);z-index:13;padding:9px 14px;background:rgba(3,16,31,.93);border:1px solid rgba(255,255,255,.18);border-top:3px solid #e87824;color:#dce7f2;font-size:.61rem;font-weight:800;letter-spacing:.075em;text-transform:uppercase;opacity:0;transition:.15s;pointer-events:none;white-space:nowrap;box-shadow:0 10px 28px rgba(0,0,0,.35)}#setPieceHint.show{opacity:1;transform:translateX(-50%) translateY(0)}#setPieceHint b,#setPieceHint strong{color:#e87824}.assistToggle{display:flex;justify-content:space-between;align-items:center;gap:14px}.assistState{color:#e87824;font-size:.72rem;letter-spacing:.12em}@media(max-width:780px){#setPieceHint{left:14px;bottom:150px;max-width:46vw;white-space:normal;line-height:1.35;transform:translateY(8px)}#setPieceHint.show{transform:translateY(0)}}
   #errorBox{position:fixed;z-index:99;left:12px;right:12px;bottom:12px;padding:10px 12px;background:#7f1d1d;color:#fff;font:12px monospace;white-space:pre-wrap;display:none}
-  #ftStats{display:grid;grid-template-columns:1fr auto 1fr;gap:7px 16px;align-items:center;margin:18px auto 22px;max-width:380px;font-size:.78rem}#ftStats div:nth-child(3n+1){text-align:right;font-weight:800}#ftStats div:nth-child(3n+2){color:#aab7c5;font-size:.65rem;text-transform:uppercase;letter-spacing:.08em}#ftStats div:nth-child(3n){text-align:left;font-weight:800}
+  #ftime{position:fixed;right:16px;top:50%;transform:translateY(-50%);z-index:30;width:min(360px,calc(100vw - 24px));max-height:calc(100vh - 24px);max-height:calc(100dvh - 24px);overflow:auto;padding:14px 16px;border:1px solid #587087;border-top:3px solid var(--orange);border-radius:10px;background:rgba(3,16,31,.97);box-shadow:0 12px 40px rgba(0,0,0,.5);text-align:center;font-size:12px;line-height:1.4}
+  #ftTitle{margin:0;color:#c3cfda;font-size:12px;letter-spacing:.16em;text-transform:uppercase}#ftScore{margin:6px 0;font-size:22px;line-height:1.25;overflow-wrap:anywhere}#ftMsg{margin:0 0 6px;color:#c3cfda}
+  #ftScorers{display:grid;grid-template-columns:1fr 1fr;gap:12px;max-height:68px;overflow:auto;text-align:left;overflow-wrap:anywhere}#ftScorers p{margin:3px 0 8px;white-space:pre-line}#ftScorers p:last-child{text-align:right}
+  #ftScorers[hidden]{display:none}
+  #ftStats{margin:6px 0 12px}#ftStats table{width:100%;border-collapse:collapse;table-layout:fixed}#ftStats th,#ftStats td{padding:4px 2px;border-bottom:1px solid #263a4e}#ftStats th{width:48%;font-weight:400;color:#c3cfda}#ftStats td{font-weight:700;font-variant-numeric:tabular-nums}
+  #ftBtn{min-height:44px;width:100%;padding:9px;border:1px solid var(--orange);border-radius:5px;background:var(--orange);color:#03101f;font:700 14px Arial;cursor:pointer}#ftBtn:focus-visible{outline:3px solid #fff;outline-offset:3px}#ftime details{margin-top:8px;color:#c3cfda}#ftime summary{cursor:pointer}#ftime details button{margin:7px 3px 0;border:0;background:none;color:#c3cfda;cursor:pointer;font-size:12px}
+  @media(max-width:400px){#ftime{right:12px;padding:12px}#ftScore{font-size:20px}}
 
   #pauseBtn{position:fixed;right:18px;top:15px;z-index:10;width:42px;height:42px;border:1px solid rgba(255,255,255,.25);background:#071a2e;color:#f7f1e7;font-size:1rem;font-weight:900;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.25)}
   #pauseBtn:hover{border-color:#e87824;color:#e87824}
@@ -95,7 +102,7 @@
   @media (max-width:900px){.darty-commentary{bottom:178px;font-size:14px;max-width:86vw;}}
 </style>
 <!-- Bundled CC0 Poly Haven Stadium 01 environment. See ASSET-SOURCES-v0.61.txt. -->
-<link rel="stylesheet" href="darty-video-capture.css"/>
+<link rel="stylesheet" href="darty-video-capture.css?v=fulltime-20261029"/>
 </head>
 <body>
 <div id="wrap"><canvas id="c" tabindex="0"></canvas></div>
@@ -108,15 +115,15 @@
   </div>
 </div>
 <div class="flash"><span id="flash">GOAL!</span></div>
-<div class="ftime" id="ftime" style="position:fixed;inset:0;z-index:8;display:none;place-items:center;background:rgba(3,16,31,.85);">
-  <div style="text-align:center;">
-    <div style="font-size:.7rem;letter-spacing:.28em;text-transform:uppercase;color:#aab7c5;">Full Time</div>
-    <div id="ftScore" style="font-size:3.4rem;font-weight:800;margin:8px 0;"></div>
-    <div id="ftMsg" style="color:#aab7c5;margin-bottom:12px;letter-spacing:.06em;"></div>
+<section class="ftime" id="ftime" role="region" aria-labelledby="ftTitle" style="display:none">
+    <h2 id="ftTitle">Full time</h2>
+    <div id="ftScore"></div>
+    <div id="ftMsg"></div>
+    <div id="ftScorers" aria-label="Goal scorers"></div>
     <div id="ftStats"></div>
-    <button id="ftBtn" style="padding:14px 34px;border:1px solid #e87824;background:#e87824;color:#03101f;font-weight:700;letter-spacing:.16em;text-transform:uppercase;cursor:pointer;">Play Again</button><button id="exportBtn" style="display:block;margin:11px auto 0;border:0;background:none;color:#aab7c5;cursor:pointer;">Export match report</button><button id="copyFullLogBtn" style="display:block;margin:7px auto 0;border:0;background:none;color:#9dd8b1;cursor:pointer;">Copy full log</button>
-  </div>
-</div>
+    <button id="ftBtn" type="button">Play another match</button>
+    <details><summary>Match report</summary><button id="exportBtn" type="button">Export match report</button><button id="copyFullLogBtn" type="button">Copy full log</button></details>
+</section>
 <div class="controls"><span><b>Arrows</b> jog · <b>Shift</b> sprint · <b>A</b> pass · <b>S</b> shoot · <b>S twice</b> low driven · <b>D</b> tackle · <b>X</b> dive · <b>Q + direction</b> skills · <b>Q twice</b> roulette · <b>W</b> switch · <b>G</b> guaranteed goal · <b>Esc</b> pause</span><span class="controllerLine" id="gamepadHint"><b>Controller supported</b> · LS move · R3 flick up · D-pad Down dive · Circle/Square then Cross fake shot · double-tap Circle shirt pull · R2 sprint · Cross pass · Circle shoot/tackle · Square lob pass/slide · Triangle through ball · L1+Triangle over the top · L1 switch · Options pause</span></div>
 <div id="controllerStatus" role="status" aria-live="polite">Checking for a controller…</div>
 <div id="v2AuthorityStatus" role="status" aria-live="polite"></div>
@@ -191,7 +198,7 @@
 <script src="instant-replay-review-v2.js?v=174-pause-review"></script>
 <script src="playtest-full-state-replay-v1.js?v=174-final-candidate-2"></script>
 <script src="darty-impact-v1.js?v=1.2.0-slide-impact"></script>
-<script src="darty-commentary.js?v=1.2.0-joe-audio"></script>
+<script src="darty-commentary.js?v=1.2.1-fulltime"></script>
 <script>if(!window.THREE){document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>')}</script>
 <script id="build173V2ShadowPreflight">
 (function(){
@@ -626,8 +633,18 @@
     const now=performance.now();for(const team of ['you','opp']){const els=playerCardEls[team];if(!els)continue;const state=livePowerState(team,now),player=powerCardFootballer(team,state.feedback||actionPowerFeedback[team]),ideal=freeKickIdealForHud(team,state.action);els.card.classList.toggle('visible',!!started&&!matchOver);els.card.classList.toggle('charging',state.active);els.side.textContent=team==='you'?(homeDisplayName||'HOME'):(awayDisplayName||'AWAY');els.number.textContent=player&&Number.isFinite(player.number)?player.number:'–';els.name.textContent=player&&player.name?player.name:'NO FOOTBALLER';els.action.textContent=state.action||'ready';els.fill.style.width=Math.round(clamp(state.power,0,1)*100)+'%';els.ideal.style.display=ideal==null?'none':'block';if(ideal!=null)els.ideal.style.left=`calc(${Math.round(ideal*100)}% - 1px)`;}
   }
 
-  ftBtn.addEventListener('click',()=>{ youScore=0;oppScore=0;youS.textContent=0;oppS.textContent=0;
-    clockFrames=0;matchOver=false;halfDone=false;halfTimeUntil=0;fullTimePresentationUntil=0;firstHalfAdded=null;secondHalfAdded=null;addedShownHalf=0;halfHardStopFrame=0;fullHardStopFrame=0;ftime.style.display='none';Object.assign(TEAM_BRAIN.you,makeTeamBrain());Object.assign(TEAM_BRAIN.opp,makeTeamBrain());lastAIDiveFrame.you=lastAIDiveFrame.opp=-Infinity;you=[];opp=[];ykeep=okeep=null;resetReport();kickoff('you');matchPhase='play'; });
+  function matchRestartURL(input=location.href){
+    if(!window.__dartyRandomMatch)return input;
+    const url=new URL(input),fragment=new URLSearchParams(url.hash.slice(1)),payload=decodeMatchPayload(fragment.get('flMatch'));
+    if(url.searchParams.getAll('autoplay').join()!=='1'||!payload||payload.matchType!=='spectator')return input;
+    payload.simulationSeed='random';
+    const bytes=new TextEncoder().encode(JSON.stringify(payload));let binary='';
+    for(let i=0;i<bytes.length;i+=32768)binary+=String.fromCharCode.apply(null,bytes.subarray(i,i+32768));
+    fragment.set('flMatch',btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''));
+    url.hash=fragment.toString();url.searchParams.set('simulationSeed','random');return url.href;
+  }
+  function restartMatch(){const url=matchRestartURL();if(url===location.href)location.reload();else location.assign(url);}
+  ftBtn.addEventListener('click',restartMatch);
   const WORLD_SCALE=1.045,FOOTBALLER_VISUAL_SCALE=1.06,W=Math.round(3200*WORLD_SCALE),H=Math.round(2050*WORLD_SCALE),PITCH_UNITS_PER_METRE=(H-12)/68,GOAL_H=PITCH_UNITS_PER_METRE*7.32,GOAL_HEIGHT=PITCH_UNITS_PER_METRE*2.44,M=Math.round(80*WORLD_SCALE);let started=false;   // regulation 105 m x 68 m pitch references drive goal and footballer scale
   function worldDistanceMetres(dx,dy){return Math.hypot((Number(dx)||0)/((W-2*M)/105),(Number(dy)||0)/(H/68));}
   function worldBallPaceMetresPerSecond(speedWorld,dx=1,dy=0){const d=Math.hypot(dx,dy)||1;return Math.max(0,Number(speedWorld)||0)*60*worldDistanceMetres(dx/d,dy/d);}
@@ -1048,6 +1065,11 @@
   }
   function pollBoundPad(state,gp,isSecond=false){
     if(!gp)return;
+    if(matchOver&&ftime.style.display!=='none'){
+      const pressed=gamepadButtonPressed(gp,0);
+      if(pressed&&!state.previousButtons[0]&&document.activeElement===ftBtn)ftBtn.click();
+      state.previousButtons[0]=pressed;return;
+    }
     if(instantReplayReviewController&&instantReplayReviewController.status().active){if(!isSecond)pollInstantReplayReviewGamepad(gp);return;}
     if(instantReplayReviewInputGuard){if(!isSecond&&instantReplayReviewGamepadNeutral(gp))instantReplayReviewInputGuard=false;return;}
     const left=deadZoneStick(gp.axes&&gp.axes.length>1?gp.axes[0]:0,gp.axes&&gp.axes.length>1?gp.axes[1]:0);state.moveX=left.x;state.moveY=left.y;state.moveMagnitude=left.magnitude;if(state.lobCharging)latchLobAim(state,{x:left.x,y:left.y,strength:left.magnitude});
@@ -1170,24 +1192,26 @@
     for(let it=0;it<2;it++)for(let i=0;i<all.length;i++)for(let j=i+1;j<all.length;j++){const a=all[i],b=all[j],dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy)||.01,min=rad*2-2;if(d<min){const push=(min-d)/2,nx=dx/d,ny=dy/d,relative=Math.hypot((a.vx||0)-(b.vx||0),(a.vy||0)-(b.vy||0));a.x-=nx*push;a.y-=ny*push;b.x+=nx*push;b.y+=ny*push;if(a.team!==b.team&&relative>3.5&&a.action==='idle'){a.action='shoulderHit';a.actionT=20;}if(a.team!==b.team&&relative>3.5&&b.action==='idle'){b.action='shoulderHit';b.actionT=20;}}}
   }
   function inReset(){ return performance.now() < resetUntil; }
-  function showRecoveredPlaytest(){if(!recoveredPlaytest){errorBox.style.display='block';errorBox.textContent='No recoverable playtest log was found in this browser.';return;}report=recoveredPlaytest;actionSequence=report.events.reduce((max,event)=>Math.max(max,Number(event.seq)||0),0);const summary=report.summary||{},score=summary.score||{you:0,opp:0},minute=Number(summary.minute)||90,home=report.teams&&report.teams.you||{},away=report.teams&&report.teams.opp||{};youScore=Number(score.you)||0;oppScore=Number(score.opp)||0;youS.textContent=youScore;oppS.textContent=oppScore;clockFrames=clamp(minute/90,0,1.2)*MATCH_FRAMES;clockEl.textContent=String(Math.floor(minute)).padStart(2,'0')+':00';halfLabel.textContent='RECOVERED';ftScore.textContent=youScore+' – '+oppScore;ftMsg.textContent='Recovered '+report.playtestId;const rows=[['Possession',(home.possession||0)+'%',(away.possession||0)+'%'],['Shots',home.shots||0,away.shots||0],['On target',home.onTarget||0,away.onTarget||0],['xG',Number(home.xg||0).toFixed(2),Number(away.xg||0).toFixed(2)],['Passes',home.passes||0,away.passes||0],['Pass accuracy',Math.round(100*(home.completed||0)/Math.max(1,home.passes||0))+'%',Math.round(100*(away.completed||0)/Math.max(1,away.passes||0))+'%'],['Tackles',home.tackles||0,away.tackles||0],['Fouls',home.fouls||0,away.fouls||0],['Corners',home.corners||0,away.corners||0],['Saves',home.saves||0,away.saves||0],['Cards',(home.yellows||0)+((home.reds||0)?' / '+home.reds+' red':''),(away.yellows||0)+((away.reds||0)?' / '+away.reds+' red':'')]];ftStats.innerHTML=rows.map(row=>'<div>'+row[1]+'</div><div>'+row[0]+'</div><div>'+row[2]+'</div>').join('');document.getElementById('exportBtn').textContent='Export recovered full log';document.getElementById('copyFullLogBtn').textContent='Copy recovered full log';ftBtn.textContent='Play new match';publishFullPlaytestData();matchOver=true;matchPhase='ended';started=true;ftime.style.display='grid';}
+  function showRecoveredPlaytest(){if(!recoveredPlaytest){errorBox.style.display='block';errorBox.textContent='No recoverable playtest log was found in this browser.';return;}report=recoveredPlaytest;actionSequence=report.events.reduce((max,event)=>Math.max(max,Number(event.seq)||0),0);const summary=report.summary||{},score=summary.score||{you:0,opp:0},minute=Number(summary.minute)||90,home=report.teams&&report.teams.you||{},away=report.teams&&report.teams.opp||{};youScore=Number(score.you)||0;oppScore=Number(score.opp)||0;youS.textContent=youScore;oppS.textContent=oppScore;clockFrames=clamp(minute/90,0,1.2)*MATCH_FRAMES;clockEl.textContent=String(Math.floor(minute)).padStart(2,'0')+':00';halfLabel.textContent='RECOVERED';report.score={you:youScore,opp:oppScore};showFullTimeStats();finishMatchAudio();document.getElementById('exportBtn').textContent='Export recovered full log';document.getElementById('copyFullLogBtn').textContent='Copy recovered full log';ftBtn.textContent='Play new match';publishFullPlaytestData();matchOver=true;matchPhase='ended';started=true;}
   setTimeout(()=>RECOVER_PLAYTEST?showRecoveredPlaytest():focusGame(CONFIG.difficulty),180);
 
   // ---- sound (generated in-browser, no files) ----
   const requestedAudioPercent=Number(query.get('volume')==null?70:query.get('volume'));
   const AUDIO_LEVEL=video&&video.capture?0:clamp((Number.isFinite(requestedAudioPercent)?requestedAudioPercent:70)/100,0,1);
   const audioGate=document.getElementById('audioGate');
-  let actx=null, ambienceOn=false,audioMaster=null,audioStreamDestination=null,audioUnlocked=false,audioUnlockError='',audioMuted=false;
+  let actx=null, ambienceOn=false,audioMaster=null,audioStreamDestination=null,audioUnlocked=false,audioUnlockError='',audioMuted=false,audioEnding=false;
+  let ambienceNodes=[];
   cv.dataset.audioState=AUDIO_LEVEL<=0?'muted':'waiting-for-input';
   cv.dataset.audioMuted='false';
   function updateAudioGate(){
     if(!audioGate)return;
-    const off=AUDIO_LEVEL<=0||audioUnlocked||audioMuted;audioGate.classList.toggle('hidden',off);audioGate.classList.toggle('blocked',cv.dataset.audioState==='blocked'||cv.dataset.audioState==='error');
+    const off=audioEnding||AUDIO_LEVEL<=0||audioUnlocked||audioMuted;audioGate.classList.toggle('hidden',off);audioGate.classList.toggle('blocked',cv.dataset.audioState==='blocked'||cv.dataset.audioState==='error');
     if(!off)audioGate.textContent=cv.dataset.audioState==='blocked'?'Browser blocked sound · click here':cv.dataset.audioState==='error'?'Sound unavailable · retry':'Enable match sound';
   }
   updateAudioGate();
   const crowdMood={you:{kind:'neutral',until:0,intensity:0},opp:{kind:'neutral',until:0,intensity:0}};
   function initAudio(fromUser=false){
+    if(audioEnding)return false;
     if(AUDIO_LEVEL<=0){cv.dataset.audioState='muted';updateAudioGate();return false;}
     if(!actx){try{actx=new (window.AudioContext||window.webkitAudioContext)();audioMaster=actx.createGain();audioMaster.gain.value=audioMuted?0:AUDIO_LEVEL;audioMaster.connect(actx.destination);if(actx.createMediaStreamDestination){audioStreamDestination=actx.createMediaStreamDestination();audioMaster.connect(audioStreamDestination);}cv.dataset.audioState=actx.state;}catch(e){audioUnlockError=e&&e.message||'AudioContext unavailable';cv.dataset.audioState='error';updateAudioGate();return false;}}
     const markRunning=()=>{const newlyUnlocked=!audioUnlocked&&actx&&actx.state==='running';audioUnlocked=actx&&actx.state==='running';audioUnlockError=audioUnlocked?'':audioUnlockError;cv.dataset.audioState=audioUnlocked?'running':actx.state;if(audioUnlocked)startAmbience();updateAudioGate();if(fromUser&&newlyUnlocked)showEvent('AUDIO ON · '+Math.round(AUDIO_LEVEL*100)+'%',520);return audioUnlocked;};
@@ -1197,7 +1221,7 @@
   function setAudioMuted(muted,announce=true){
     audioMuted=!!muted;cv.dataset.audioMuted=String(audioMuted);
     if(!audioMuted)initAudio(true);
-    if(audioMaster){const value=audioMuted?0:AUDIO_LEVEL;if(actx&&actx.state==='running')audioMaster.gain.setTargetAtTime(value,actx.currentTime,.018);else audioMaster.gain.value=value;}
+    if(audioMaster){const value=audioMuted||audioEnding?0:AUDIO_LEVEL;if(audioMuted)audioMaster.gain.cancelScheduledValues(actx.currentTime);if(!audioEnding||audioMuted){if(actx&&actx.state==='running')audioMaster.gain.setTargetAtTime(value,actx.currentTime,.018);else audioMaster.gain.value=value;}}
     updateAudioGate();
     if(typeof refreshAudioUI==='function')refreshAudioUI();
     if(announce)showEvent(audioMuted?'MATCH SOUND MUTED':'MATCH SOUND ON',620);
@@ -1208,7 +1232,7 @@
   if(matchMuteCorner){if(AUDIO_LEVEL<=0)matchMuteCorner.hidden=true;matchMuteCorner.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();setAudioMuted(!audioMuted,false);cv.focus();});}
   // A host page (the Toucan Learn showcase card) may mute the embedded match.
   addEventListener('message',event=>{const data=event.data;if(event.source!==parent||!data||data.source!=='toucan-showcase'||data.type!=='darty-mute'||typeof data.muted!=='boolean')return;setAudioMuted(data.muted,false);});
-  function startAmbience(){ if(!actx||ambienceOn)return; ambienceOn=true;
+  function startAmbience(){ if(!actx||ambienceOn||audioEnding)return; ambienceOn=true;
     // looping filtered noise = soft crowd murmur
     const dur=4, b=actx.createBuffer(1, actx.sampleRate*dur, actx.sampleRate), d=b.getChannelData(0);
     for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
@@ -1219,8 +1243,26 @@
     src.connect(lp).connect(g).connect(audioMaster); src.start();
     // slow swell so it breathes like a crowd
     const lfo=actx.createOscillator(), lfg=actx.createGain(); lfo.frequency.value=0.08; lfg.gain.value=crowdLevel*.30; lfo.connect(lfg).connect(g.gain); lfo.start();
+    ambienceNodes=[src,lfo,lp,g,lfg];
   }
-  function kickSound(power){ if(!actx)return; const t=actx.currentTime;
+  function stopAmbience(){
+    for(const node of ambienceNodes){if(node.stop)try{node.stop();}catch(_){}node.disconnect();}
+    ambienceNodes=[];ambienceOn=false;
+  }
+  function finishMatchAudio(){
+    if(audioEnding)return;
+    goalWhistle();audioEnding=true;
+    if(window.DartyCommentary&&window.DartyCommentary.stop)window.DartyCommentary.stop();
+    updateAudioGate();
+    if(!actx||!audioMaster){stopAmbience();return;}
+    // The last peep (including its oscillator tail) ends at t + .96 s.
+    const t=actx.currentTime,gain=audioMaster.gain;
+    gain.cancelScheduledValues(t);gain.setValueAtTime(audioMuted?0:gain.value,t);
+    gain.setValueAtTime(audioMuted?0:gain.value,t+.96);gain.linearRampToValueAtTime(0,t+1.96);
+    for(const node of ambienceNodes)if(node.stop)node.stop(t+1.96);
+    setTimeout(()=>{gain.cancelScheduledValues(actx.currentTime);gain.setValueAtTime(0,actx.currentTime);stopAmbience();cv.dataset.audioState='ended';},1960);
+  }
+  function kickSound(power){ if(!actx||audioEnding)return; const t=actx.currentTime;
     const o=actx.createOscillator(), g=actx.createGain();
     o.type='triangle'; o.frequency.setValueAtTime(220+120*(power||0.4), t); o.frequency.exponentialRampToValueAtTime(70, t+0.09);
     g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.35, t+0.008); g.gain.exponentialRampToValueAtTime(0.0001, t+0.13);
@@ -1231,13 +1273,13 @@
     const ng=actx.createGain(); ng.gain.value=0.18; n.connect(ng).connect(audioMaster); n.start(t);
   }
   function collisionSound(kind='tackle',intensity=.5){
-    if(!actx||!audioMaster)return;const t=actx.currentTime,force=clamp(Number(intensity||.5),.18,1.15),punch=kind==='punch',slide=kind==='slide',dur=punch?.19:slide?.16:.13;
+    if(!actx||!audioMaster||audioEnding)return;const t=actx.currentTime,force=clamp(Number(intensity||.5),.18,1.15),punch=kind==='punch',slide=kind==='slide',dur=punch?.19:slide?.16:.13;
     const noise=actx.createBufferSource(),buffer=actx.createBuffer(1,Math.floor(actx.sampleRate*dur),actx.sampleRate),data=buffer.getChannelData(0);for(let i=0;i<data.length;i++){const q=i/data.length;data[i]=(Math.random()*2-1)*Math.pow(1-q,punch?2.2:3.0);}noise.buffer=buffer;
     const hp=actx.createBiquadFilter(),lp=actx.createBiquadFilter(),ng=actx.createGain();hp.type='highpass';hp.frequency.value=punch?115:slide?80:95;lp.type='lowpass';lp.frequency.value=punch?1650:slide?980:1250;ng.gain.setValueAtTime(.0001,t);ng.gain.exponentialRampToValueAtTime((punch?.34:slide?.25:.21)*force,t+.006);ng.gain.exponentialRampToValueAtTime(.0001,t+dur);noise.connect(hp).connect(lp).connect(ng).connect(audioMaster);noise.start(t);noise.stop(t+dur+.01);
     const body=actx.createOscillator(),bg=actx.createGain();body.type=punch?'square':'triangle';body.frequency.setValueAtTime((punch?112:slide?72:88)+force*18,t);body.frequency.exponentialRampToValueAtTime(punch?48:38,t+dur);bg.gain.setValueAtTime(.0001,t);bg.gain.exponentialRampToValueAtTime((punch?.23:.15)*force,t+.004);bg.gain.exponentialRampToValueAtTime(.0001,t+dur);body.connect(bg).connect(audioMaster);body.start(t);body.stop(t+dur+.01);
   }
   function whistle(){ if(!actx)return; peep(actx.currentTime, 0.3); }
-  function peep(t, len){ if(!actx)return;
+  function peep(t, len){ if(!actx||audioEnding)return;
     const o=actx.createOscillator(), g=actx.createGain(), v=actx.createOscillator(), vg=actx.createGain();
     o.type='sine'; o.frequency.setValueAtTime(2000,t);
     v.type='sine'; v.frequency.value=28; vg.gain.value=60; v.connect(vg).connect(o.frequency); v.start(t); v.stop(t+len);   // trill warble
@@ -1247,7 +1289,7 @@
   function goalWhistle(){ if(!actx)return; const t=actx.currentTime;   // three sharp peeps = goal
     peep(t, 0.16); peep(t+0.22, 0.16); peep(t+0.44, 0.5);
   }
-  function cheer(big){ if(!actx)return; const t=actx.currentTime, dur=big?2.6:1.4, peak=big?0.42:0.18;
+  function cheer(big){ if(!actx||audioEnding)return; const t=actx.currentTime, dur=big?2.6:1.4, peak=big?0.42:0.18;
     // warm, rounded crowd roar (no shrill top end)
     const n=actx.createBufferSource(), b=actx.createBuffer(1, Math.floor(actx.sampleRate*dur), actx.sampleRate), d=b.getChannelData(0);
     for(let i=0;i<d.length;i++){ d[i]=(Math.random()*2-1); }
@@ -1261,7 +1303,7 @@
     n.connect(hp).connect(lp).connect(g).connect(audioMaster); n.start(t); n.stop(t+dur);
     if(big) whistle();
   }
-  function crowdAudioBus(team,gainValue=1){if(!actx||!audioMaster)return null;const gain=actx.createGain();gain.gain.value=gainValue;if(actx.createStereoPanner){const pan=actx.createStereoPanner();pan.pan.value=team==='you'?-.30:.34;gain.connect(pan).connect(audioMaster);}else gain.connect(audioMaster);return gain;}
+  function crowdAudioBus(team,gainValue=1){if(!actx||!audioMaster||audioEnding)return null;const gain=actx.createGain();gain.gain.value=gainValue;if(actx.createStereoPanner){const pan=actx.createStereoPanner();pan.pan.value=team==='you'?-.30:.34;gain.connect(pan).connect(audioMaster);}else gain.connect(audioMaster);return gain;}
   function crowdNoiseVoice(team,kind='roar',intensity=1,delay=0){
     if(!actx)return;const start=actx.currentTime+delay,dur=kind==='roar'?3.15:kind==='boo'?2.25:1.35,peak=(kind==='roar'?.32:kind==='boo'?.24:.27)*clamp(intensity,.25,1.15),bus=crowdAudioBus(team,1);if(!bus)return;
     const source=actx.createBufferSource(),buffer=actx.createBuffer(1,Math.floor(actx.sampleRate*dur),actx.sampleRate),data=buffer.getChannelData(0);
@@ -1278,7 +1320,9 @@
   }
   function editableInputTarget(target){return !!(target&&((target.matches&&target.matches('input, textarea, select, [contenteditable="true"]'))||target.isContentEditable));}
   // game starts from a difficulty button
-  addEventListener('keydown',e=>{if(editableInputTarget(e.target))return;if(instantReplayReviewHandleKeyDown(e))return;initAudio(true);const k=e.key.toLowerCase();
+  addEventListener('keydown',e=>{if(editableInputTarget(e.target))return;
+    if(matchOver&&ftime.style.display!=='none'){if(document.activeElement===ftBtn&&[' ','Enter','a','A'].includes(e.key)){e.preventDefault();if(!e.repeat)ftBtn.click();}return;}
+    if(instantReplayReviewHandleKeyDown(e))return;initAudio(true);const k=e.key.toLowerCase();
     if((e.code==='Space'||k===' ')&&(goalReplay.active||disciplineReplay.active||diveReplay.active||specialPSequence.active||(celebrate>0&&celebrateTeam))){e.preventDefault();if(goalReplay.active)skipGoalReplayToPlay();else if(disciplineReplay.active)finishDisciplineReplay('skipped');else if(diveReplay.active)finishDiveReplay();else if(specialPSequence.active)endSpecialPSequence(true);else finishGoalCelebration(true);return;}
     if(celebrate>0&&celebrateTeam==='you'&&celebratingPlayer&&k==='p'){e.preventDefault();startSpecialPSequence();return;}
     if(k==='g'){e.preventDefault();if(!paused)triggerInstantGoal();return;}
@@ -2394,7 +2438,7 @@
     if(!clock||!Number.isFinite(clock.clocks&&clock.clocks.gameplaySeconds))throw new Error('FL V2 committed clock snapshot unavailable');clockFrames=clock.clocks.gameplaySeconds/(90*60)*MATCH_FRAMES;
     if(clock.period==='half-time'&&!liveV2HalfTimeSeen){liveV2HalfTimeSeen=true;firstHalfAdded=liveV2AddedMinutes(clock);halfDone=true;if(pendingFreeKickReplay)discardPendingFreeKickReplay('half-time');halfTimeUntil=performance.now()+(FAST?120:2600);clockRunning=false;showFlash('HALF TIME','#f7f1e7');logEvent('half-time',null,null,{authority:'match-clock-v2',addedMinutes:firstHalfAdded});liveV2PeriodTransitionApplied=true;}
     else if(clock.period==='second-half'){liveV2HalfTimeSeen=false;halfDone=true;}
-    else if(clock.period==='full-time'&&!matchOver&&!['fulltime-presentation','walkin','ended'].includes(matchPhase)){secondHalfAdded=liveV2AddedMinutes(clock);clearHumanAerialFinishIntent('full-time');if(pendingFreeKickReplay)discardPendingFreeKickReplay('full-time');finishBuild173ShadowBeforeFullTime();matchPhase='fulltime-presentation';fullTimePresentationUntil=performance.now()+(FAST?120:1600);clockRunning=false;showFlash('FULL TIME','#f7f1e7');liveV2PeriodTransitionApplied=true;}
+    else if(clock.period==='full-time'&&!matchOver&&!['fulltime-presentation','walkin','ended'].includes(matchPhase)){secondHalfAdded=liveV2AddedMinutes(clock);clearHumanAerialFinishIntent('full-time');if(pendingFreeKickReplay)discardPendingFreeKickReplay('full-time');finishBuild173ShadowBeforeFullTime();matchPhase='fulltime-presentation';fullTimePresentationUntil=performance.now()+(FAST?120:1600);clockRunning=false;showFlash('FULL TIME','#f7f1e7');finishMatchAudio();liveV2PeriodTransitionApplied=true;}
     return true;
   }
   function liveV2ControlInput(tick){
@@ -5667,7 +5711,7 @@ function beginDedicatedSetPiece(kind,team,taker,x,y){
       if(!halfDone&&clockFrames>=firstRegularEnd&&firstHalfAdded===null){firstHalfAdded=calculateAddedMinutes(1);halfHardStopFrame=firstRegularEnd+(firstHalfAdded+2)*FRAMES_PER_GAME_MINUTE;addedShownHalf=1;showEvent('ADDED TIME  +'+firstHalfAdded,1500);logEvent('added-time',null,null,{half:1,minutes:firstHalfAdded});}
       if(!halfDone&&firstHalfAdded!==null){halfLabel.textContent='1ST +'+firstHalfAdded;const target=firstRegularEnd+firstHalfAdded*FRAMES_PER_GAME_MINUTE;if(clockFrames>=target&&(canBlowForTime()||(clockFrames>=halfHardStopFrame&&canSettlePeriod()))){halfDone=true;clockFrames=firstRegularEnd;if(pendingFreeKickReplay)discardPendingFreeKickReplay('half-time');halfTimeUntil=now+(FAST?120:2600);clockRunning=false;showFlash('HALF TIME','#f7f1e7');logEvent('half-time',null,null);return;}}
       if(halfDone&&clockFrames>=secondRegularEnd&&secondHalfAdded===null){secondHalfAdded=calculateAddedMinutes(2);fullHardStopFrame=secondRegularEnd+(secondHalfAdded+2)*FRAMES_PER_GAME_MINUTE;addedShownHalf=2;showEvent('ADDED TIME  +'+secondHalfAdded,1500);logEvent('added-time',null,null,{half:2,minutes:secondHalfAdded});}
-      if(halfDone&&secondHalfAdded!==null){halfLabel.textContent='2ND +'+secondHalfAdded;const target=secondRegularEnd+secondHalfAdded*FRAMES_PER_GAME_MINUTE;if(clockFrames>=target&&(canBlowForTime()||(clockFrames>=fullHardStopFrame&&canSettlePeriod()))){clearHumanAerialFinishIntent('full-time');if(pendingFreeKickReplay)discardPendingFreeKickReplay('full-time');finishBuild173ShadowBeforeFullTime();matchPhase='fulltime-presentation';fullTimePresentationUntil=now+(FAST?120:1600);clockRunning=false;showFlash('FULL TIME','#f7f1e7');return;}}
+      if(halfDone&&secondHalfAdded!==null){halfLabel.textContent='2ND +'+secondHalfAdded;const target=secondRegularEnd+secondHalfAdded*FRAMES_PER_GAME_MINUTE;if(clockFrames>=target&&(canBlowForTime()||(clockFrames>=fullHardStopFrame&&canSettlePeriod()))){clearHumanAerialFinishIntent('full-time');if(pendingFreeKickReplay)discardPendingFreeKickReplay('full-time');finishBuild173ShadowBeforeFullTime();matchPhase='fulltime-presentation';fullTimePresentationUntil=now+(FAST?120:1600);clockRunning=false;showFlash('FULL TIME','#f7f1e7');finishMatchAudio();return;}}
     }
     if(pendingGoalKickoffTeam&&postGoalWatchdogAt&&now-postGoalWatchdogAt>18000){completeGoalSequenceToPlay();return;}
     if(offsidePresentation){if(!liveV2ControlApplied)updateOffsidePresentation(now);updateDeadBallDisplay();return;}
@@ -5897,16 +5941,34 @@ function beginDedicatedSetPiece(kind,team,taker,x,y){
     clearHumanAerialFinishIntent('match-presentation-cleared');clearTimeout(eventTimer);clearTimeout(officialTimer);eventFeed.classList.remove('show');officialCard.classList.remove('show','yellow','red');varPanel.classList.remove('show');if(fightPrompt)fightPrompt.classList.remove('show');deadBallClock.classList.remove('show');setPieceHint.classList.remove('show');Object.values(playerCardEls).forEach(els=>els.card.classList.remove('charging'));
     officialPauseUntil=0;refereePresentation=null;varSequence=null;foulSequence=null;offsidePresentation=null;pendingCardFight=null;confrontationSequence=null;pendingDiveDecision=null;lastPlayOnDive=null;setPieceCameraHold=null;restartCameraCut=false;
   }
+  function showFullTimeStats(){
+    const home=report.teams.you,away=report.teams.opp,score=report.score;
+    ftScore.textContent=homeDisplayName+' '+score.you+' – '+score.opp+' '+awayDisplayName;
+    ftMsg.textContent=score.you===score.opp?'Draw':(score.you>score.opp?homeDisplayName:awayDisplayName)+' win';
+    const scorers=document.getElementById('ftScorers');scorers.replaceChildren();
+    for(const team of ['you','opp']){
+      const goals=report.events.filter(event=>event.type==='goal'&&event.team===team&&event.player);
+      const column=document.createElement('p');
+      column.textContent=goals.map(event=>event.player+' '+event.minute+'′'+(event.ownGoal?' (OG)':'')).join('\n');
+      scorers.appendChild(column);
+    }
+    scorers.hidden=!scorers.textContent;
+    const passes=stats=>stats.passes+' ('+Math.round(100*stats.completed/Math.max(1,stats.passes))+'%)';
+    const rows=[['Possession',home.possession+'%',away.possession+'%'],
+      ['Shots (on target)',home.shots+' ('+home.onTarget+')',away.shots+' ('+away.onTarget+')'],
+      ['Passes (complete)',passes(home),passes(away)],['Fouls',home.fouls,away.fouls],
+      ['Yellow cards',home.yellows,away.yellows],['Red cards',home.reds,away.reds],['Saves',home.saves,away.saves]];
+    ftStats.innerHTML='<table aria-label="Full-time match statistics"><tbody>'+rows.map(row=>'<tr><td>'+row[1]+'</td><th scope="row">'+row[0]+'</th><td>'+row[2]+'</td></tr>').join('')+'</tbody></table>';
+    ftime.style.display='block';ftBtn.focus({preventScroll:true});
+  }
   function endMatch(){
-    clearMatchPresentationUI();
+    finishMatchAudio();clearMatchPresentationUI();
     report.endedAt=Date.now();report.score={you:youScore,opp:oppScore};logEvent('full-time',null,null,{score:youScore+'-'+oppScore});
     const all=[...you,...opp,ykeep,okeep];report.players={};
     all.forEach(p=>{p.stats.rating=clamp(p.stats.rating,4.5,10);report.players[p.id]={name:p.name,team:p.team,role:p.role,number:p.number,seasonApps:p.seasonApps+1,seasonGoals:p.seasonGoals+p.stats.goals,stamina:+p.stamina.toFixed(1),...Object.fromEntries(Object.entries(p.stats).map(([k,v])=>[k,typeof v==='number'?+v.toFixed(2):v]))};});
     const total=report.teams.you.possessionTicks+report.teams.opp.possessionTicks||1;
     report.teams.you.possession=Math.round(report.teams.you.possessionTicks/total*100);report.teams.opp.possession=100-report.teams.you.possession;
-    ftScore.textContent=youScore+' – '+oppScore;ftMsg.textContent=youScore>oppScore?(homeTeamConfig.name||homeDisplayName)+' win':youScore<oppScore?(awayTeamConfig.name||awayDisplayName)+' win':'Draw';
-    const rows=[['Possession',report.teams.you.possession+'%',report.teams.opp.possession+'%'],['Shots',report.teams.you.shots,report.teams.opp.shots],['On target',report.teams.you.onTarget,report.teams.opp.onTarget],['xG',report.teams.you.xg.toFixed(2),report.teams.opp.xg.toFixed(2)],['Passes',report.teams.you.passes,report.teams.opp.passes],['Pass accuracy',Math.round(100*report.teams.you.completed/Math.max(1,report.teams.you.passes))+'%',Math.round(100*report.teams.opp.completed/Math.max(1,report.teams.opp.passes))+'%'],['Tackles',report.teams.you.tackles,report.teams.opp.tackles],['Fouls',report.teams.you.fouls,report.teams.opp.fouls],['Corners',report.teams.you.corners,report.teams.opp.corners],['Saves',report.teams.you.saves,report.teams.opp.saves],['Cards',report.teams.you.yellows+(report.teams.you.reds?' / '+report.teams.you.reds+' red':''),report.teams.opp.yellows+(report.teams.opp.reds?' / '+report.teams.opp.reds+' red':'')]];
-    report.summary=playtestSummary();persistPlaytestLog(true);publishFullPlaytestData();if(query.get('telemetryUi')==='1'){let telemetry=document.getElementById('playtestTelemetry');if(!telemetry){telemetry=document.createElement('pre');telemetry.id='playtestTelemetry';telemetry.style.cssText='position:fixed;z-index:99998;right:12px;bottom:12px;max-width:620px;max-height:58vh;overflow:auto;padding:12px;background:rgba(3,16,31,.95);color:#bce5c7;border:2px solid #4d9d6b;font:11px/1.45 monospace;white-space:pre-wrap';document.body.appendChild(telemetry);}telemetry.textContent='PLAYTEST TELEMETRY\n'+JSON.stringify(report.summary,null,2);}ftStats.innerHTML=rows.map(r=>'<div>'+r[1]+'</div><div>'+r[0]+'</div><div>'+r[2]+'</div>').join('');ftime.style.display='grid';
+    report.summary=playtestSummary();persistPlaytestLog(true);publishFullPlaytestData();if(query.get('telemetryUi')==='1'){let telemetry=document.getElementById('playtestTelemetry');if(!telemetry){telemetry=document.createElement('pre');telemetry.id='playtestTelemetry';telemetry.style.cssText='position:fixed;z-index:99998;right:12px;bottom:12px;max-width:620px;max-height:58vh;overflow:auto;padding:12px;background:rgba(3,16,31,.95);color:#bce5c7;border:2px solid #4d9d6b;font:11px/1.45 monospace;white-space:pre-wrap';document.body.appendChild(telemetry);}telemetry.textContent='PLAYTEST TELEMETRY\n'+JSON.stringify(report.summary,null,2);}showFullTimeStats();
   }
   document.getElementById('exportBtn').textContent='Export full playtest log';document.getElementById('exportBtn').addEventListener('click',downloadPlaytestLog);document.getElementById('copyFullLogBtn').addEventListener('click',async e=>{const button=e.currentTarget;try{const result=await copyPlaytestLog();button.textContent='Copied '+result.notes+' notes · '+Math.round(result.bytes/1024)+' KB';}catch(error){button.textContent='Copy blocked · use Export';}});
 
@@ -8166,7 +8228,7 @@ function buildGoal(gx){
     instantResult:()=>calculateInstantResult(),
     openInstantResult:()=>openInstantResult(),
     getMatchConfig:()=>({engineVersion:'0.174',year:CONFIG.year,matchLengthMinutes:MATCH_LENGTH_MINUTES,difficulty:CONFIG.difficulty,difficultyProfile:{...D0},varActive:VAR_ACTIVE,varIntroYear:VAR_INTRO_YEAR,officiating:{temperature:+matchTemperature.toFixed(1),temperatureBand,referee:{...REFEREE_PROFILE},refereeVision:false,shirtPullInput:'circle-double-tap-one-pull',diveInput:'dpad-down',autonomousDivePolicy:'cpu-footballers-only-one-contextual-decision-per-challenge',aiDiveCooldownMinutes:AI_DIVE_COOLDOWN_MINUTES,diveWhistles:'obvious incidents immediate, ambiguous incidents delayed, play-on uninterrupted',penaltyAreaDiveEvidence:'each outcome downgraded one tier',foulClarity:'named cause plus contact reaction and incident framing'},presentation:{offsideSequence:{stages:['whistle','camera-pan','flag-raise','flag-hold','free-kick-handoff'],clock:'real-time-dead-ball',assistant:'existing-near-or-far-official',handoff:'exactly-once'},liveFoulCutscenes:['xWave','joke','dramatic','refPunch'],refereeXWave:'two-beat chest-cross-in-front',ordinaryFoulReplays:true,missedShotReplays:true,saveToCornerReplays:true,redCardReplays:true,incidentChainReplays:true,incidentChainWindowMs:4600,initialAngleHoldMs:3400,redCardImpactFrames:true,automaticDiveReplays:'stoppages-only-after-live-incident',diveReplaySystemReady:true,divePerformances:DIVE_PERFORMANCE_ORDER.slice(),rollingDiveAxis:'longitudinal-body-roll-on-ground',negativeReactions:['handsOnHead','handsOnFace','headShake','handsRaised','handsOnHips'],walkout:{interactive:true,footballerCollision:true,tackleReactions:true,animationSet:['walkoutBigHop','walkoutBounce','walkoutLoosen'],cameraBeats:6,fightInput:'F or L3+R3'},fightSystem:{stages:['approach','square-up','shove','scrum','separation','aftermath'],roles:['instigator','rival','enforcer','separator','supporter'],dynamicCameras:true,cameraRelease:'sequence-clears-on-final-frame'},powerHUD:{cards:['home-bottom-left','away-bottom-right'],actions:['pass','shot','through-ball','lob','cross','set-piece','keeper-distribution'],setPieceIdealMarker:true},cinematicBalance:'sandbox-play-held-close-shots',reactionFaces:'flat-front-mounted-FLARE-plates-no-sculpt-head-asset',headScale:1.13,reactionPreview:true,crowdAudio:['goal-roar','angry-boo','whey'],collisionAudio:['standing-tackle','sliding-tackle','shoulder-barge','referee-punch'],partisanCrowd:true,crowdFaces:'instanced-FLARE-face-plates'},skills:{keyboard:'Q direction / Q twice',rightStickClick:'flick-up',flickUpControl:'left-stick-directed-short-controlled-pop',flickUpVariations:FLICK_UP_VARIANTS.slice(),fakeShot:'Circle or Square then Cross, including quick release then Cross, plus left-stick direction',throughBall:'Triangle leads a runner into space; L1 plus Triangle sends the same idea over the defensive line',aerialClear:'Square while the opposition service is airborne',aerialPass:'Cross while the ball is airborne',aerialShot:'Circle chooses a contextual first-time header or volley',aerialFlairShot:'L2 plus Circle attempts an overhead or scissor shot',aerialFlairClear:'L2 plus Square attempts an overhead or scissor clearance',drivenLob:'L1 plus R1 plus Square',lobTrajectory:'standardised-ballistic-output',directionalSetPieceDeliveries:{scope:['FREE KICK','CORNER','GOAL KICK'],normal:'Square',low:'R1 plus Square',driven:'L1 plus R1 plus Square',direction:'left stick at release',physics:['power','pass rating','technique rating','line','spin bias','mode-specific pace and loft']},freeKicks:{default:'dipping-power-can-overshoot',l1:'driven-aim-power-distance-model',r1:'curled-power-can-overshoot',readyWhistle:true,runUpMs:{dipping:1180,driven:1060,curved:1320},runUpMetres:'3.5-to-4.3',camera:'ball-anchored-goal-framed-behind-player',powerFeedback:'taker-card-with-ideal-marker',shape:'direct-free-kick-not-corner'},dpadDown:'contextual-dive',rightStickStepOver:'l2-plus-up-or-down-vertical-flick-chain-maximum-six-left-stick-exit',rightStickRoulette:'unmodified-down-half-circle',gestureTolerance:'restored-and-forgiving'},ai:{teamModes:['defend','transition','in-possession'],attackSystem:['build','advance','create','finish'],attackPatterns:['central-combination','wide-overload','direct-penetration'],coordinatedRoles:['carrier','link','runner','central-run','width','overlap','box-runs','cutback','cover'],guaranteedPenetratingRolesPerAttack:2,beyondCarrierTelemetry:true,transitionAttack:{durationFrames:180,progressivePassFirst:true,fallback:'sprint-carry'},defending:{carrierPrediction:true,nearestPresserRotation:true,closeDownArrival:AI_PRESS_ARRIVAL,tackleRadius:AI_TACKLE_RADIUS,attemptTelemetry:true},humanPossessionUsesSameOffBallSystem:true,sameFootballModelEveryDifficulty:true,difficultyPhysicalAdvantages:false,sharedPhysicalRules:['pace','acceleration','pressing-speed','tackle-contact','collision-outcome','keeper-reach','keeper-reaction','pass-error','shot-error','first-touch-error'],difficultyAffects:['scan-delay','perception-and-memory','decision-selection','role-coordination','press-coordination','tackle-selection','booking-awareness','contextual-dive-selection'],receptionModel:'footballer-ratings-pressure-body-position-and-ball-pace'},terminology:{footballer:'on-pitch character',userControlledFootballer:'footballer receiving human input',cpuFootballer:'footballer making autonomous decisions',controller:'human input device or operator',stadium:'match venue formerly referred to as a map'},goalkeepers:{balancePass:'middle-ground',diveAnimation:true,shotResolution:['keeper-rating','prepared-state','shot-power','placement','distance','pace','contact-edge'],contactIsNotAutomaticSave:true},controllerUI:'shared-spatial-navigation',weather:CONFIG.weather,stadium:{name:STADIUM_THEME==='north-london'?'North London':STADIUM_THEME,theme:STADIUM_THEME,forcedInQuickPlay:QUICK_PLAY,size:STADIUM.size,capacity:STADIUM.capacity,attendance:STADIUM.attendance,crowdFill:+STADIUM.crowdFill.toFixed(2),figureScale:STADIUM.figureScale,bowlScale:1.08,homeSections:'North Bank home end plus home majority',awaySections:'segregated east end plus connected corner block',segregation:['sterile-seat-buffer','physical-barriers','steward-line'],hasCrowdFaces:!!crowdFaces,hasFloodlights:STADIUM.hasFloodlights,cityFeatures:['red-brick-neighbourhood','lit-windows','art-deco-stand-facades','classic-clock','elevated-rail','moving-commuter-train']},playtestLogging:{version:4,autoSave:true,activeKey:ACTIVE_PLAYTEST_LOG_KEY,completedKey:COMPLETED_PLAYTEST_LOG_KEY,completedSurvivesRestart:true,export:true,annotations:true},audio:{defaultPercent:70,requestedPercent:Math.round(AUDIO_LEVEL*100),state:actx?actx.state:'not-created',unlocked:audioUnlockError?'error':actx?actx.state:'not-created',error:audioUnlockError||null,firefoxFallback:'visible-click-to-enable-control',gestureUnlocks:['keyboard','pointer','touch','controller-button']},receiverHandover:true,defensiveSwitching:'manual',localTwoPlayer:twoPlayerEnabled,spectatorMode:AUTO&&!FAST,setPieces:{engine:'main-3d',clockRate:'real-time-while-held',kickoffOwnHalfLock:true,freeKickWall:'location-sensitive-0-to-5-players-at-9.15m',readyWhistle:['FREE KICK','PENALTY'],cameraRig:{anchor:'ball',framing:'goal-or-delivery-axis',position:'behind-player',pan:'bounded-directional-window'},cameraPolicy:{online:'broadcast-frozen',humanFreeKick:'set-piece-special',humanGoalKick:'set-piece-special',humanCorner:'set-piece-special',humanPenalty:'penalty-taker',cpuFreeKick:'broadcast',cpuGoalKick:'broadcast',cpuCorner:'broadcast',cpuPenaltyVsHumanKeeper:'penalty-save',cpuPenaltyNoHumanKeeper:'broadcast'}},aerialDuels:{manualAttackingHeaders:true,manualAttackingVolleys:true,manualFlairShots:true,manualHeadedPass:true,automaticHeaders:'cpu-controlled-teams-only',automaticHeadAway:'disabled-for-human-defense-square-required',manualAssistRadius:68,contestModel:['timing','body-position','heading','jumping','strength','defending'],flairContactCap:.64}}),
-    getAudioState:()=>({requestedPercent:Math.round(AUDIO_LEVEL*100),context:actx?actx.state:'not-created',unlocked:audioUnlocked,ambienceOn,muted:audioMuted,error:audioUnlockError||null,explicitlyMuted:AUDIO_LEVEL===0||audioMuted}),
+    getAudioState:()=>({ending:audioEnding,masterGain:audioMaster?audioMaster.gain.value:0,ambienceNodes:ambienceNodes.length,requestedPercent:Math.round(AUDIO_LEVEL*100),context:actx?actx.state:'not-created',unlocked:audioUnlocked,ambienceOn,muted:audioMuted,error:audioUnlockError||null,explicitlyMuted:AUDIO_LEVEL===0||audioMuted}),
     getReactionSystem:()=>JSON.parse(JSON.stringify(FLARE_REACTION_SYSTEM)),
     unlockAudio:()=>initAudio(true),
     setAudioMuted:muted=>setAudioMuted(muted,false),
