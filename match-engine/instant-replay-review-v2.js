@@ -34,7 +34,8 @@
   });
   const PLAYER_FIELDS = Object.freeze([
     'x', 'y', 'vx', 'vy', 'fx', 'fy', 'gait', 'action', 'actionT', 'slide',
-    'stun', 'divePerformance', 'diveDuration', 'diveVariant', 'diveSide'
+    'stun', 'divePerformance', 'diveDuration', 'diveVariant', 'diveSide',
+    'keeperAnimationDuration', 'keeperPose'
   ]);
   const BALL_FIELDS = Object.freeze(['x', 'y', 'z', 'vx', 'vy', 'zv', 'isShot']);
 

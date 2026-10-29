@@ -238,7 +238,7 @@
       "path": "match-engine/match.html",
       "purpose": "V2-only playable host with exact three-workflow fail-closed preflight",
       "baselineSha256": "8380734db3a142293c5bca2a22f6b6cc9e6a0fa658f9f0c26cce8ad1801cf678",
-      "candidateSha256": "688529dde1f99894e0f00d2d2e4393f7ad53ec96182eccd051e7c28882f01b1b",
+      "candidateSha256": "951c8d1ce51bcbe76dc6f3508363235026eea34dffb93b517c0b207e4fd61a8b",
       "pinState": "frozen",
       "expectedRelation": "authoritative-v2-only-three-workflow-host-plus-nonplayable-compatibility-scaffold"
     },

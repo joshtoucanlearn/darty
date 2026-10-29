@@ -135,7 +135,7 @@ function protectedBuild173Payload(seed = 173173, matchType = 'co-op') {
 
 test('frozen promotion bytes and lower-engine contracts are exact', () => {
   assert.equal(hash(adapterSource), '859902e59682ba7ef8b9c2fe4af0ebc40dba1757c8d7e2f890f339cfa9f8797d');
-  assert.equal(hash(matchSource), '688529dde1f99894e0f00d2d2e4393f7ad53ec96182eccd051e7c28882f01b1b');
+  assert.equal(hash(matchSource), '951c8d1ce51bcbe76dc6f3508363235026eea34dffb93b517c0b207e4fd61a8b');
   assert.equal(Adapter.VERSION, '1.0.0-offline-live-authority-playtest');
   assert.deepEqual([...Adapter.SUPPORTED_WORKFLOWS], ['single-player', 'cpu-v-cpu']);
   assert.equal(Ball.VERSION, Adapter.DEPENDENCY_CONTRACTS.ball.version);

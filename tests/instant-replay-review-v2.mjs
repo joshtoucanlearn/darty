@@ -38,6 +38,20 @@ test('an empty or too-short buffer fails closed', () => {
   assert.deepEqual(Review.createImmutableClip([frame(0), frame(100)]).reason, 'duration-too-short');
 });
 
+test('keeper set poses and animation durations survive the immutable replay copy and sampling', () => {
+  const frames=[frame(0),frame(400),frame(800)];
+  Object.assign(frames[0].players[0],{keeperPose:'ready',keeperAnimationDuration:0});
+  Object.assign(frames[1].players[0],{keeperPose:'active',action:'keeperLowDive',actionT:34,keeperAnimationDuration:56});
+  Object.assign(frames[2].players[0],{keeperPose:'active',action:'keeperLowDive',actionT:12,keeperAnimationDuration:56});
+  const clip=Review.createImmutableClip(frames);
+  assert.equal(clip.frames[0].players[0].keeperPose,'ready');
+  assert.equal(clip.frames[1].players[0].keeperAnimationDuration,56);
+  const controller=Review.createReviewController();controller.open(frames,{now:0});controller.seek(.5);
+  frames[1].players[0].keeperAnimationDuration=18;
+  assert.equal(controller.sample().a.players[0].keeperAnimationDuration,56);
+  assert.equal(controller.sample().a.players[0].actionT,34);
+});
+
 test('playback, scrub and speed remain inside the frozen source timeline', () => {
   const frames = [frame(1000, 0), frame(1500, 10), frame(2000, 20)];
   const controller = Review.createReviewController();
