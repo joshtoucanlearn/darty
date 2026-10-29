@@ -63,17 +63,16 @@
   }
   document.documentElement.classList.toggle('darty-clean',clean);
   document.documentElement.classList.toggle('darty-capture',capture);
-  const rows=[],contacts=new Set(),assets=[];let hooks=null,frame=0,loaded=false,resolveReady,rejectReady;
+  const rows=[],contacts=new Set(),assets=[],cameraTrace=[],traceCamera=capture&&params.get('cameraMotion')==='1';let hooks=null,frame=0,loaded=false,resolveReady,rejectReady;
   const ready=new Promise((resolve,reject)=>{resolveReady=resolve;rejectReady=reject;});
   // A failed load remains visible; callers can await/reject ready without a hang.
   ready.catch(()=>{});
-  let cutUntil=0,lastCamera=null,lastReplay=null,lastCelebration=false,pendingPop=null;
+  let lastCamera=null,lastReplay=null,lastCelebration=false,pendingPop=null;
   function camera(){return hooks?hooks.camera():null;}
   function record(type,details={}){
     if(!hooks)return;
     rows.push({type,time:hooks?hooks.time():0,frame,camera:camera(),...details});
   }
-  function setCamera(mode){if(hooks&&hooks.baseCamera()!==mode)hooks.setCamera(mode);}
   function observe(){
     const replay=hooks.replay(),celebration=hooks.celebration();
     if(replay!==lastReplay){if(lastReplay)record('replayEnd',{replay:lastReplay});if(replay)record('replayStart',{replay});lastReplay=replay;}
@@ -86,10 +85,6 @@
     if(pendingPop&&now-pendingPop.at>3000)pendingPop=null;
     if(pendingPop&&(hooks.replay()||hooks.celebration()))pendingPop=null;
     if(pendingPop&&now>=pendingPop.at&&hooks.canReplayPop()){const pop=pendingPop;pendingPop=null;hooks.replayPop(pop);}
-    if(hooks.replay()||hooks.celebration())return;
-    // Long readable holds, with brief wider views. Existing rigs own all framing.
-    const cycle=now%60000,mode=now<cutUntil?'classic':cycle<24000?'dynamic':cycle<44000?'classic':cycle<50000?'endToEnd':cycle<56000?'broadcast':'tactical';
-    setCamera(mode);
   }
   function advanceFrame(){
     frame++;
@@ -107,11 +102,11 @@
     clock.withRandom('gpu',hooks.render);return frame;
   }
   const runtime={capture,clean,showcase,clock,record,
+    cameraSample(input){if(traceCamera){if(cameraTrace.length>=100000)throw new Error('Camera trace limit reached');cameraTrace.push({...input,events:input.events.map(e=>({type:e.type,team:e.team,phase:e.phase}))});}},
     waitFor:promise=>assets.push(promise),
     visual:fn=>clock?clock.withRandom('visual',fn):fn(),
     gpu:fn=>clock?clock.withRandom('gpu',fn):fn(),
     onEvent(event){
-      if(showcase&&['shot','darty-hard-hit'].includes(event.type)){cutUntil=root.performance.now()+2400;setCamera('classic');}
       for(const type of eventTypes(event))record(type,{sourceType:event.type,team:event.team||null,playerId:event.playerId||null,...(event.part?{part:event.part}:{}),...(event.shotType==='guaranteed'?{testingAid:true}:{})});
       if(showcase&&event.type==='darty-toy-pop')pendingPop={at:root.performance.now()+700,playerId:event.playerId,actorId:event.actorId};
     },
@@ -133,6 +128,7 @@
   root.DartyVideo=runtime;
   if(capture){
     root.dartyCapture=Object.freeze({ready,step,time:()=>hooks?hooks.time():0,events:()=>JSON.parse(JSON.stringify(rows)),
+      cameraTrace:()=>JSON.parse(JSON.stringify(cameraTrace)),
       frame:()=>frame,
       findNext(type,maxSeconds=60){
         if(!loaded)throw new Error('Await dartyCapture.ready before searching');
