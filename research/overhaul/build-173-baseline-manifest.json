@@ -430,7 +430,7 @@
       "path": "match-engine/formation-behaviour-v2.js",
       "purpose": "neutral formation contracts and additive historic-team overlays",
       "baselineAbsent": true,
-      "candidateSha256": "c7d6a88ff13e065235e5b4096e78d9b35e2f4fdf8654633c7b5e05eb1621abc1",
+      "candidateSha256": "00fee597c6e2c9d743cbfe031a9e416ab0d65df2addf9ec3d05bdcd5f7724d44",
       "authorityScope": ["single-player-quick-play", "cpu-versus-cpu", "v2-shadow"]
     },
     {
@@ -500,7 +500,7 @@
       "path": "match-engine/live-v2-authority-adapter.js",
       "purpose": "outer offline normal-match gameplay transaction with rollback and host-level strict-stop enforcement",
       "baselineAbsent": true,
-      "candidateSha256": "973770887b668eb947a101c2bc566b413c1965fe01bcde9cabc9734a987edb9e",
+      "candidateSha256": "e195a0454c77df9a2256c29c1fc9d9c129ee37cc3fe25da44e38f616fc91516e",
       "pinState": "frozen",
       "authorityScope": ["single-player-quick-play", "cpu-versus-cpu"]
     },

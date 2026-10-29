@@ -2,6 +2,7 @@
 // presentations, restarts and the V2 period clock. No browser or network.
 // node tools/headless-cpu-match.mjs --url-file /path/match-url.txt --seeds 1,2 --minutes 2
 import fs from 'node:fs';
+import { createCohesionMetrics } from './cohesion-metrics.mjs';
 import path from 'node:path';
 import vm from 'node:vm';
 import { createHash } from 'node:crypto';
@@ -13,7 +14,7 @@ const require = createRequire(import.meta.url);
 const { createClock } = require('../match-engine/darty-video-capture.js');
 const read = filename => fs.readFileSync(path.join(root, filename), 'utf8');
 const html = read('match-engine/match.html');
-const sourceHashes = Object.fromEntries(['match-engine/match.html', 'match-engine/live-v2-authority-adapter.js', 'tools/headless-cpu-match.mjs']
+const sourceHashes = Object.fromEntries(['match-engine/match.html', 'match-engine/live-v2-authority-adapter.js', 'tools/headless-cpu-match.mjs', 'tools/cohesion-metrics.mjs', 'match-engine/formation-behaviour-v2.js', 'match-engine/cpu-intelligence-v2.js']
   .map(filename => [filename, createHash('sha256').update(read(filename)).digest('hex')]));
 const noop = () => {};
 
@@ -61,6 +62,7 @@ export function createHeadlessMatch(inputUrl, { seed, minutes } = {}) {
   url.searchParams.set('volume', '0');
   const clock = createClock(seed);
   const progress = createCommitProgressMonitor();
+  const cohesion = createCohesionMetrics();
   const canvasContext = new Proxy({}, {
     get(object, key) {
       if (key === 'measureText') return text => ({ width: String(text).length * 8 });
@@ -88,7 +90,7 @@ export function createHeadlessMatch(inputUrl, { seed, minutes } = {}) {
   };
   const context = vm.createContext(vm.constants.DONT_CONTEXTIFY);
   Object.assign(context, {
-    console, document, location: url, navigator: { getGamepads: () => [], userAgent: 'Node fixed-tick host' },
+    console, document, __cohesion: cohesion, location: url, navigator: { getGamepads: () => [], userAgent: 'Node fixed-tick host' },
     localStorage: { getItem: () => null, setItem: noop, removeItem: noop },
     URL, URLSearchParams, TextEncoder, TextDecoder, Uint8Array,
     atob: text => Buffer.from(text, 'base64').toString('binary'),
@@ -121,14 +123,24 @@ export function createHeadlessMatch(inputUrl, { seed, minutes } = {}) {
   const start = html.indexOf('<script>\n(function(){') + '<script>'.length;
   const end = html.lastIndexOf('</script>\n<script src="set-piece-system.js"');
   const bridge = `
+    const observedLogEvent=logEvent;
+    logEvent=function(...args){observedLogEvent(...args);const event=report.events[report.events.length-1];
+      if(event&&(event.type==='pass'||event.type==='pass-resolved'))__cohesion.event(event);};
+    let cohesionTicks=0;
     window.__headless={
       tick(){const live=matchPhase==='play'&&liveV2ControlPhase()==='live';
         try{DT=1;update();recordReplayFrame(performance.now());}catch(error){liveV2Stop(error);}
+        if(live&&++cohesionTicks%60===0){const owner=logicalLivePossessionOwner(),source=owner||ball.lastKicker;
+          __cohesion.sample({possessionTeam:source&&source.team,ball:{y:ball.y*68/H},
+            players:[...you,...opp].map(p=>({team:p.team,sentOff:p.sentOff,isGK:p.isGK,family:positionFamily(p),
+              x:(p.x-M)*105/(W-2*M),y:p.y*68/H}))});}
         return{live,committed:liveV2AuthorityTotals.lastCommittedTick};},
       state:()=>({phase:matchPhase,minute:minuteNow(),clockFrames,score:[youScore,oppScore],
         authority:liveV2AuthorityTelemetry(),hostPhase:liveV2ControlPhase(),
         sentOffPlayers:[...you,...opp].filter(player=>player.sentOff).length,keeperOwns:!!(ball&&ball.owner&&ball.owner.isGK),
         redCards:[report.teams.you.reds,report.teams.opp.reds],
+        matchStats:['you','opp'].map(team=>({shots:report.teams[team].shots,passes:report.teams[team].passes,
+          completed:report.teams[team].completed,offsides:report.teams[team].offsides})),
         gameplayEligible:liveV2CanAdvance(),reset:inReset(),clockRunning,
         ball:{x:ball&&ball.x,y:ball&&ball.y,z:ball&&ball.z,speed:ball?Math.hypot(ball.vx,ball.vy,ball.zv):0,
           owned:!!(ball&&ball.owner),logicalOwned:!!liveV2Carrier(),shot:!!(ball&&ball.isShot)},
@@ -138,7 +150,7 @@ export function createHeadlessMatch(inputUrl, { seed, minutes } = {}) {
   execute(html.slice(start, end).replace('  setCameraMode(cameraMode,false);', bridge + '\n  setCameraMode(cameraMode,false);'), 'match-host.js');
   clock.advance(200); // The host's existing 180 ms automatic start.
   return {
-    state: () => ({ ...context.__headless.state(), progress: progress.snapshot() }),
+    state: () => ({ ...context.__headless.state(), progress: progress.snapshot(), cohesion: cohesion.snapshot() }),
     step() { clock.advance(1000 / 60); const sample = context.__headless.tick(); progress.observe(sample.live, sample.committed); }
   };
 }

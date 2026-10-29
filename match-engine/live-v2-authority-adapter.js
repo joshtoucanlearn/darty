@@ -731,7 +731,7 @@
       }
       return { phases, transition };
     }
-    function formationOutputs(snapshot, phaseState) {
+    function formationOutputs(snapshot, phaseState, possession) {
       const output = {};
       for (const team of snapshot.teams) {
         const formation = dependencies.formation.normalizeFormationCode(team.formation);
@@ -753,6 +753,7 @@
           philosophy: philosophyFor(team, formation), pitch: METRIC_PITCH,
           attackingDirection: team.attackingDirection,
           offsideLine: (team.offsideLine - snapshot.pitch.xMin) / snapshot.units.xPerMetre,
+          ball: { ...metricBall(snapshot.ball, snapshot), free: !possession.ownerId },
           tactics: { ...team.tactics, carrierProgress }
         });
       }
@@ -982,6 +983,20 @@
         for (const intent of decisions[teamId].defensiveIntents || []) {
           if (!intent || !intent.playerId || !intent.target) continue;
           defensive[String(intent.playerId)] = clone(intent);
+        }
+      }
+      // A cover player belongs to the line; only the primary presser may
+      // leave its anchor locally. A distant carrier must not split the unit.
+      for (const teamId of ['you', 'opp']) {
+        if (possession.teamId === teamId) continue;
+        for (const row of formations[teamId].targets) {
+          if (!['centre-back', 'full-back', 'wing-back'].includes(row.roleFamily)) continue;
+          const intent = defensive[row.playerId];
+          if (!intent) continue;
+          const reach = intent.type === 'press' ? 3 : 0;
+          intent.connectedLine = intent.type === 'cover';
+          intent.target.x = clamp(intent.target.x, row.target.x - reach, row.target.x + reach);
+          intent.target.y = clamp(intent.target.y, row.target.y - reach, row.target.y + reach);
         }
       }
       // Keep the accepted receiver route alive for every tick of the MR
@@ -1283,7 +1298,7 @@
                 ? clamp(distance / 1.35, 0.58, 0.96)
                 : clamp(distance / 4.2, 0.52, 1);
               mode = distance > (leaseRecoveryActive ? 0.58 : 2.2) ? 'sprint' : 'run';
-            } else if (defensiveIntent) {
+            } else if (defensiveIntent && !defensiveIntent.connectedLine) {
               intensity = clamp(finite(defensiveIntent.targetSpeed, defensiveIntent.type === 'press' ? .88 : .62), .18, 1);
               mode = defensiveIntent.accelerate || defensiveIntent.urgency === 'sprint' ? 'sprint' : intensity > .42 ? 'run' : 'walk';
             } else if (receptionTarget) {
@@ -1343,8 +1358,9 @@
               const carrierSprint = Boolean(carrierTarget && distance > 2.2);
               intensity = carrierTarget
                 ? clamp(distance / 5, 0.58, 1)
-                : clamp(distance / (runTarget ? 7 : 12), runTarget ? 0.74 : 0.12, runTarget ? 1 : 0.72);
-              mode = runTarget || carrierSprint || intensity > 0.74 ? 'sprint' : intensity > 0.2 ? 'run' : 'walk';
+                : clamp(distance / (runTarget ? 7 : 5), runTarget ? 0.74 : 0, 1);
+              mode = runTarget || carrierSprint || (!carrierTarget && distance > 7) ? 'sprint' : intensity > 0.2 ? 'run' : 'walk';
+              if (!runTarget && !carrierTarget && distance < .35) { intensity = 0; mode = 'idle'; }
             }
           }
         }
@@ -2336,7 +2352,7 @@
           ? { ...snapshot, ball: { ...snapshot.ball, ownerId: leaseOwnerId } }
           : snapshot;
         const possession = derivePossession(controlSnapshot), phaseState = phaseAuthority(controlSnapshot, possession);
-        const formations = formationOutputs(controlSnapshot, phaseState), cpu = cpuOutputs(controlSnapshot, formations, possession);
+        const formations = formationOutputs(controlSnapshot, phaseState, possession), cpu = cpuOutputs(controlSnapshot, formations, possession);
         let cpuRejectedPassCommitments = { you: null, opp: null };
         if (authorityProfile.cpuPassRaceFilter) {
           const gated = gatedCpuOutputs(controlSnapshot, cpu.outputs);
