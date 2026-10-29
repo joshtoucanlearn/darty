@@ -74,6 +74,7 @@ export function createHeadlessMatch(inputUrl, { seed, minutes, keeperTrace = fal
       classList: { add: noop, remove: noop, toggle: noop, contains: () => false },
       addEventListener: noop, removeEventListener: noop, setAttribute: noop, removeAttribute: noop,
       appendChild(child) { this.children.push(child); return child; },
+      replaceChildren(...children) { this.children = children; },
       closest: () => null, before: noop, querySelector: () => null, querySelectorAll: () => [],
       getContext: () => canvasContext,
       getBoundingClientRect: () => ({ width: 640, height: 360, left: 0, top: 0 }),
@@ -151,6 +152,8 @@ export function createHeadlessMatch(inputUrl, { seed, minutes, keeperTrace = fal
         try{DT=1;update();recordReplayFrame(performance.now());}catch(error){liveV2Stop(error);}
         return{live,committed:liveV2AuthorityTotals.lastCommittedTick};},
       state:()=>({phase:matchPhase,minute:minuteNow(),clockFrames,score:[youScore,oppScore],
+        fullTimeOverlay:{visible:ftime.style.display==='block',score:ftScore.textContent,
+          stats:ftStats.innerHTML,scorers:document.getElementById('ftScorers').children.map(p=>p.textContent)},
         authority:liveV2AuthorityTelemetry(),hostPhase:liveV2ControlPhase(),
         sentOffPlayers:[...you,...opp].filter(player=>player.sentOff).length,keeperOwns:!!(ball&&ball.owner&&ball.owner.isGK),
         redCards:[report.teams.you.reds,report.teams.opp.reds],

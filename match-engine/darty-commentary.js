@@ -269,8 +269,15 @@
       .catch(() => { console.warn('DARTY commentary: lines file could not be read'); return 0; });
   }
 
+  function stop() {
+    state.enabled = false;
+    if (state.audio) { state.audio.pause(); state.audio = null; }
+    if (state.hideTimer) root.clearTimeout(state.hideTimer);
+    if (state.bar) state.bar.classList.remove('is-visible');
+  }
+
   root.DartyCommentary = Object.freeze({
-    SCHEMA, MOMENTS, init, load, onEvent,
+    SCHEMA, MOMENTS, init, load, onEvent, stop,
     momentFor: (event, ctx) => momentFor(event, ctx),
     status: () => ({ enabled: state.enabled, captions: state.captions, lines: Object.fromEntries(MOMENTS.map(key => [key, state.lines[key].length])), log: state.log.slice() })
   });
