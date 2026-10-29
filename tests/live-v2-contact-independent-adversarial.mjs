@@ -13,7 +13,7 @@ const Ball = require('../match-engine/ball-engine-v2.js');
 const Composer = require('../match-engine/live-v2-contact-authority-composer.js');
 
 const HASHES = Object.freeze({
-  'live-v2-contact-authority-composer.js': '15f87890f25012412dff34d1d8f0dcdf44694d14d107b859f260cde3c4e6c10b',
+  'live-v2-contact-authority-composer.js': '9e3b764c5a2ae7923ebf971012baa3727091ee691b2cfacfa240436d5d171ee6',
   'first-touch-v2.js': 'f548c5c33c0d82ce044ebb083ec6deac0deb212f8287608f77e490794894152c',
   'first-touch-authority-adapter-v2.js': '2c6bf8b63e327c653556d73ec4c820b742038e63fb1f46217ef912eccec432f2',
   'aerial-contact-v2.js': '54bf086bef9e0f149f9ed2445454da510fca5908e79aa77d95ba5f70d5e8b1ba',
@@ -435,4 +435,26 @@ test('hostile malformed structures fail without partial mutation or ambient auth
     'Math.random', 'Date.now', 'performance.now', 'requestAnimationFrame(',
     'setTimeout(', 'setInterval(', 'document.', 'window.addEventListener'
   ]) assert.equal(source.includes(forbidden), false, forbidden);
+});
+
+test('an aerial-model winner can chest a high ball using physical First Touch without manufacturing ownership',()=>{
+  const input=aerialFixture({ballPosition:{x:52.8,y:.02,z:1.35},ballVelocity:{x:-5,y:0,z:-1},
+    aerialIntent:{sequence:'chest-win',epoch:7,commandTick:96,actorId:'receiver',technique:'header',intent:'clear',receiveMode:'chest',target:{x:75,y:0,z:2}}});
+  const result=Composer.compose(input,capability());
+  assert.equal(result.contactType,'first-touch',JSON.stringify(result.presentation));
+  assert.equal(result.presentation.technique,'chest-control');
+  assert.equal(result.presentation.duel.winnerId,'receiver');
+  assert.equal(result.consumedAerialIds.length,1);
+  assert.equal(result.ballState.lastContact.colliderId,'receiver');
+  assert.ok(!result.ownerCandidateId||result.presentation.possessionDisposition==='candidate-acquire');
+});
+
+test('generic First Touch cannot bypass a pending high-ball aerial contest',()=>{
+  const input=aerialFixture({ballPosition:{x:52.8,y:.02,z:1.35},ballVelocity:{x:-5,y:0,z:-1}});
+  input.aerialIntent=null;input.aerialFlightActive=true;
+  const waiting=Composer.compose(input,capability());
+  assert.equal(waiting.status,'aerial-pending');assert.equal(waiting.ownerCandidateId,null);
+  assert.equal(waiting.ownedContact,false);assert.equal(waiting.suppressLegacy.aerialDuel,true);
+  input.aerialFlightActive=false;
+  assert.equal(Composer.compose(input,capability()).contactType,'first-touch','the fixture must exercise the previously reachable generic high reception');
 });

@@ -382,6 +382,8 @@
       carrierId,
       intendedReceiverId: snapshot.intendedReceiverId == null ? null : String(snapshot.intendedReceiverId),
       inFlight: snapshot.inFlight === true,
+      flightType: String(snapshot.flightType || ''),
+      sourcePlayerId: snapshot.sourcePlayerId == null ? null : String(snapshot.sourcePlayerId),
       attackingDirection: direction,
       offsideLine,
       pitch,
@@ -1551,13 +1553,15 @@
 
   function combinationMovement(snapshot, memory, config) {
     const state = memory.combination, space = pitchSpace(snapshot.pitch), dir = snapshot.attackingDirection;
+    const releasingId = snapshot.sourcePlayerId || state.lastOwnerId;
     const playerById = id => snapshot.players.find(p => p.id === id && !p.sentOff && p.available);
     if (snapshot.possessionTeamId !== snapshot.teamId) { state.move = null; state.lastOwnerId = null; return []; }
     // This is an observed authored flight, not the previous requested intent.
-    if (snapshot.inFlight && !snapshot.carrierId && snapshot.intendedReceiverId && state.lastOwnerId &&
-        (!state.move || state.move.linkId !== snapshot.intendedReceiverId || state.move.originId !== state.lastOwnerId)) {
-      const origin = playerById(state.lastOwnerId), link = playerById(snapshot.intendedReceiverId);
-      if (origin && link && origin.id !== link.id && !isRestDefender(origin) && !isHoldDuty(origin) &&
+    if (snapshot.inFlight && !snapshot.carrierId && snapshot.intendedReceiverId && releasingId &&
+        (!state.move || state.move.linkId !== snapshot.intendedReceiverId || state.move.originId !== releasingId)) {
+      const origin = playerById(releasingId), link = playerById(snapshot.intendedReceiverId);
+      if (origin && link && origin.teamId === snapshot.teamId && link.teamId === snapshot.teamId &&
+          origin.id !== link.id && !isRestDefender(origin) && !isHoldDuty(origin) &&
           distance(origin, link, space) >= 165 && distance(origin, link, space) <= 700) {
         const quality = (origin.awareness + origin.control + origin.passing) / 297;
         if (stableUnit(origin.id + ':' + link.id + ':' + Math.floor(snapshot.tick / 60)) < .35 + quality * .6) {
@@ -1569,8 +1573,8 @@
           const thirdTarget = third && boundedDefensivePoint({
             x: safeOnsideX(link.x + dir * space.xFromCanonical(230), snapshot, config),
             y: link.y + space.yFromCanonical(target.y <= link.y ? 220 : -220) }, snapshot, config);
-          state.move = { originId: origin.id, linkId: link.id, target, thirdId: third && third.id,
-            thirdTarget, expiresTick: snapshot.tick + 210 };
+          state.move = { originId: origin.id, linkId: link.id, target, thirdId: third ? third.id : null,
+            thirdTarget: thirdTarget || null, expiresTick: snapshot.tick + 210 };
         }
       }
     }
@@ -1613,6 +1617,93 @@
     return { type: 'pass', targetPlayerId: best.player.id, target: best.target, confidence: .82,
       supportKind: 'support', risk: best.risk, offsideTiming: null,
       reason: best.player.id === move.originId ? 'give-and-go-return' : 'third-man-layoff' };
+  }
+
+  function wideFinalThird(snapshot, carrier) {
+    if (!carrier) return false;
+    const space = pitchSpace(snapshot.pitch), goalX = snapshot.attackingDirection > 0 ? snapshot.pitch.xMax : snapshot.pitch.xMin;
+    return space.xToCanonical(snapshot.attackingDirection * (goalX - carrier.x)) < 1059 &&
+      Math.abs(space.yToCanonical(carrier.y - (snapshot.pitch.yMin + snapshot.pitch.yMax) / 2)) > 560;
+  }
+
+  function boxSlotIntents(snapshot, config) {
+    if (snapshot.possessionTeamId !== snapshot.teamId) return [];
+    const carrier = snapshot.players.find(p => p.id === (snapshot.carrierId || snapshot.intendedReceiverId));
+    const service = /cross|corner|free-kick-cross/.test(snapshot.flightType) && snapshot.inFlight;
+    const reference = service ? snapshot.players.find(p => p.id === snapshot.sourcePlayerId) || snapshot.ball : carrier;
+    if (!service && !wideFinalThird(snapshot, reference)) return [];
+    const space = pitchSpace(snapshot.pitch), dir = snapshot.attackingDirection;
+    const goalX = dir > 0 ? snapshot.pitch.xMax : snapshot.pitch.xMin, midY = (snapshot.pitch.yMin + snapshot.pitch.yMax) / 2;
+    const side = reference.y <= midY ? -1 : 1;
+    const candidates = eligibleCpuOutfield(snapshot).filter(p => p.id !== snapshot.carrierId && !isRestDefender(p) &&
+      !isHoldDuty(p) && familyOf(p) !== 'defensive-midfielder');
+    const used = new Set(), slots = [['near-post', 195, side * 100], ['far-post', 240, -side * 155],
+      ['penalty-spot', 333, side * 25], ['edge', 565, -side * 170]];
+    return slots.map(([slot, depth, lateral]) => {
+      const target = boundedDefensivePoint({ x: service ? goalX - dir * space.xFromCanonical(depth) :
+        safeOnsideX(goalX - dir * space.xFromCanonical(depth), snapshot, config),
+      y: midY + space.yFromCanonical(lateral) }, snapshot, config);
+      const player = candidates.filter(p => !used.has(p.id) && distance(p, target, space) < 1000)
+        .sort((a, b) => distance(a, target, space) - distance(b, target, space) || a.id.localeCompare(b.id))[0];
+      if (!player) return null;
+      used.add(player.id);
+      return { playerId: player.id, type: 'box-' + slot, slot, target };
+    }).filter(Boolean);
+  }
+
+  function crossOption(snapshot, carrier, config) {
+    if (!wideFinalThird(snapshot, carrier)) return null;
+    const space = pitchSpace(snapshot.pitch), dir = snapshot.attackingDirection;
+    const goalX = dir > 0 ? snapshot.pitch.xMax : snapshot.pitch.xMin, midY = (snapshot.pitch.yMin + snapshot.pitch.yMax) / 2;
+    const depth = space.xToCanonical(dir * (goalX - carrier.x));
+    const slots = boxSlotIntents(snapshot, config);
+    const options = slots.filter(slot => slot.slot !== 'edge' || depth < 260).map(slot => {
+      const player = snapshot.players.find(p => p.id === slot.playerId);
+      const target = { x: player.x + player.vx * .18, y: player.y + player.vy * .18 };
+      const length = distance(carrier, target, space), targetDepth = space.xToCanonical(dir * (goalX - target.x));
+      const targetWidth = Math.abs(space.yToCanonical(target.y - midY));
+      const pressure = nearestOpponentClearance(target, target, snapshot);
+      const cutback = depth < 260 && targetDepth > depth + 60;
+      const score = Math.min(pressure, 180) * .45 - distance(target, slot.target, space) * .12 +
+        (cutback ? 40 : slot.slot === 'penalty-spot' ? 15 : 0);
+      return { player, target, length, targetDepth, targetWidth, pressure, cutback, score };
+    }).filter(p => p.targetDepth > 85 && p.targetDepth < 580 && p.targetWidth < 560 &&
+      p.length >= 200 && p.length <= 1300 && !currentOffside(p.player, snapshot, config))
+      .sort((a, b) => b.score - a.score || a.player.id.localeCompare(b.player.id));
+    if (!options.length) return null;
+    const best = options[0], quality = (carrier.passing + carrier.control + carrier.awareness) / 297;
+    // Ratings affect frequency and delivery quality, never eligibility.
+    if (stableUnit(carrier.id + ':cross:' + Math.floor(snapshot.tick / 36)) > .35 + quality * .6) return null;
+    return { type: 'cross', targetPlayerId: best.player.id, target: best.target, confidence: .62 + quality * .26,
+      crossKind: best.cutback ? 'cut-back' : depth < 360 ? 'byline' : 'early',
+      flightType: best.cutback ? 'low-cross' : 'cross', offsideTiming: null,
+      reason: best.cutback ? 'wide-final-third-cutback' : depth < 360 ? 'wide-final-third-byline-cross' : 'wide-final-third-early-cross' };
+  }
+
+  function switchOption(snapshot, carrier, config) {
+    const space = pitchSpace(snapshot.pitch), midY = (snapshot.pitch.yMin + snapshot.pitch.yMax) / 2;
+    const side = carrier.y <= midY ? -1 : 1;
+    const congestion = snapshot.players.filter(p => p.teamId !== snapshot.teamId && !p.sentOff && !p.isGK &&
+      distance(p, carrier, space) < 360 && (p.y - midY) * side > -space.yFromCanonical(90)).length;
+    if (congestion < 2) return null;
+    const options = eligibleCpuOutfield(snapshot).filter(p => p.id !== carrier.id && (p.y - midY) * side < 0)
+      .map(player => {
+        const target = { x: player.x + player.vx * .2, y: player.y + player.vy * .2 };
+        const length = distance(carrier, target, space), lateral = Math.abs(space.yToCanonical(target.y - carrier.y));
+        const progress = space.xToCanonical(snapshot.attackingDirection * (target.x - carrier.x));
+        const receiverSpace = nearestOpponentClearance(target, target, snapshot);
+        return { player, target, length, lateral, progress, receiverSpace,
+          score: Math.min(receiverSpace, 330) + progress * .15 - Math.abs(length - 1050) * .08 };
+      }).filter(p => p.length >= 756 && p.length <= 1361 && p.lateral >= 756 && p.progress >= -210 &&
+        p.progress <= 510 && p.receiverSpace > 105 && !currentOffside(p.player, snapshot, config))
+      .sort((a, b) => b.score - a.score || a.player.id.localeCompare(b.player.id));
+    const best = options[0];
+    if (!best) return null;
+    const quality = (carrier.passing + carrier.awareness) / 198;
+    if (stableUnit(carrier.id + ':switch:' + Math.floor(snapshot.tick / 36)) > .25 + quality * .65) return null;
+    return { type: 'pass', targetPlayerId: best.player.id, target: best.target, confidence: .78,
+      supportKind: 'switch', flightType: 'long-pass', offsideTiming: null, reason: 'switch-congested-side',
+      switchMetrics: { congestion, lateral: best.lateral, receiverSpace: best.receiverSpace } };
   }
 
   function observeCirculationOutcome(snapshot, memory, telemetry, config) {
@@ -1686,6 +1777,8 @@
     };
     const space = pitchSpace(pitch);
     const goalDistance = distance(carrier, goal, space);
+    const cross = crossOption(snapshot, carrier, config);
+    if (cross) return cross;
     // A footballer does not abandon a valid shot merely because the exact
     // centre of the goal is screened. Test the centres of all three goal
     // thirds while keeping the same physical lane-clearance rule. The keeper
@@ -1730,6 +1823,8 @@
     }
     const combination = combinationPass(snapshot, carrier, memory, config);
     if (combination) return combination;
+    const switchPass = switchOption(snapshot, carrier, config);
+    if (switchPass) return switchPass;
     const passOptions = runs.map(run => {
       const runner = snapshot.players.find(player => player.id === run.playerId);
       const releaseTarget = run.continuationTarget || run.target;
@@ -1899,6 +1994,8 @@
     const runs = selectNewRuns(current, memory, candidates, playersById, active, config, telemetry);
     observeCirculationOutcome(current, memory, telemetry, config);
     const combinationIntents = combinationMovement(current, memory, config);
+    const arriving = current.inFlight && current.players.find(p => p.id === current.intendedReceiverId);
+    const firstTimeIntent = arriving && combinationPass({ ...current, carrierId: arriving.id }, arriving, memory, config) || null;
     const intent = carrierIntent(current, runs, memory, config);
     // Match lab only: count carrier decisions when the lab provides a ledger.
     const labLedger = typeof globalThis !== 'undefined' && globalThis.__dartyLabIntents;
@@ -1920,8 +2017,10 @@
     }
     rememberCirculationPass(current, intent, memory);
     const defensiveIntents = buildDefensiveIntents(current, memory, config, telemetry);
+    const boxIntents = boxSlotIntents(current, config);
     const supportIntents = midfieldSupportIntents(current, config)
-      .filter(intent => !combinationIntents.some(move => move.playerId === intent.playerId)).concat(combinationIntents);
+      .filter(intent => !combinationIntents.concat(boxIntents).some(move => move.playerId === intent.playerId))
+      .concat(combinationIntents.filter(intent => !boxIntents.some(move => move.playerId === intent.playerId)), boxIntents);
     telemetry.carrier = cloneObject(intent);
     telemetry.constraints = summarizeConstraints(telemetry);
     memory.lastTick = current.tick;
@@ -1937,6 +2036,7 @@
       carrierIntent: intent,
       defensiveIntents,
       supportIntents,
+      firstTimeIntent,
       memory,
       telemetry
     };

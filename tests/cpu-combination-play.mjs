@@ -17,6 +17,8 @@ test('actual pass flight preserves runs and sends the releasing player and third
   const flight = CPU.decide(state, first.memory);
   assert.ok(!flight.telemetry.transitions.some(t => t.type === 'run-aborted' && t.reason === 'possession-lost'));
   assert.deepEqual(flight.supportIntents.filter(p => ['give-and-go', 'third-man'].includes(p.type)).map(p => p.type), ['give-and-go', 'third-man']);
+  assert.ok(flight.firstTimeIntent, 'the receiver can prepare a physical one-touch layoff during flight');
+  assert.equal(flight.firstTimeIntent.reason, 'third-man-layoff');
   const run = flight.supportIntents.find(p => p.type === 'give-and-go');
   assert.ok(run.target.x > 52);
   state = fixture(3); state.carrierId = 'link'; state.players[0].x = 63; state.players[0].vx = 4;
@@ -72,4 +74,55 @@ test('action ledger requires two completed linked passes, progression and actual
   pass('c', 'a', .72, 4500); resolve('a', .75, 5000, false);
   assert.equal(m.snapshot().byLength['short-under-10m'].attempted, 5);
   assert.equal(m.snapshot().byLength['short-under-10m'].completed, 4);
+});
+
+test('wide final-third carriers choose early crosses, byline service and cutbacks with four distinct box slots', () => {
+  for (const [x, kind] of [[80, 'early'], [94, 'byline'], [100, 'cut-back']]) {
+    const state = fixture();
+    Object.assign(state.players[0], { position: 'RW', x, y: 7 });
+    Object.assign(state.players[1], { position: 'ST', x: kind === 'byline' ? 97 : 94, y: 34 });
+    Object.assign(state.players[2], { position: 'ST', x: 93, y: 41 });
+    state.players.push({ ...state.players[1], id: 'spot', position: 'AM', x: 91, y: 30 },
+      { ...state.players[1], id: 'edge', position: 'CM', x: 87, y: 43 });
+    state.offsideLine = 103; state.ball = { x, y: 7 };
+    const decision = CPU.decide(state);
+    const slots = decision.supportIntents.filter(p => p.type.startsWith('box-'));
+    assert.equal(slots.length, 4);
+    assert.equal(new Set(slots.map(p => p.playerId)).size, 4);
+    assert.equal(new Set(slots.map(p => p.slot)).size, 4);
+    assert.equal(decision.carrierIntent.type, 'cross', JSON.stringify(decision.carrierIntent));
+    assert.equal(decision.carrierIntent.crossKind, kind);
+    assert.ok(['cross', 'low-cross'].includes(decision.carrierIntent.flightType));
+  }
+});
+test('switches need near-side congestion and a genuinely distant far-side outlet', () => {
+  const state = fixture();
+  Object.assign(state.players[0], { x: 55, y: 8 });
+  Object.assign(state.players[1], { x: 58, y: 48 });
+  Object.assign(state.players.at(-1), { x: 56, y: 12 });
+  state.players.push({ ...state.players.at(-1), id: 'near-two', x: 59, y: 9 });
+  const decision = CPU.decide(state);
+  assert.equal(decision.carrierIntent.supportKind, 'switch', JSON.stringify(decision.carrierIntent));
+  assert.equal(decision.carrierIntent.targetPlayerId, 'link');
+  state.players.at(-1).x = 95;
+  assert.notEqual(CPU.decide(state).carrierIntent.supportKind, 'switch');
+  state.players.at(-1).x = 59; state.players[1].y = 20;
+  assert.notEqual(CPU.decide(state).carrierIntent.supportKind, 'switch');
+});
+test('box runners continue through service, retain rest defenders and exclude sent-off players', () => {
+  const state = fixture(); Object.assign(state, { carrierId: null, inFlight: true, intendedReceiverId: 'link', flightType: 'cross' });
+  state.ball = { x: 89, y: 10 }; state.players[2].sentOff = true;
+  const decision = CPU.decide(state);
+  const slots = decision.supportIntents.filter(p => p.type.startsWith('box-'));
+  assert.ok(slots.length);
+  assert.ok(!slots.some(p => ['back-a', 'back-b', 'third'].includes(p.playerId)));
+});
+
+test('a two-player combination without an available third runner remains JSON checkpoint identical', () => {
+  const state=fixture();state.players=state.players.filter(p=>p.id!=='third');
+  const first=CPU.decide(state);Object.assign(state,{tick:2,carrierId:null,inFlight:true,intendedReceiverId:'link'});
+  const flight=CPU.decide(state,first.memory);
+  assert.equal(flight.memory.combination.move.thirdId,null);
+  state.tick=3;
+  assert.deepEqual(CPU.decide(state,flight.memory),CPU.decide(state,JSON.parse(JSON.stringify(flight.memory))));
 });

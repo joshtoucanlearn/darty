@@ -15,7 +15,7 @@ const require = createRequire(import.meta.url);
 const { createClock } = require('../match-engine/darty-video-capture.js');
 const read = filename => fs.readFileSync(path.join(root, filename), 'utf8');
 const html = read('match-engine/match.html');
-const sourceHashes = Object.fromEntries(['match-engine/match.html', 'match-engine/live-v2-authority-adapter.js', 'tools/headless-cpu-match.mjs', 'tools/cohesion-metrics.mjs', 'match-engine/formation-behaviour-v2.js', 'match-engine/cpu-intelligence-v2.js']
+const sourceHashes = Object.fromEntries(['match-engine/match.html', 'match-engine/live-v2-authority-adapter.js', 'tools/headless-cpu-match.mjs', 'tools/cohesion-metrics.mjs', 'match-engine/formation-behaviour-v2.js', 'match-engine/cpu-intelligence-v2.js', 'tools/combination-metrics.mjs', 'match-engine/dribbling-state-v2.js', 'match-engine/live-v2-contact-authority-composer.js']
   .map(filename => [filename, createHash('sha256').update(read(filename)).digest('hex')]));
 const noop = () => {};
 
@@ -136,6 +136,7 @@ export function createHeadlessMatch(inputUrl, { seed, minutes, passRace = true, 
     logEvent=function(...args){observedLogEvent(...args);const event=report.events[report.events.length-1];
       if(event){const actor=args[2],target=event.targetId&&[...you,...opp].find(p=>p.id===event.targetId),progress=attackDirection(event.team)===1?(ball.x-M)/(W-2*M):1-(ball.x-M)/(W-2*M);
         __actions.event({...event,actorId:actor&&actor.id,time:performance.now(),progress,inBox:progress>=1-16.5/105&&Math.abs(ball.y*68/H-34)<=20.16,
+          cpu:!!actor&&!teamHasHumanController(actor.team),nearestDefender:actor&&teamList(other(actor.team)).some(p=>!p.sentOff&&!p.isGK&&D(p,actor)<120),
           distanceMetres:target?Math.hypot((Number(event.intendedX||target.x)-ball.x)*105/(W-2*M),(Number(event.intendedY||target.y)-ball.y)*68/H):null});}
       if(event&&(event.type==='pass'||event.type==='pass-resolved'))__cohesion.event({...event,
         progress:attackDirection(event.team)===1?(ball.x-M)/(W-2*M):1-(ball.x-M)/(W-2*M)});};
@@ -143,10 +144,10 @@ export function createHeadlessMatch(inputUrl, { seed, minutes, passRace = true, 
     window.__headless={
       tick(){const live=matchPhase==='play'&&liveV2ControlPhase()==='live';
         try{DT=1;update();recordReplayFrame(performance.now());}catch(error){liveV2Stop(error);}
-        const owner=logicalLivePossessionOwner();
+        const owner=logicalLivePossessionOwner(),challengeId=__actions.takeOnDefenderId(),challenged=challengeId&&liveV2PlayerById(challengeId);
         __actions.possession(owner&&{id:owner.id,team:owner.team,time:performance.now(),y:owner.y*68/H,
           progress:attackDirection(owner.team)===1?(owner.x-M)/(W-2*M):1-(owner.x-M)/(W-2*M),
-          defenderBehind:teamList(other(owner.team)).some(p=>!p.sentOff&&D(p,owner)<180&&attackDirection(owner.team)*(owner.x-p.x)>45)},live);
+          defenderBehind:!!(challenged&&!challenged.sentOff&&attackDirection(owner.team)*(owner.x-challenged.x)>45)},live);
         if(live)__cohesion.possession({owner:owner&&{family:positionFamily(owner)},loose:!owner&&!ball.target});
         else __cohesion.possession({owner:null,loose:false});
         if(live&&++cohesionTicks%60===0){const source=owner||ball.lastKicker;
@@ -167,7 +168,7 @@ export function createHeadlessMatch(inputUrl, { seed, minutes, passRace = true, 
         halfTime:report.events.some(e=>e.type==='half-time'),fullTime:report.events.some(e=>e.type==='full-time')})
     };
   `;
-  execute(html.slice(start, end).replace('  setCameraMode(cameraMode,false);', bridge + '\n  setCameraMode(cameraMode,false);'), 'match-host.js');
+  execute(html.slice(start, end).replace('liveV2Tick=nextTick;', '__actions.frame(frame.cpu);liveV2Tick=nextTick;').replace('  setCameraMode(cameraMode,false);', bridge + '\n  setCameraMode(cameraMode,false);'), 'match-host.js');
   clock.advance(200); // The host's existing 180 ms automatic start.
   return {
     state: () => ({ ...context.__headless.state(), progress: progress.snapshot(), cohesion: cohesion.snapshot(), actions: actions.snapshot() }),

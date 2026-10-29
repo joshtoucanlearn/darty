@@ -238,7 +238,7 @@
       "path": "match-engine/match.html",
       "purpose": "V2-only playable host with exact three-workflow fail-closed preflight",
       "baselineSha256": "8380734db3a142293c5bca2a22f6b6cc9e6a0fa658f9f0c26cce8ad1801cf678",
-      "candidateSha256": "bd3be0257c0c784cc96725449a42fd715275b82dad0382334e5800a95d775f1c",
+      "candidateSha256": "688529dde1f99894e0f00d2d2e4393f7ad53ec96182eccd051e7c28882f01b1b",
       "pinState": "frozen",
       "expectedRelation": "authoritative-v2-only-three-workflow-host-plus-nonplayable-compatibility-scaffold"
     },
@@ -423,7 +423,7 @@
       "path": "match-engine/cpu-intelligence-v2.js",
       "purpose": "deterministic FL V2 player and team decision authority",
       "baselineAbsent": true,
-      "candidateSha256": "ebc3f9f7eb3f7914b73b62033010f7daa2a975792bfdbaa36ce553175996c2bb",
+      "candidateSha256": "9d85a7df2d07dd4d0db59ea6fa0f45309bb405b6157e44a7603a75300c3c4d1b",
       "authorityScope": ["single-player-quick-play", "cpu-versus-cpu", "v2-shadow"]
     },
     {
@@ -458,7 +458,7 @@
       "path": "match-engine/live-v2-contact-authority-composer.js",
       "purpose": "ordered reaction-rated first-touch, passive body-deflection, aerial and protected legacy-contact arbitration",
       "baselineAbsent": true,
-      "candidateSha256": "15f87890f25012412dff34d1d8f0dcdf44694d14d107b859f260cde3c4e6c10b",
+      "candidateSha256": "9e3b764c5a2ae7923ebf971012baa3727091ee691b2cfacfa240436d5d171ee6",
       "authorityScope": ["single-player-quick-play", "cpu-versus-cpu"]
     },
     {
@@ -500,7 +500,7 @@
       "path": "match-engine/live-v2-authority-adapter.js",
       "purpose": "outer offline normal-match gameplay transaction with rollback and host-level strict-stop enforcement",
       "baselineAbsent": true,
-      "candidateSha256": "4b3de925866288b697a63c4a0f95b839ab8bfcd10ebdb147cee10103bc4ee6fe",
+      "candidateSha256": "24f628f97a6853603c7dca424abcb5d24b315fc5b3a675b9ae4afaf9597f477a",
       "pinState": "frozen",
       "authorityScope": ["single-player-quick-play", "cpu-versus-cpu"]
     },

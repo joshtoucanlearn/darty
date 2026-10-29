@@ -62,13 +62,15 @@ test('a stopped shot gets a collector even when every outfielder is beyond the s
   assert.ok(rows.every(row => row.etaSeconds > 3.2));
 });
 
-test('moving and airborne shots retain their existing protected flight authority', () => {
+test('moving shots keep flight authority while airborne balls permit V2 aerial contests without ground collectors', () => {
   for (const change of [{ vx: 2 }, { z: 20, zv: -1 }]) {
     const snapshot = structuredClone(fixture.snapshot);
     Object.assign(snapshot.ball, { vx: 0, vy: 0, zv: 0, z: 0 }, change);
     const frame = attachment().planTick(snapshot);
     assert.ok(frame);
-    assert.equal(frame.hostProjection.recoveryAssignments.length, 0);
+    assert.ok(!frame.hostProjection.recoveryAssignments.some(row => row.authority === 'v2-loose-ball-recovery'));
+    if (change.z) assert.ok(frame.hostProjection.recoveryAssignments.some(row => row.authority === 'v2-high-ball-contest'));
+    assert.ok(frame.hostProjection.ball, 'airborne planning must preserve physical Ball V2 flight');
   }
 });
 

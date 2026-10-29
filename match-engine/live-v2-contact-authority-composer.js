@@ -286,6 +286,7 @@
     const target = plainObject(source.target, 'aerialIntent.target');
     return {
       sequence, epoch: commandEpoch, commandTick, actorId, technique, intent,
+      receiveMode: source.receiveMode === 'chest' ? 'chest' : null,
       target: { x: finite(target.x, 'aerialIntent.target.x'), y: finite(target.y, 'aerialIntent.target.y'), z: finite(target.z, 'aerialIntent.target.z') }
     };
   }
@@ -323,6 +324,7 @@
       firstTouchIntent: source.firstTouchIntent && typeof source.firstTouchIntent === 'object' ? clone(source.firstTouchIntent) : null,
       reactionContext,
       aerialIntent: normalizeAerialIntent(source.aerialIntent, tick, epoch, roster),
+      aerialFlightActive: source.aerialFlightActive === true,
       consumedFirstTouchIds: firstTouchLedger, consumedFirstTouchThroughTick,
       consumedAerialIds: aerialLedger,
       gate: {
@@ -563,7 +565,8 @@
       roster: rosterById[player.id],
       intended: player.id === request.intendedReceiverId,
       distance: Math.hypot(player.position.x - request.ballState.position.x, player.position.y - request.ballState.position.y)
-    })).filter(row => row.roster && !row.roster.isGK && !row.roster.sentOff && row.roster.available);
+    })).filter(row => row.roster && !row.roster.isGK && !row.roster.sentOff && row.roster.available &&
+      (!request.firstTouchWinnerId || row.player.id === request.firstTouchWinnerId));
     for (const candidate of allCandidates) candidate.reaction = reactionProfile(request, candidate);
     const physicalHits = allCandidates.map(candidate => ({
       candidate,
@@ -811,6 +814,22 @@
     if (!result.launchIntent || result.launchIntent.schema !== Ball.LAUNCH_SCHEMA) {
       throw new Error('successful aerial contact must hand off one Ball V2 launch');
     }
+    const duel = { actorId: actor.id, winnerId: result.contactBy,
+      winnerTeamId: request.roster.find(p => p.id === result.contactBy).teamId,
+      contested: result.telemetry.contest.eligibleCandidateIds.length > 0,
+      opponentIds: clone(result.telemetry.contest.eligibleCandidateIds), technique: result.technique };
+    if (intent.receiveMode === 'chest' && result.outcome === Aerial.OUTCOMES.CONTACT) {
+      // The aerial model chooses the winner first. The existing physical
+      // first-touch model then absorbs the ball with his chest, retaining the
+      // real opposing pressure and allowing a heavy touch or failed control.
+      const chest = resolveFirstTouch({ ...request, aerialIntent: null, reactionContext: null,
+        intendedReceiverId: actor.id, firstTouchWinnerId: actor.id,
+        firstTouchIntent: { type: 'cushion', direction: actor.facing, touchDistanceM: .3, active: false } });
+      if (chest.ownedContact && chest.presentation && chest.presentation.playerId === actor.id) {
+        return deepFreeze({ ...chest, consumedAerialIds,
+          presentation: { ...chest.presentation, duel: { ...duel, technique: chest.presentation.technique } } });
+      }
+    }
     const launched = Ball.resolveLaunch(result.launchIntent);
     const contactBy = stableId(result.contactBy, 'aerial result contactBy');
     const collider = request.world.players.find(player => player.id === contactBy);
@@ -871,7 +890,8 @@
       },
       presentation: {
         playerId: contactBy, actorId: actor.id, outcome: result.outcome, reason: result.reason,
-        technique: result.technique, contactGrade: result.contactGrade, ledgerId
+        technique: result.technique, contactGrade: result.contactGrade, ledgerId,
+        intent: contactBy === actor.id ? intent.intent : 'clear', duel
       },
       detail: { resultId: result.id, launchId: result.launchIntent.id, telemetryDigest: digest(result.telemetry) }
     });
@@ -886,6 +906,9 @@
       return noContact(request, 'gated', clone(request.gate));
     }
     if (request.aerialIntent) return resolveAerial(request);
+    if (request.aerialFlightActive && request.ballState.position.z >= 1.05) {
+      return noContact(request, 'aerial-pending', 'no-playable-aerial-challenger', 'aerial-attempt');
+    }
     return resolveFirstTouch(request);
   }
 
