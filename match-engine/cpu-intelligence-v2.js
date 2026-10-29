@@ -380,6 +380,8 @@
       teamId: snapshot.teamId,
       possessionTeamId,
       carrierId,
+      intendedReceiverId: snapshot.intendedReceiverId == null ? null : String(snapshot.intendedReceiverId),
+      inFlight: snapshot.inFlight === true,
       attackingDirection: direction,
       offsideLine,
       pitch,
@@ -605,6 +607,22 @@
       validateMemoryMaps(source);
       if (source.defense != null) validateDefenseMemory(source.defense);
       if (source.circulation != null) validateCirculationMemory(source.circulation);
+      if (source.combination != null) {
+        const c = source.combination;
+        if (!isRecord(c)) throw new TypeError('memory.combination must be an object');
+        if (c.lastOwnerId != null) validateMemoryString(c.lastOwnerId, 'combination.lastOwnerId');
+        if (c.lastOwnerPoint != null) validateMemoryPoint(c.lastOwnerPoint, 'combination.lastOwnerPoint');
+        if (c.move != null) {
+          if (!isRecord(c.move)) throw new TypeError('combination.move must be an object');
+          for (const key of ['originId', 'linkId']) validateMemoryString(c.move[key], 'combination.' + key);
+          validateMemoryPoint(c.move.target, 'combination.target');
+          validateMemoryInteger(c.move.expiresTick, 'combination.expiresTick', 0);
+          if (c.move.thirdId != null) {
+            validateMemoryString(c.move.thirdId, 'combination.thirdId');
+            validateMemoryPoint(c.move.thirdTarget, 'combination.thirdTarget');
+          }
+        }
+      }
     }
     const lanes = fresh ? {} : cloneObject(source.lanes);
     const observations = fresh ? {} : cloneObject(source.observations);
@@ -624,7 +642,8 @@
       observations,
       commitments,
       defense,
-      circulation
+      circulation,
+      combination: source.combination ? cloneObject(source.combination) : { lastOwnerId: null, lastOwnerPoint: null, move: null }
     };
   }
 
@@ -1208,7 +1227,8 @@
       const player = playersById[playerId];
       const candidate = candidateForCommitment(candidates, prior);
       let abortReason = null;
-      if (snapshot.possessionTeamId !== snapshot.teamId || !snapshot.carrierId) abortReason = 'possession-lost';
+      if (snapshot.possessionTeamId !== snapshot.teamId || (!snapshot.carrierId && !snapshot.inFlight)) abortReason = 'possession-lost';
+      else if (snapshot.carrierId === playerId) abortReason = 'runner-received';
       else if (!player || player.sentOff || !player.available) abortReason = 'runner-unavailable';
       else if (currentOffside(player, snapshot, config)) abortReason = 'runner-offside';
       else if (snapshot.tick >= prior.expiresTick) abortReason = 'commitment-expired';
@@ -1428,6 +1448,42 @@
     return laneClearance(start, end, opponents, pitchSpace(snapshot.pitch));
   }
 
+  function midfieldSupportIntents(snapshot, config) {
+    if (snapshot.possessionTeamId !== snapshot.teamId) return [];
+    const referenceId = snapshot.carrierId || (snapshot.inFlight && snapshot.intendedReceiverId);
+    const carrier = snapshot.players.find(player => player.id === referenceId);
+    if (!carrier || carrier.isGK || carrier.sentOff || !carrier.available || carrier.teamId !== snapshot.teamId) return [];
+    const space = pitchSpace(snapshot.pitch), direction = snapshot.attackingDirection;
+    const midfield = eligibleCpuOutfield(snapshot).filter(player => player.id !== referenceId &&
+      (['defensive-midfielder', 'midfielder', 'attacking-midfielder'].includes(familyOf(player)) ||
+        /wide.?mid|\blm\b|\brm\b/i.test(player.position + ' ' + player.role)))
+      .sort((a, b) => distance(a.formationAnchor, carrier, space) - distance(b.formationAnchor, carrier, space) ||
+        a.id.localeCompare(b.id)).slice(0, 2)
+      .sort((a, b) => direction * (a.formationAnchor.x - b.formationAnchor.x) ||
+        a.formationAnchor.y - b.formationAnchor.y || a.id.localeCompare(b.id));
+    return midfield.map((player, index) => {
+      // Keep a return outlet and a forward link rather than bidding every
+      // midfielder into the same forward-running pool. The formation still
+      // limits how far either job can travel from the connected block.
+      const behind = index === 0 || isHoldDuty(player) || familyOf(player) === 'defensive-midfielder';
+      const side = player.formationAnchor.y <= carrier.y ? -1 : 1;
+      const longitudinal = behind ? -180 : 180;
+      const anchorReach = space.xFromCanonical(420);
+      const x = clamp(carrier.x + direction * space.xFromCanonical(longitudinal),
+        player.formationAnchor.x - anchorReach, player.formationAnchor.x + anchorReach);
+      const candidates = [side * 250, -side * 250, side * 360].map(lateral => {
+        const target = boundedDefensivePoint({ x: safeOnsideX(x, snapshot, config),
+          y: carrier.y + space.yFromCanonical(lateral) }, snapshot, config);
+        const clearance = nearestOpponentClearance(carrier, target, snapshot);
+        const receiverSpace = nearestOpponentClearance(target, target, snapshot);
+        const shapeCost = distance(target, player.formationAnchor, space);
+        return { target, score: Math.min(clearance, 150) + Math.min(receiverSpace, 180) * .5 - shapeCost * .12 };
+      }).sort((a, b) => b.score - a.score);
+      return { playerId: player.id, type: behind ? 'return-outlet' : 'forward-link',
+        referencePlayerId: carrier.id, target: candidates[0].target };
+    });
+  }
+
   function shortSupportOptions(snapshot, carrier, config) {
     const space = pitchSpace(snapshot.pitch);
     const opponents = snapshot.players.filter(player => player.teamId !== snapshot.teamId &&
@@ -1435,9 +1491,9 @@
     const xInset = space.xFromCanonical(config.pitchInset);
     const yInset = space.yFromCanonical(config.pitchInset);
     const minimumDistance = 105;
-    const maximumDistance = 620;
+    const maximumDistance = 780;
     const maximumBackwardProgress = -245;
-    const maximumForwardProgress = 330;
+    const maximumForwardProgress = 600;
     const leadSeconds = .16;
     return snapshot.players.filter(player => player.teamId === snapshot.teamId && player.id !== carrier.id &&
       !player.isGK && !player.sentOff && player.available).map(player => {
@@ -1456,15 +1512,107 @@
         const centralLink = ['defensive-midfielder', 'midfielder', 'attacking-midfielder'].includes(familyOf(player)) ? 18 : 0;
         const quality = (player.awareness + player.passing + player.control) / 3;
         const distanceShape = -Math.abs(passDistance - 315) * .18;
+        const risk = passRisk(snapshot, carrier, player, target);
+        const pressured = nearestOpponentClearance(carrier, carrier, snapshot) < 110;
         const score = Math.min(210, lane) * .58 + Math.min(300, receiverSpace) * .42 +
-          progress * .055 + quality * .42 + distanceShape + centralLink;
-        return { player, target, passDistance, progress, lane, receiverSpace, beyondOffsideLine, score };
+          progress * (pressured ? .035 : .16) + quality * .42 + distanceShape + centralLink - risk.probability * 180 +
+          (pressured && progress < -45 ? 25 : 0);
+        return { player, target, passDistance, progress, lane, receiverSpace, beyondOffsideLine, score, risk };
       }).filter(option => !option.beyondOffsideLine && option.passDistance >= minimumDistance &&
         option.passDistance <= maximumDistance && option.progress >= maximumBackwardProgress &&
         option.progress <= maximumForwardProgress && option.lane >= config.minimumPassLaneClearance &&
         option.receiverSpace >= config.minimumPassLaneClearance)
       .sort((left, right) => right.score - left.score || left.passDistance - right.passDistance ||
         left.player.id.localeCompare(right.player.id));
+  }
+
+  // Cheap decision-time estimate. The adapter still checks the actual MR flight.
+  // Both receiver pressure and an opponent's travel time to the interior lane
+  // matter; a clear line at release alone is not a safe pass.
+  function passRisk(snapshot, carrier, receiver, target) {
+    const space = pitchSpace(snapshot.pitch);
+    const length = distance(carrier, target, space), pace = 300 + carrier.passing * 1.1;
+    const dx = space.xToCanonical(target.x - carrier.x), dy = space.yToCanonical(target.y - carrier.y);
+    let interception = 0, pressure = 0;
+    for (const opponent of snapshot.players.filter(p => p.teamId !== carrier.teamId && !p.sentOff && p.available)) {
+      const ox = space.xToCanonical(opponent.x - carrier.x), oy = space.yToCanonical(opponent.y - carrier.y);
+      const t = clamp((ox * dx + oy * dy) / Math.max(1, length * length), .08, 1);
+      const gap = Math.hypot(ox - t * dx, oy - t * dy);
+      const arrival = Math.max(0, gap - 22) / (125 + opponent.pace * .8) + .15;
+      const ballTime = length * t / pace;
+      interception = Math.max(interception, clamp((ballTime - arrival + .23) / .65, 0, 1));
+      const receiverGap = distance(opponent, target, space);
+      pressure = Math.max(pressure, clamp((110 - receiverGap) / 110, 0, 1));
+    }
+    const quality = (carrier.passing + receiver.control + receiver.awareness) / 297;
+    return { interception: rounded(interception), pressure: rounded(pressure),
+      probability: rounded(clamp(interception * .65 + pressure * .28 + (1 - quality) * .12, 0, .97)) };
+  }
+
+  function combinationMovement(snapshot, memory, config) {
+    const state = memory.combination, space = pitchSpace(snapshot.pitch), dir = snapshot.attackingDirection;
+    const playerById = id => snapshot.players.find(p => p.id === id && !p.sentOff && p.available);
+    if (snapshot.possessionTeamId !== snapshot.teamId) { state.move = null; state.lastOwnerId = null; return []; }
+    // This is an observed authored flight, not the previous requested intent.
+    if (snapshot.inFlight && !snapshot.carrierId && snapshot.intendedReceiverId && state.lastOwnerId &&
+        (!state.move || state.move.linkId !== snapshot.intendedReceiverId || state.move.originId !== state.lastOwnerId)) {
+      const origin = playerById(state.lastOwnerId), link = playerById(snapshot.intendedReceiverId);
+      if (origin && link && origin.id !== link.id && !isRestDefender(origin) && !isHoldDuty(origin) &&
+          distance(origin, link, space) >= 165 && distance(origin, link, space) <= 700) {
+        const quality = (origin.awareness + origin.control + origin.passing) / 297;
+        if (stableUnit(origin.id + ':' + link.id + ':' + Math.floor(snapshot.tick / 60)) < .35 + quality * .6) {
+          const target = boundedDefensivePoint({ x: safeOnsideX(origin.x + dir * space.xFromCanonical(270), snapshot, config),
+            y: origin.y + space.yFromCanonical(origin.y <= link.y ? -70 : 70) }, snapshot, config);
+          const third = eligibleCpuOutfield(snapshot).filter(p => p.id !== origin.id && p.id !== link.id &&
+            !isRestDefender(p) && !isHoldDuty(p) && distance(p, link, space) < 650)
+            .sort((a, b) => distance(a, link, space) - distance(b, link, space) || a.id.localeCompare(b.id))[0];
+          const thirdTarget = third && boundedDefensivePoint({
+            x: safeOnsideX(link.x + dir * space.xFromCanonical(230), snapshot, config),
+            y: link.y + space.yFromCanonical(target.y <= link.y ? 220 : -220) }, snapshot, config);
+          state.move = { originId: origin.id, linkId: link.id, target, thirdId: third && third.id,
+            thirdTarget, expiresTick: snapshot.tick + 210 };
+        }
+      }
+    }
+    if (snapshot.carrierId) {
+      state.lastOwnerId = snapshot.carrierId;
+      const owner = playerById(snapshot.carrierId);
+      state.lastOwnerPoint = owner && { x: owner.x, y: owner.y };
+    }
+    const move = state.move;
+    if (!move) return [];
+    if (snapshot.tick > move.expiresTick || !playerById(move.originId) || !playerById(move.linkId) ||
+        (snapshot.carrierId && ![move.linkId, move.originId, move.thirdId].includes(snapshot.carrierId))) {
+      state.move = null; return [];
+    }
+    const intents = [{ playerId: move.originId, type: 'give-and-go', target: move.target }];
+    if (move.thirdId && playerById(move.thirdId)) intents.push({ playerId: move.thirdId, type: 'third-man', target: move.thirdTarget });
+    return intents.filter(p => p.playerId !== snapshot.carrierId).map(p => ({ ...p,
+      target: { ...p.target, x: safeOnsideX(p.target.x, snapshot, config) } }));
+  }
+
+  function combinationPass(snapshot, carrier, memory, config) {
+    const move = memory.combination.move;
+    if (!move || snapshot.carrierId !== move.linkId || snapshot.tick > move.expiresTick) return null;
+    const space = pitchSpace(snapshot.pitch);
+    const options = [move.originId, move.thirdId].filter(Boolean).map(id => {
+      const player = snapshot.players.find(p => p.id === id && !p.sentOff && p.available);
+      if (!player) return null;
+      // Pass into the runner's reachable stride, not his distant run endpoint.
+      const target = { x: player.x + player.vx * .22, y: player.y + player.vy * .22 };
+      const progress = space.xToCanonical(snapshot.attackingDirection * (target.x - carrier.x));
+      const length = distance(carrier, target, space), lane = nearestOpponentClearance(carrier, target, snapshot);
+      const risk = passRisk(snapshot, carrier, player, target);
+      return { player, target, progress, length, lane, risk,
+        score: progress * .2 + Math.min(lane, 210) * .6 - risk.probability * 180 };
+    }).filter(p => p && p.progress > 45 && p.length >= 165 && p.length <= 700 &&
+      p.lane >= config.minimumPassLaneClearance && p.risk.probability < .45 && !currentOffside(p.player, snapshot, config))
+      .sort((a, b) => b.score - a.score || a.player.id.localeCompare(b.player.id));
+    const best = options[0];
+    if (!best) return null;
+    return { type: 'pass', targetPlayerId: best.player.id, target: best.target, confidence: .82,
+      supportKind: 'support', risk: best.risk, offsideTiming: null,
+      reason: best.player.id === move.originId ? 'give-and-go-return' : 'third-man-layoff' };
   }
 
   function observeCirculationOutcome(snapshot, memory, telemetry, config) {
@@ -1580,14 +1728,17 @@
         }
       };
     }
+    const combination = combinationPass(snapshot, carrier, memory, config);
+    if (combination) return combination;
     const passOptions = runs.map(run => {
       const runner = snapshot.players.find(player => player.id === run.playerId);
       const releaseTarget = run.continuationTarget || run.target;
       const clearance = nearestOpponentClearance(carrier, releaseTarget, snapshot);
       const progress = space.xToCanonical(snapshot.attackingDirection * (releaseTarget.x - carrier.x));
       const passDistance = distance(carrier, releaseTarget, space);
-      return { run, runner, clearance, progress, passDistance,
-        score: progress * 0.12 + clearance * 0.42 + run.score * 0.75 };
+      const risk = runner ? passRisk(snapshot, carrier, runner, releaseTarget) : { probability: 1 };
+      return { run, runner, clearance, progress, passDistance, risk,
+        score: progress * 0.16 + Math.min(clearance, 210) * 0.42 + run.score * 0.75 - risk.probability * 210 };
     // A two-metre nudge is not a release into a coordinated run. Treat it as
     // continued possession and let the carrier/receiver create separation.
     // The previous 45-unit progress floor produced full-strength passes to a
@@ -1596,19 +1747,23 @@
     // D1 (19 Oct 2026): a release beyond ~46 m (1390 canonical units) cannot be
     // delivered by Ball V2 as a playable pass, so it is not a real option.
     }).filter(option => option.runner && option.clearance >= config.minimumPassLaneClearance &&
-      option.progress > 75 && option.passDistance >= 105 && option.passDistance <= 1390)
+      option.progress > 75 && option.passDistance >= 165 && option.passDistance <= 1390 && option.risk.probability < .62)
       .sort((a, b) => b.score - a.score || a.run.playerId.localeCompare(b.run.playerId));
     const releaseRun = best => ({
       type: 'pass', targetPlayerId: best.run.playerId,
       target: { ...(best.run.continuationTarget || best.run.target) },
       offsideTiming: cloneObject(best.run.offsideTiming || null),
       confidence: rounded(clamp(0.42 + carrier.passing / 200 + best.clearance / 1000, 0, 0.98)),
+      risk: best.risk,
       reason: best.run.observedOpening ? 'release-newly-opened-run' : 'release-coordinated-run'
     });
     const openedRun = passOptions.find(option => option.run.observedOpening);
-    if (openedRun) return releaseRun(openedRun);
     const supportOptions = shortSupportOptions(snapshot, carrier, config);
     const carrierPressure = nearestOpponentClearance(carrier, carrier, snapshot);
+    // Under pressure, a safe outlet outranks a speculative opening. In space,
+    // a genuinely better progressive lane still beats routine circulation.
+    if (openedRun && (carrierPressure >= 110 || !supportOptions.length ||
+        openedRun.risk.probability <= supportOptions[0].risk.probability + .08)) return releaseRun(openedRun);
     const carrierFamily = familyOf(carrier);
     const previousPasser = memory.circulation.lastCompletedPasserId
       ? snapshot.players.find(player => player.id === memory.circulation.lastCompletedPasserId) || null
@@ -1685,6 +1840,7 @@
             ? 'defender-return-loop-break-support'
             : 'short-support-circulation',
         supportKind: best.progress < -45 ? 'recycle' : 'support',
+        risk: best.risk,
         supportMetrics: {
           distance: rounded(best.passDistance),
           progress: rounded(best.progress),
@@ -1742,6 +1898,7 @@
     const active = persistCommitments(current, memory, candidates, playersById, config, telemetry);
     const runs = selectNewRuns(current, memory, candidates, playersById, active, config, telemetry);
     observeCirculationOutcome(current, memory, telemetry, config);
+    const combinationIntents = combinationMovement(current, memory, config);
     const intent = carrierIntent(current, runs, memory, config);
     // Match lab only: count carrier decisions when the lab provides a ledger.
     const labLedger = typeof globalThis !== 'undefined' && globalThis.__dartyLabIntents;
@@ -1763,6 +1920,8 @@
     }
     rememberCirculationPass(current, intent, memory);
     const defensiveIntents = buildDefensiveIntents(current, memory, config, telemetry);
+    const supportIntents = midfieldSupportIntents(current, config)
+      .filter(intent => !combinationIntents.some(move => move.playerId === intent.playerId)).concat(combinationIntents);
     telemetry.carrier = cloneObject(intent);
     telemetry.constraints = summarizeConstraints(telemetry);
     memory.lastTick = current.tick;
@@ -1777,6 +1936,7 @@
       runs,
       carrierIntent: intent,
       defensiveIntents,
+      supportIntents,
       memory,
       telemetry
     };

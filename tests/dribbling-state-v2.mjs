@@ -541,3 +541,16 @@ test('protected skill handoff atomically clears an active lease and emits one st
   assert.equal(first.authorityHandoff.executeExactlyOnce, true);
   assert.deepEqual(replay.authorityHandoff, first.authorityHandoff);
 });
+
+test('buffered CPU delivery preserves its checked flight, support kind and combination reason through replay', () => {
+  const chain = reachSeparated();
+  const delivery = { passRace: { accepted: true, launchSpeedMetresPerSecond: 12.4, launchLiftAngleDeg: 0 },
+    supportKind: 'support', reason: 'give-and-go-return', risk: { probability: .12 } };
+  const action = { id: 'cpu-combination', type: 'pass', source: 'cpu-v2', actorId: 'carrier',
+    targetPlayerId: 'winger-a', target: { x: 48, y: 2 }, power: .8, commandTick: 5, delivery };
+  const chase = resolve(5, chain.state, chain.ballState, { capability: chain.cap, logicalOwnerId: null, actionIntent: action });
+  assert.deepEqual(chase.state.bufferedAction.delivery, delivery);
+  const restored = Dribbling.restoreState(Dribbling.serializeState(chase.state));
+  assert.deepEqual(restored.bufferedAction.delivery, delivery);
+  assert.deepEqual(action.delivery, delivery, 'caller data must remain unchanged');
+});

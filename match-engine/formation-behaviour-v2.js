@@ -914,10 +914,14 @@
       };
     });
 
+    const connectedDefence = input.ball && input.ball.position &&
+      Number.isFinite(input.ball.position.x) && Number.isFinite(input.ball.position.y) &&
+      (phase === 'defend' || phase === 'negative-transition');
     const activeGeometry = allGeometry.filter(row => !row.removed);
     const lineGroups = {};
     allGeometry.forEach(row => {
-      const key = String(row.formationSlot.band);
+      const key = String(connectedDefence && ['centre-back', 'full-back', 'wing-back'].includes(row.formationSlot.roleFamily)
+        ? 1 : row.formationSlot.band);
       if (!lineGroups[key]) lineGroups[key] = { all: [], active: [] };
       lineGroups[key].all.push(row);
       if (!row.removed) lineGroups[key].active.push(row);
@@ -933,7 +937,8 @@
         let adapted = sortedActive.length === 1
           ? (minimum + maximum) / 2
           : minimum + (index / (sortedActive.length - 1)) * (maximum - minimum);
-        adapted = 0.5 + (adapted - 0.5) * effectiveWidthScale;
+        const reductionScale = connectedDefence && Number(key) === 1 ? group.active.length / group.all.length : 1;
+        adapted = 0.5 + (adapted - 0.5) * effectiveWidthScale * reductionScale;
         row.lateral = clamp(adapted, 0.02, 0.98);
       });
     });
@@ -966,6 +971,37 @@
         if (restDefenceIds.includes(row.formationSlot.id) || !Object.prototype.hasOwnProperty.call(supportFloors, row.formationSlot.id)) return;
         row.progress = clamp(Math.max(row.progress, carrierProgress + supportFloors[row.formationSlot.id]), 0.025, 0.95);
       });
+    }
+
+    // The phase/philosophy still owns the roles and relative lanes. Translate
+    // their block with play rather than leaving the rest defence at fixed
+    // pitch coordinates while the other lines follow a carrier.
+    const ball = input.ball;
+    let cohesion = null;
+    if (ball && ball.position && Number.isFinite(ball.position.x) && Number.isFinite(ball.position.y)) {
+      const length = pitch.xMax - pitch.xMin, width = pitch.yMax - pitch.yMin;
+      const defending = phase === 'defend' || phase === 'negative-transition';
+      const velocity = ball.free && ball.velocity ? ball.velocity : {};
+      const referenceX = clamp(ball.position.x + finite(velocity.x, 0) * .8, pitch.xMin, pitch.xMax);
+      const ballProgress = attackingDirection === 1 ? (referenceX - pitch.xMin) / length : (pitch.xMax - referenceX) / length;
+      const lineProgress = clamp(ballProgress - (defending ? .15 : .30), .065, .55);
+      const minimum = Math.min(...activeOutfield.map(row => row.progress));
+      const maximum = Math.max(...activeOutfield.map(row => row.progress));
+      const blockDepth = (defending ? .29 : .40) * effectiveDepthScale;
+      const lateralScale = defending ? .82 : 1;
+      const ballLateral = clamp((ball.position.y - pitch.yMin) / width, 0, 1);
+      const requestedShift = (ballLateral - .5) * (mirrorLateral ? -1 : 1) * (defending ? .42 : .24);
+      const laterals = activeOutfield.map(row => .5 + (row.lateral - .5) * lateralScale);
+      // Bound the translation once for the unit, not separately per player.
+      const shift = clamp(requestedShift, .03 - Math.min(...laterals), .97 - Math.max(...laterals));
+      activeOutfield.forEach(row => {
+        const defender = ['centre-back', 'full-back', 'wing-back'].includes(row.formationSlot.roleFamily);
+        const relative = (row.progress - minimum) / Math.max(.01, maximum - minimum);
+        row.progress = clamp(lineProgress + (defending && defender ? 0 : relative * blockDepth), .025, .95);
+        row.lateral = .5 + (row.lateral - .5) * lateralScale + shift;
+      });
+      cohesion = { lineProgress: rounded(lineProgress), ballProgress: rounded(ballProgress),
+        lateralShift: rounded(shift), defending, anticipationSeconds: ball.free ? .8 : 0 };
     }
 
     const xLow = pitch.xMin + Math.min(config.pitchMargin, (pitch.xMax - pitch.xMin) * 0.2);
@@ -1048,7 +1084,8 @@
         mirrorLateral,
         clampedSlotIds: targets.filter(target => target.offsideClamped).map(target => target.slotId)
       },
-      metrics
+      metrics,
+      ...(cohesion ? { cohesion } : {})
     };
 
     return {

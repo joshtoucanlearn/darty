@@ -9,7 +9,7 @@ import { captureOptions, clone, OFFLINE_WORKFLOWS, snapshot, teamStates } from '
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const engineDir = path.join(root, 'match-engine');
 const matchHtml = fs.readFileSync(path.join(engineDir, 'match.html'), 'utf8');
-const Hook = (await import(path.join(engineDir, 'build173-live-shadow-hook-v2.js'))).default;
+const Hook = (await import('../match-engine/build173-live-shadow-hook-v2.js')).default;
 
 function hostFor(workflow = 'quick-play') {
   let live = snapshot({ kickoffOptional: true });

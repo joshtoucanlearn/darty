@@ -297,6 +297,7 @@
         ? unit(value.direction, { x: 1, y: 0 }) : null,
       power: clamp(finite(value.power, value.confidence), 0, 1),
       variant: String(value.variant || 'normal').slice(0, 48),
+      delivery: value.source === 'cpu-v2' && value.delivery ? clone(value.delivery) : null,
       source: String(value.source || 'live-v2').slice(0, 32),
       commandTick: Math.max(0, Math.trunc(finite(value.commandTick, 0))),
       expiresTick: Math.max(0, Math.trunc(finite(value.expiresTick, 0)))

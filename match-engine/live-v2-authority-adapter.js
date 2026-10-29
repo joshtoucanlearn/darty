@@ -731,7 +731,7 @@
       }
       return { phases, transition };
     }
-    function formationOutputs(snapshot, phaseState) {
+    function formationOutputs(snapshot, phaseState, possession) {
       const output = {};
       for (const team of snapshot.teams) {
         const formation = dependencies.formation.normalizeFormationCode(team.formation);
@@ -753,6 +753,7 @@
           philosophy: philosophyFor(team, formation), pitch: METRIC_PITCH,
           attackingDirection: team.attackingDirection,
           offsideLine: (team.offsideLine - snapshot.pitch.xMin) / snapshot.units.xPerMetre,
+          ball: { ...metricBall(snapshot.ball, snapshot), free: !possession.ownerId },
           tactics: { ...team.tactics, carrierProgress }
         });
       }
@@ -966,10 +967,16 @@
       return { world, signature };
     }
     function targetMaps(formations, decisions, snapshot, possession) {
-      const shape = {}, run = {}, reception = {}, carrier = {}, defensive = {};
+      const shape = {}, run = {}, reception = {}, carrier = {}, defensive = {}, support = {};
       for (const teamId of ['you', 'opp']) {
         for (const target of formations[teamId].targets) shape[target.playerId] = target.target;
         for (const committed of decisions[teamId].runs || []) run[committed.playerId] = committed.continuationTarget || committed.target;
+        for (const intent of decisions[teamId].supportIntents || []) {
+          support[intent.playerId] = intent.target;
+          // These two midfield jobs are local combinations, not extra
+          // penetrating runners. Receiver and loose-ball contracts win below.
+          delete run[intent.playerId];
+        }
         const intent = decisions[teamId].carrierIntent;
         // The race gate accepts a pass only when this named receiver can meet
         // the exact authored point. Movement must honour that same point while
@@ -984,6 +991,20 @@
           defensive[String(intent.playerId)] = clone(intent);
         }
       }
+      // A cover player belongs to the line; only the primary presser may
+      // leave its anchor locally. A distant carrier must not split the unit.
+      for (const teamId of ['you', 'opp']) {
+        if (possession.teamId === teamId) continue;
+        for (const row of formations[teamId].targets) {
+          if (!['centre-back', 'full-back', 'wing-back'].includes(row.roleFamily)) continue;
+          const intent = defensive[row.playerId];
+          if (!intent) continue;
+          const reach = intent.type === 'press' ? 3 : 0;
+          intent.connectedLine = intent.type === 'cover';
+          intent.target.x = clamp(intent.target.x, row.target.x - reach, row.target.x + reach);
+          intent.target.y = clamp(intent.target.y, row.target.y - reach, row.target.y + reach);
+        }
+      }
       // Keep the accepted receiver route alive for every tick of the MR
       // flight. The CPU carrier intent exists only on the kick frame; without
       // this persisted contract the receiver immediately drifts back toward
@@ -995,7 +1016,7 @@
           y: (possession.intendedTarget.y - (snapshot.pitch.yMin + snapshot.pitch.yMax) / 2) / snapshot.units.yPerMetre
         };
       }
-      return { shape, run, reception, carrier, defensive };
+      return { shape, run, reception, carrier, defensive, support };
     }
     function nearestOpponent(player, snapshot) {
       return snapshot.players.filter(candidate => candidate.teamId !== player.teamId && !candidate.sentOff)
@@ -1271,7 +1292,7 @@
           const metric = metricPoint(livePlayer, snapshot), runTarget = maps.run[livePlayer.id];
           const carrierTarget = snapshot.ball.ownerId === livePlayer.id ? maps.carrier[livePlayer.teamId] : null;
           const defensiveTarget = defensiveIntent && defensiveIntent.target || null;
-          const target = recoveryIntent && recoveryIntent.target || defensiveTarget || receptionTarget || runTarget || carrierTarget || maps.shape[livePlayer.id];
+          const target = recoveryIntent && recoveryIntent.target || defensiveTarget || receptionTarget || runTarget || carrierTarget || maps.support[livePlayer.id] || maps.shape[livePlayer.id];
           cpuMovementRoute = recoveryIntent ? 'recovery' : defensiveIntent ? 'defensive' :
             receptionTarget ? 'reception' : runTarget ? 'run' : carrierTarget ? 'carrier' : 'shape';
           if (target) {
@@ -1283,7 +1304,7 @@
                 ? clamp(distance / 1.35, 0.58, 0.96)
                 : clamp(distance / 4.2, 0.52, 1);
               mode = distance > (leaseRecoveryActive ? 0.58 : 2.2) ? 'sprint' : 'run';
-            } else if (defensiveIntent) {
+            } else if (defensiveIntent && !defensiveIntent.connectedLine) {
               intensity = clamp(finite(defensiveIntent.targetSpeed, defensiveIntent.type === 'press' ? .88 : .62), .18, 1);
               mode = defensiveIntent.accelerate || defensiveIntent.urgency === 'sprint' ? 'sprint' : intensity > .42 ? 'run' : 'walk';
             } else if (receptionTarget) {
@@ -1343,8 +1364,9 @@
               const carrierSprint = Boolean(carrierTarget && distance > 2.2);
               intensity = carrierTarget
                 ? clamp(distance / 5, 0.58, 1)
-                : clamp(distance / (runTarget ? 7 : 12), runTarget ? 0.74 : 0.12, runTarget ? 1 : 0.72);
-              mode = runTarget || carrierSprint || intensity > 0.74 ? 'sprint' : intensity > 0.2 ? 'run' : 'walk';
+                : clamp(distance / (runTarget ? 7 : 5), runTarget ? 0.74 : 0, 1);
+              mode = runTarget || carrierSprint || (!carrierTarget && distance > 7) ? 'sprint' : intensity > 0.2 ? 'run' : 'walk';
+              if (!runTarget && !carrierTarget && distance < .35) { intensity = 0; mode = 'idle'; }
             }
           }
         }
@@ -1384,6 +1406,7 @@
           shotProfile: intent.shotProfile ? clone(intent.shotProfile) : null,
           supportKind: intent.supportKind == null ? null : String(intent.supportKind),
           supportMetrics: intent.supportMetrics ? clone(intent.supportMetrics) : null,
+          risk: intent.risk ? clone(intent.risk) : null,
           passRace: intent.passRace ? clone(intent.passRace) : null,
           rejectedPassRace: intent.rejectedPassRace ? clone(intent.rejectedPassRace) : null,
           fallbackFrom: intent.fallbackFrom == null ? null : String(intent.fallbackFrom),
@@ -2116,6 +2139,8 @@
         target: row.target,
         power: clamp(finite(shotProfile && shotProfile.power, finite(row.confidence, 0.65)), 0, 1),
         variant: shotProfile ? String(shotProfile.technique || 'driven') : 'normal',
+        delivery: { supportKind: row.supportKind, supportMetrics: row.supportMetrics, passRace: row.passRace,
+          offsideTiming: row.offsideTiming, reason: row.reason, risk: row.risk },
         source: 'cpu-v2',
         commandTick: snapshot.tick
       };
@@ -2336,7 +2361,7 @@
           ? { ...snapshot, ball: { ...snapshot.ball, ownerId: leaseOwnerId } }
           : snapshot;
         const possession = derivePossession(controlSnapshot), phaseState = phaseAuthority(controlSnapshot, possession);
-        const formations = formationOutputs(controlSnapshot, phaseState), cpu = cpuOutputs(controlSnapshot, formations, possession);
+        const formations = formationOutputs(controlSnapshot, phaseState, possession), cpu = cpuOutputs(controlSnapshot, formations, possession);
         let cpuRejectedPassCommitments = { you: null, opp: null };
         if (authorityProfile.cpuPassRaceFilter) {
           const gated = gatedCpuOutputs(controlSnapshot, cpu.outputs);
