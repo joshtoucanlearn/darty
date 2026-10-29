@@ -8,7 +8,7 @@
 // no local web server is needed. Gameplay is untouched: the lab only reads the
 // public FLMatch / dartyCapture APIs.
 import { createRequire } from 'node:module';
-import { readFile, mkdir, writeFile, statfs } from 'node:fs/promises';
+import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -33,13 +33,6 @@ const probe = flag('probe');
 const extraParams = Object.fromEntries(String(opt('params', '')).split('&').filter(Boolean).map(kv => kv.split('=')));
 const label = opt('label', '');
 const shots = Number(opt('shots', 0));
-const cameraAudit = flag('camera-audit');
-const cutFramesFile = opt('cut-frames-from', '');
-const cutFrames = cutFramesFile ? [...new Set(JSON.parse(await readFile(cutFramesFile, 'utf8')).captureEvents.filter(e => e.type === 'directorCut').slice(0, 6).flatMap(e => [Math.max(0, e.frame - 1), e.frame]))].sort((a,b) => a-b) : [];
-async function diskGuard() {
-  const disk = await statfs(outDir);
-  if (disk.bavail * disk.bsize < 6 * 1024 ** 3) throw new Error('Stopped: less than 6 GiB free disk');
-}
 
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.glb': 'model/gltf-binary', '.gltf': 'model/gltf+json', '.bin': 'application/octet-stream', '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.wav': 'audio/wav', '.woff2': 'font/woff2', '.woff': 'font/woff', '.ttf': 'font/ttf', '.ktx2': 'image/ktx2' };
 
@@ -49,11 +42,6 @@ const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/ja
 let launchTemplate = null;
 async function getLaunchTemplate(browser) {
   if (launchTemplate) return launchTemplate;
-  if (opt('launch-url-file', '')) {
-    const supplied = new URL((await readFile(opt('launch-url-file', ''), 'utf8')).trim());
-    launchTemplate = ORIGIN + supplied.pathname + supplied.search + supplied.hash;
-    return launchTemplate;
-  }
   const page = await browser.newPage();
   await serve(page);
   await page.goto(`${ORIGIN}/quick-play/index.html?${opt('qp', 'mode=spectator&engine=fl-v2&candidate=5&release=joe-20261026-lesson-ready')}`, { waitUntil: 'load' });
@@ -82,7 +70,6 @@ function matchUrl(template, seed, extra = {}) {
   u.searchParams.set('matchMinutes', String(minutes));
   u.searchParams.set('volume', '0');
   u.searchParams.set('capture', '1');
-  u.searchParams.set('autoplay', '1');
   for (const [k, v] of Object.entries(extra)) u.searchParams.set(k, v);
   hash.set('flMatch', encodePayload(cfg));
   u.hash = hash.toString();
@@ -120,17 +107,13 @@ async function runMatch(browser, seed) {
   await page.waitForFunction(() => window.dartyCapture, { timeout: 60000 });
   await page.evaluate(() => window.dartyCapture.ready);
   const preflight = await page.evaluate(() => window.__FL_V2_LIVE_PREFLIGHT && { eligible: window.__FL_V2_LIVE_PREFLIGHT.eligible, workflow: window.__FL_V2_LIVE_PREFLIGHT.workflow, reason: window.__FL_V2_LIVE_PREFLIGHT.reason });
-  const samples = [], cameraSamples = [];
-  let state = null, chunks = 0, frame = 0;
-  const maxFrames = cutFrames.length ? cutFrames[cutFrames.length-1] : Math.ceil((minutes * 60 + 600) * 30); // match + presentations, at 30 frames per second
-  while (frame < maxFrames) {
-    await diskGuard();
-    const target = cutFrames.find(f => f > frame) ?? maxFrames, count = Math.min(150, target-frame);
-    state = await page.evaluate(count => { window.dartyCapture.step(count); const s = window.FLMatch.getState(); return { phase: s.phase, minute: s.minute, score: s.score, ball: s.ball, restart: s.restart.held && s.restart.kind, players: s.players.map(p => [p.id, p.team, p.role, Math.round(p.x), Math.round(p.y)]) }; }, count);
-    chunks++; frame += count;
-    samples.push({ frame, phase: state.phase, minute: state.minute, ball: { x: Math.round(state.ball.x || 0), y: Math.round(state.ball.y || 0), owner: state.ball.owner || null }, restart: state.restart || null, players: state.players });
-    if (cameraAudit) cameraSamples.push(await page.evaluate(() => ({ seconds: window.DartyVideo.clock.now()/1000, director: window.FLMatch.getCameraDirector(), state: window.FLMatch.getState().presentation })));
-    if (cutFrames.includes(frame)) await page.screenshot({ path: path.join(outDir, `${label || 'run'}-frame-${String(frame).padStart(6, '0')}.png`) });
+  const samples = [];
+  let state = null, chunks = 0;
+  const maxFrames = Math.ceil((minutes * 60 + 600) * 30); // match + presentations, at 30 frames per second
+  while (chunks * 150 < maxFrames) {
+    state = await page.evaluate(() => { window.dartyCapture.step(150); const s = window.FLMatch.getState(); return { phase: s.phase, minute: s.minute, score: s.score, ball: s.ball, restart: s.restart.held && s.restart.kind, players: s.players.map(p => [p.id, p.team, p.role, Math.round(p.x), Math.round(p.y)]) }; });
+    chunks++;
+    samples.push({ frame: chunks * 150, phase: state.phase, minute: state.minute, ball: { x: Math.round(state.ball.x || 0), y: Math.round(state.ball.y || 0), owner: state.ball.owner || null }, restart: state.restart || null, players: state.players });
     if (shots && chunks <= shots) await page.screenshot({ path: path.join(outDir, `${label || 'run'}-seed-${seed}-shot-${String(chunks).padStart(2, '0')}.png`) });
     if (probe && chunks >= Math.max(4, shots)) break;
     if (state.phase === 'ended') break;
@@ -140,49 +123,22 @@ async function runMatch(browser, seed) {
   const intents = await page.evaluate(() => window.__dartyLabIntents || {});
   const passMisses = await page.evaluate(() => window.__dartyLabMisses || []);
   const locomotion = await page.evaluate(() => window.__dartyLabLocomotion || {});
-  const cameraTrace = extraParams.cameraMotion==='1' ? await page.evaluate(() => window.dartyCapture.cameraTrace()) : [];
   await page.close();
   return { seed, minutes, preflight, intents, passMisses, locomotion,
-    wallSeconds: Math.round((Date.now() - started) / 1000), frames: frame,
+    wallSeconds: Math.round((Date.now() - started) / 1000), frames: chunks * 150,
     finalPhase: state && state.phase, score: state && state.score,
-    errors: errors.slice(0, 20), report, captureEvents: events, samples, cameraSamples, cameraTrace };
+    errors: errors.slice(0, 20), report, captureEvents: events, samples };
 }
 
-// The production VM host is a telemetry fallback for managed machines which
-// deny Chrome launch. It executes the same engine and capture clock, but has no
-// GPU or pixels; its output must never be presented as browser/visual proof.
-async function runHostMatch(seed) {
-  if (shots) throw new Error('--host-only has no pixels; remove --shots');
-  const template = await getLaunchTemplate(null);
-  const url = new URL(matchUrl(template, seed, extraParams));
-  const payload = decodePayload(new URLSearchParams(url.hash.slice(1)).get('flMatch'));
-  const host = await require('../tests/fixtures/darty-capture-host.cjs')({ payload, search: url.search });
-  const samples = [], started = Date.now(), maxFrames = Math.ceil((minutes * 60 + 600) * 30);
-  let state, frame = 0;
-  while (frame < maxFrames) {
-    await diskGuard();
-    host.dartyCapture.step(150); frame += 150;
-    state = host.FLMatch.getState();
-    samples.push({ frame, phase: state.phase, minute: state.minute, restart: state.restart.held ? state.restart.kind : null, director: host.FLMatch.getCameraDirector() });
-    if (frame % 900 === 0) console.log(JSON.stringify({ frame, phase: state.phase, minute: state.minute, cuts: host.dartyCapture.events().filter(e => e.type === 'directorCut').length }));
-    if (state.phase === 'ended' || probe && frame >= 600) break;
-  }
-  return { seed, minutes, evidence: 'production-vm-telemetry-only-no-gpu-no-pixels', wallSeconds: (Date.now()-started)/1000,
-    frames: frame, finalPhase: state.phase, score: state.score, errors: [],
-    director: host.FLMatch.getCameraDirector(), captureEvents: host.dartyCapture.events(), report: host.FLMatch.getReport(), samples,
-    cameraTrace: extraParams.cameraMotion==='1' ? host.dartyCapture.cameraTrace() : [] };
-}
-
+const browser = await puppeteer.launch({ headless: true, executablePath: CHROME, args: ['--use-angle=metal', '--enable-webgl', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'] });
 await mkdir(outDir, { recursive: true });
-await diskGuard();
-const browser = flag('host-only') ? null : await puppeteer.launch({ headless: true, executablePath: CHROME, userDataDir: opt('user-data-dir', path.join(outDir, 'chrome-profile')), args: ['--use-angle=metal', '--enable-webgl', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required', '--disk-cache-size=10485760', '--disable-background-networking'] });
 try {
   for (const seed of seeds) {
-    const result = browser ? await runMatch(browser, seed) : await runHostMatch(seed);
+    const result = await runMatch(browser, seed);
     const file = path.join(outDir, `${label ? label + '-' : ''}seed-${seed}${probe ? '-probe' : ''}.json`);
     await writeFile(file, JSON.stringify(result));
     console.log(JSON.stringify({ seed, file: path.relative(LAB_DIR, file), wallSeconds: result.wallSeconds, frames: result.frames, phase: result.finalPhase, score: result.score, preflight: result.preflight, errors: result.errors.length }));
   }
 } finally {
-  if (browser) await browser.close();
+  await browser.close();
 }

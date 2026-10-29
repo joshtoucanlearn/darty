@@ -4,9 +4,9 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const path = require('node:path');
 const root = path.resolve(__dirname, '../..');
+const html = fs.readFileSync(root + '/match-engine/match.html', 'utf8');
 
 module.exports = async function loadCaptureHost(options = {}) {
-  const html = options.html ?? fs.readFileSync(root + '/match-engine/match.html', 'utf8');
   const elements = new Map();
   const noop = () => {};
   function element(id = '') {
@@ -47,7 +47,7 @@ module.exports = async function loadCaptureHost(options = {}) {
     addEventListener: noop, write: noop
   };
   const seed = options.seed ?? 1772652239;
-  const payload = options.payload ?? {
+  const payload = {
     mode: 'quickPlay', matchType: 'spectator', practiceMode: null, online: null,
     engine: { requested: 'fl-v2', effective: 'fl-v2',
       version: '1.0.0-offline-live-authority-playtest', fallbackReason: null },
@@ -59,8 +59,8 @@ module.exports = async function loadCaptureHost(options = {}) {
   const timers = [];
   const sandbox = {
     document, location: {
-      search: options.search ?? ('?quickPlay=1&engine=fl-v2&candidate=5&simulationSeed=' + seed +
-        '&autoplay=1&capture=1&clean=1&director=' + (options.director ?? 'showcase') + '&camera=' + (options.camera ?? 'broadcast') + '&matchMinutes=' + (options.matchMinutes ?? 6)),
+      search: '?quickPlay=1&engine=fl-v2&candidate=5&simulationSeed=' + seed +
+        '&autoplay=1&capture=1&clean=1&director=showcase&matchMinutes=' + (options.matchMinutes ?? 6),
       hash: '#flMatch=' + Buffer.from(JSON.stringify(payload)).toString('base64url'),
       origin: 'http://darty.local'
     },
@@ -87,7 +87,7 @@ module.exports = async function loadCaptureHost(options = {}) {
       // The standalone 2D set-piece UI and controller navigation are not used by
       // this autonomous V2 spectator match. Browser checks load both normally.
       if (/set-piece-system|controller-ui/.test(src[1])) continue;
-      run(options.scripts?.[src[1]] ?? fs.readFileSync(path.resolve(root + '/match-engine', src[1].split('?')[0]), 'utf8'), src[1]);
+      run(fs.readFileSync(path.resolve(root + '/match-engine', src[1].split('?')[0]), 'utf8'), src[1]);
       if (!src[1].includes('three.min')) continue;
       sandbox.THREE.PMREMGenerator = class {
         compileEquirectangularShader() {}
@@ -110,7 +110,7 @@ module.exports = async function loadCaptureHost(options = {}) {
     } else if (originalCode.trim()) {
       const code = options.draw
         ? originalCode.replace('  window.FLMatch={', `
-          window.__videoVisual=()=>({camera:camera.position.toArray(),cameraFov:camera.fov,
+          window.__videoVisual=()=>({camera:camera.position.toArray(),
             rotation:camera.quaternion.toArray(),ball:ballMesh.position.toArray(),
             players:youMeshes.map(mesh=>({position:mesh.position.toArray(),
               rotation:mesh.quaternion.toArray(),phase:mesh.userData.phase}))});

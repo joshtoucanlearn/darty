@@ -184,8 +184,7 @@
   });
 })();
 </script>
-<script src="darty-video-capture.js?v=20261029-cinematic-setup-1"></script>
-<script src="darty-camera-director.js?v=20261029-cinematic-setup-1"></script>
+<script src="darty-video-capture.js"></script>
 <script src="vendor/three.min.js?v=r128-local"></script>
 <script src="instant-result.js"></script>
 <script src="ball-physics.js?v=174-dormant-kernel"></script>
@@ -6162,27 +6161,6 @@ function beginDedicatedSetPiece(kind,team,taker,x,y){
   // strike gives a small camera punch. Physics, clock and outcomes are untouched.
   const SHOT_TRAIL_LENGTH=22,SHOT_TRAIL_SPACING=PITCH_UNITS_PER_METRE*.22;let shotFx={trail:[],sprites:[],punchAt:-Infinity,punchPower:0,lastKey:null};
   let camLookX=0, camLookZ=0,cameraMode=CONFIG.camera,practiceRoamCamera={orbit:0,distance:165,lastAt:0},setPieceCameraLookState={key:'',x:0,y:22,z:0};
-  let cameraRenderAlpha=1;
-  const directorSeed=LIVE_V2_PREFLIGHT.simulationSeed??savedMatchConfig.simulationSeed??1;
-  let liveCameraDirector=window.DartyCameraDirector.create(directorSeed),directorEventSequence=0,directorReport=null;
-  function liveCameraContext(){
-    const now=performance.now(),instant=!!(instantReplayReviewController&&instantReplayReviewController.status().active);
-    const setup=!!(kickoffHeld&&restartTaker),preset=setup?liveRestartCameraPreset(restartMsg,restartTaker.team):'broadcast',delivery=!!(externalSetPieceActive||FREE_KICK_PRACTICE||pendingFreeKickRunUp||pendingPenaltyRunUp||setPieceCameraHold&&now<setPieceCameraHold.until||setup&&preset!=='broadcast'&&(restartReadySignalled||setPieceAim.locked));
-    const authored=!!(celebrate>0||goalReplay.active||disciplineReplay.active||diveReplay.active||instant||instantReplayReviewCameraHold||specialPSequence.active||foulSequence||pendingDiveDecision||offsidePresentation||confrontationSequence||officialPauseUntil>now||pendingCardFight&&now<=pendingCardFight.expires);
-    const scope=window.DartyCameraDirector.resolveScope({started,clockRunning,matchPhase,paused,matchOver,halfTime:!!halfTimeUntil,fullTime:!!fullTimePresentationUntil,setup,authored,delivery}),open=scope.directed;
-    const shot=!!(!setup&&ball&&ball.isShot&&!ball.owner),cross=!!(!setup&&ball&&!ball.owner&&crossingAerialService(ball));
-    const actors=[...you,...opp,ykeep,okeep].filter(Boolean),tackle=!setup&&actors.some(p=>p.slide>0||p.actionT>0&&/tackle|shotBlock|shoulder|fall|trip/i.test(p.action||'')),save=!setup&&actors.some(p=>p.isGK&&(p.diveT>0||p.actionT>0&&/keeper|save|dive/i.test(p.action||'')));
-    return {open,setup,setupKind:setup?restartMsg:null,authored,delivery,phase:scope.phase,exclusion:scope.reason,shot,cross,tackle,save,danger:shot||cross||tackle||save};
-  }
-  function tickLiveCameraDirector(){
-    if(directorReport!==report){directorReport=report;directorEventSequence=0;liveCameraDirector=window.DartyCameraDirector.create(directorSeed);}
-    const events=[];
-    for(let i=(report&&report.events.length||0)-1;i>=0;i--){const event=report.events[i];if(event.seq<=directorEventSequence)break;events.push(event);}
-    events.reverse();if(events.length)directorEventSequence=events[events.length-1].seq;
-    const context=liveCameraContext(),owner=context.setup?restartTaker:ball&&logicalLivePossessionOwner(),input={...context,enabled:cameraMode==='dynamic',events,x:worldX(ball?ball.x:W/2),z:worldZ(ball?ball.y:H/2),ownerTeam:owner&&owner.team,carrierX:owner?worldX(owner.x):null,carrierZ:owner?worldZ(owner.y):null,vx:owner?owner.vx:ball&&ball.vx,vz:owner?owner.vy:ball&&ball.vy,attackDirection:attackDirection(owner?owner.team:lastTouch||'you'),settledCutAllowed:!!(context.setup||owner&&!owner.isGK&&ball.z<PITCH_UNITS_PER_METRE*.8||!owner&&ball&&ball.z<PITCH_UNITS_PER_METRE*.3&&Math.hypot(ball.vx,ball.vy)<3),aspect:Number(cv.width)/Number(cv.height)||innerWidth/innerHeight,unitsPerMetre:PITCH_UNITS_PER_METRE,width:W,height:H},change=liveCameraDirector.step(input);
-    if(video)video.cameraSample(input);
-    if(change&&video)video.record(change.type,{...change,context});
-  }
   function advancePracticeRoamCamera(current,input,elapsedMs=1000/60){
     const state=current&&typeof current==='object'?current:{orbit:0,distance:165},x=clamp(Number(input&&input.x)||0,-1,1),y=clamp(Number(input&&input.y)||0,-1,1),frameScale=clamp((Number(elapsedMs)||0)/(1000/60),0,3),tau=Math.PI*2,orbitRaw=(Number(state.orbit)||0)+x*.034*frameScale,orbit=((orbitRaw+Math.PI)%tau+tau)%tau-Math.PI,distance=clamp((Number(state.distance)||165)+y*2.65*frameScale,112,330);return{orbit,distance,lastAt:Number(state.lastAt)||0};
   }
@@ -6434,7 +6412,7 @@ function beginDedicatedSetPiece(kind,team,taker,x,y){
     shotFx.sprites.forEach((sprite,i)=>{const point=shotFx.trail[i+1];if(!point){sprite.visible=false;return;}const fade=1-(i+1)/SHOT_TRAIL_LENGTH;sprite.visible=true;sprite.position.set(point.x,point.y,point.z);const size=BALL_VISUAL_R*3.1*strength*(.3+fade*.7);sprite.scale.set(size,size,1);sprite.material.opacity=(live?.8:.36)*fade;});
   }
   function camFollow(){
-    let px,py,pz,lx,lz,lookY=12,targetFov=47,directedPose=false;
+    let px,py,pz,lx,lz,lookY=12,targetFov=47;
     const now=performance.now();
     const instantReplayActive=!!(instantReplayReviewController&&instantReplayReviewController.status().active);
     if(instantReplayReviewCameraHold&&paused&&!instantReplayActive){const saved=instantReplayReviewCameraHold;camera.position.fromArray(saved.position);camera.quaternion.fromArray(saved.quaternion);camera.fov=saved.fov;camera.zoom=saved.zoom;camera.updateProjectionMatrix();return;}
@@ -6515,7 +6493,7 @@ function beginDedicatedSetPiece(kind,team,taker,x,y){
         px=clamp(px,-W*.5+145,W*.5-145);pz=clamp(pz,-H*.5+145,H*.5-145);py=clamp(py,50,330);}
       else if(specialPSequence.stage===1){const pull=clamp(e/9.2,0,1);lx=0;lz=0;px=720+pull*270;py=430+pull*220;pz=990+pull*520;lookY=78;targetFov=50+pull*5;}
       else{const pull=clamp(e/10.2,0,1),ang=.28+e*.052;if(specialEarthPileRoot){specialEarthPileRoot.getWorldPosition(specialEarthCameraTarget);lx=specialEarthCameraTarget.x*.62;lz=specialEarthCameraTarget.z*.62;lookY=specialEarthCameraTarget.y*.62;}else{lx=35;lz=90;lookY=78;}const radius=860-pull*175;px=Math.sin(ang)*radius;py=270+pull*120;pz=Math.cos(ang)*radius;targetFov=46-pull*3;}
-    }else if(matchPhase==='play'&&restartCameraPreset!=='broadcast'&&((kickoffHeld&&restartTaker)||liveSetPieceHold)&&(cameraMode!=='dynamic'||!liveCameraDirector.snapshot().active||liveCameraContext().delivery)){
+    }else if(matchPhase==='play'&&restartCameraPreset!=='broadcast'&&((kickoffHeld&&restartTaker)||liveSetPieceHold)){
       const hold=liveSetPieceHold,kind=restartCameraKind,team=restartCameraTeam,originX=hold?hold.originX:(restartBallAnchor||ball).x,originY=hold?hold.originY:(restartBallAnchor||ball).y,dir=attackDirection(team),tx=worldX(originX),tz=worldZ(originY);if(kind==='PENALTY'&&restartCameraPreset==='penalty-save'){const goalkeeper=team==='you'?okeep:ykeep,gx=worldX(goalkeeper.x),gz=worldZ(goalkeeper.y);px=gx+dir*82;py=72;pz=gz;lx=tx-dir*34;lz=tz;lookY=18;targetFov=45;}else{const rig=resolveSetPieceCameraRig({kind,team,originX,originY,aimY:hold&&Number.isFinite(hold.aimY)?hold.aimY:setPieceAim.y,aimHeight:hold&&Number.isFinite(hold.height)?hold.height:setPieceAim.height,hold:!!hold,ballState:ball,taker:kickoffHeld?restartTaker:null}),key=[rig.kind,rig.team,originX.toFixed(1),originY.toFixed(1)].join('|'),resetLook=restartCameraCut||setPieceCameraLookState.key!==key;if(resetLook)setPieceCameraLookState={key,x:rig.look.x,y:rig.look.y,z:rig.look.z};else{const lookAlpha=hold?.24:.16;setPieceCameraLookState.x+=(rig.look.x-setPieceCameraLookState.x)*lookAlpha;setPieceCameraLookState.y+=(rig.look.y-setPieceCameraLookState.y)*lookAlpha;setPieceCameraLookState.z+=(rig.look.z-setPieceCameraLookState.z)*lookAlpha;}px=rig.position.x;py=rig.position.y;pz=rig.position.z;lx=setPieceCameraLookState.x;lookY=setPieceCameraLookState.y;lz=setPieceCameraLookState.z;targetFov=rig.fov;}
     }else if(celebrate>0&&celebratingPlayer){
       const shot=getCelebrationCamera(now);px=shot.px;py=shot.py;pz=shot.pz;lx=shot.lx;lz=shot.lz;lookY=shot.lookY;targetFov=shot.targetFov;
@@ -6532,10 +6510,7 @@ function beginDedicatedSetPiece(kind,team,taker,x,y){
       }else if(cameraMode==='classic'){
         px=camLookX-leadX*.12;py=300+Math.min(42,speed*1.5);pz=H/2+315+camLookZ*.16;targetFov=42;
       }else if(cameraMode==='dynamic'){
-        const direction=liveCameraDirector.snapshot(cameraRenderAlpha);
-        if(direction.active&&direction.pose){const p=direction.pose;px=p.x;py=p.y;pz=p.z;lx=p.lx;lookY=p.ly;lz=p.lz;targetFov=p.fov;directedPose=true;}
-        // Dead-ball framing belongs to the existing restart/period sequence.
-        else{px=camLookX-leadX*.18;py=345+Math.min(55,speed*2.0);pz=H/2+360+camLookZ*.20;targetFov=45;}
+        px=camLookX-leadX*.18;py=345+Math.min(55,speed*2.0);pz=H/2+360+camLookZ*.20;targetFov=45;
       }else if(cameraMode==='endToEnd'){
         const fixedEnd=-1,goalCamX=fixedEnd*(W/2+330),lateral=clamp(camLookZ*.30,-H*.16,H*.16);
         px=goalCamX;py=300+Math.min(45,speed*1.2);pz=lateral;lx=clamp(camLookX+230,-W*.20,W*.46);lz=clamp(camLookZ*.58,-H*.27,H*.27);lookY=18;targetFov=48;
@@ -6543,14 +6518,13 @@ function beginDedicatedSetPiece(kind,team,taker,x,y){
         px=camLookX-leadX*.10;py=410+Math.min(58,speed*2.1);pz=H/2+390+camLookZ*.10;targetFov=45;
       }
     }
-    const punchAge=now-shotFx.punchAt,punch=!directedPose&&!instantReplayActive&&punchAge>=0&&punchAge<260?(1-punchAge/260)*(.5+shotFx.punchPower*.5):0;
-    if(instantReplayActive||directedPose)camera.fov=targetFov;else camera.fov+=(targetFov-punch*4.5-camera.fov)*(punch>0?.35:.08);camera.updateProjectionMatrix();
+    const punchAge=now-shotFx.punchAt,punch=!instantReplayActive&&punchAge>=0&&punchAge<260?(1-punchAge/260)*(.5+shotFx.punchPower*.5):0;
+    if(instantReplayActive)camera.fov=targetFov;else camera.fov+=(targetFov-punch*4.5-camera.fov)*(punch>0?.35:.08);camera.updateProjectionMatrix();
     const debugCameraLocked=typeof debugScene!=='undefined'&&['stadium-aerial','highbury-street','darty-head','darty-leg'].includes(debugScene),ease=instantReplayActive?1:debugCameraLocked?1:goalReplay.active?(goalReplay.cameraCut?1:.14):disciplineReplay.active?(disciplineReplay.cameraCut?1:.14):(pendingDiveDecision&&pendingDiveDecision.whistled)?0.11:diveReplay.active?(diveReplay.cameraCut?1:.12):foulSequence?(foulSequence.cameraCut?1:.10):restartCameraCut?1:now<cameraRecoveryUntil?.30:specialPSequence.active&&specialPSequence.cameraCut?1:celebrationCameraCut?.74:matchPhase==='walkout'?(walkoutCameraCut?1:.075):celebrate>0?.10:cameraMode==='endToEnd'?.065:.14;
-    const positionEase=directedPose?1:ease;
-    camera.position.x+=(px-camera.position.x)*positionEase;camera.position.y+=(py-camera.position.y)*positionEase;camera.position.z+=(pz-camera.position.z)*positionEase;if(!instantReplayActive){if(goalReplay.active)goalReplay.cameraCut=false;if(disciplineReplay.active)disciplineReplay.cameraCut=false;if(diveReplay.active)diveReplay.cameraCut=false;if(foulSequence){foulSequence.cameraCut=false;}if(restartCameraCut)restartCameraCut=false;if(specialPSequence.active)specialPSequence.cameraCut=false;if(celebrationCameraCut)celebrationCameraCut=false;if(matchPhase==='walkout')walkoutCameraCut=false;}
+    camera.position.x+=(px-camera.position.x)*ease;camera.position.y+=(py-camera.position.y)*ease;camera.position.z+=(pz-camera.position.z)*ease;if(!instantReplayActive){if(goalReplay.active)goalReplay.cameraCut=false;if(disciplineReplay.active)disciplineReplay.cameraCut=false;if(diveReplay.active)diveReplay.cameraCut=false;if(foulSequence){foulSequence.cameraCut=false;}if(restartCameraCut)restartCameraCut=false;if(specialPSequence.active)specialPSequence.cameraCut=false;if(celebrationCameraCut)celebrationCameraCut=false;if(matchPhase==='walkout')walkoutCameraCut=false;}
     if(punch>0){const wobble=Math.sin(punchAge*.09)*punch*3.2;camera.position.x+=wobble;camera.position.y+=Math.cos(punchAge*.11)*punch*2.2;}
     camera.lookAt(lx,lookY,lz);
-    const broadcastRoll=(!instantReplayActive&&matchPhase==='play'&&celebrate<=0&&cameraMode!=='endToEnd')?clamp((ball.vy||0)*-.00045,-.010,.010):0;if(!directedPose)camera.rotation.z+=(broadcastRoll-camera.rotation.z)*.055;
+    const broadcastRoll=(!instantReplayActive&&matchPhase==='play'&&celebrate<=0&&cameraMode!=='endToEnd')?clamp((ball.vy||0)*-.00045,-.010,.010):0;camera.rotation.z+=(broadcastRoll-camera.rotation.z)*.055;
   }
   const COL={ you:0xc0392b, opp:0x1c3f6e, ygk:0x2f9e78, ogk:0xd9a441, ref:0x1a1c22 };   // deeper, kit-like tones
 
@@ -8169,7 +8143,6 @@ function buildGoal(gx){
     debugCleanKickoffReception:(overrides={})=>{const actor={id:'debug-kickoff-receiver',team:'you'},passer={id:'debug-kickoff-passer',team:'you'},state={target:actor,lastKicker:passer,flightType:'kick-off',flightAge:6,z:0,vx:2.6,vy:0,...overrides.ball},presentation={playerId:actor.id,outcome:'retained',possessionDisposition:'remain-loose',...overrides.presentation},result={contactType:'first-touch',ownerCandidateId:null,...overrides.result};return cleanKickoffReceptionDecision(state,actor,presentation,result,overrides.pressureDistance==null?PITCH_UNITS_PER_METRE*4:Number(overrides.pressureDistance));},
     debugNormalXRunnerRendezvous:(overrides={})=>{const src={x:2248.6,y:1754.9},target={x:2310,y:1120,vx:0,vy:1.3,attrs:{pace:84,reactions:86}},aim={x:.113,y:-.994},requestedDistance=overrides.requestedDistance==null?503.8:Number(overrides.requestedDistance),authoredPoint=overrides.authoredPoint||{x:src.x+aim.x*requestedDistance,y:src.y+aim.y*requestedDistance},trajectory=overrides.trajectory||humanGroundPassTrajectory(overrides.power==null?.33:Number(overrides.power),worldDistanceMetres(authoredPoint.x-src.x,authoredPoint.y-src.y));return humanNormalPassReceiverCandidate({...src,...overrides.src},{...target,...overrides.target},{...aim,...overrides.aim},authoredPoint,trajectory,overrides.stickMagnitude==null?1:Number(overrides.stickMagnitude));},
     debugDirectionalKnockOnRecovery:(overrides={})=>{const player={id:'debug-knock-on-player',team:'you',x:1000,y:1000,vx:2,vy:0,attrs:{control:86,pace:84}},plan=directionalKnockOnPlan(player,overrides.stick||{x:1,y:0}),startedAt=100,contract={playerId:player.id,startedAt,expiresAt:startedAt+plan.durationFrames,reacquireAfter:startedAt+7,startX:plan.startX,startY:plan.startY,targetX:plan.targetX,targetY:plan.targetY,nx:plan.nx,ny:plan.ny,distance:plan.touchDistance,reacquireMinimumDistance:plan.reacquireMinimumDistance,maximumTravelDistance:plan.maximumTravelDistance},progress=overrides.progress==null?1.08:Number(overrides.progress),state={owner:null,target:player,flightType:'ground',x:plan.startX+plan.nx*plan.touchDistance*progress,y:plan.startY+plan.ny*plan.touchDistance*progress,z:0,vx:plan.nx*plan.touchPace,vy:plan.ny*plan.touchPace,zv:0,directionalKnockOnContract:contract},decision=directionalKnockOnRecoveryDecision({...state,...overrides.ball},player,overrides.frame==null?startedAt+18:Number(overrides.frame),overrides.nearestOpponentBallDistance==null?180:Number(overrides.nearestOpponentBallDistance));return{plan,decision};},
-    getCameraDirector:()=>({...liveCameraDirector.snapshot(),context:liveCameraContext()}),
     getState:()=>({phase:matchPhase,minute:minuteNow(),engine:{v2Tick:liveV2Tick,v2Live:!!liveV2TickApplied,hostOwned:[...you,...opp].filter(liveV2HostOwnsPlayer).map(p=>p.id+':'+(p.slide>0?'slide':p.skill>0?(p.skillType||'skill'):p.action))},score:{you:youScore,opp:oppScore},presentation:{foul:foulSequence&&{stage:foulSequence.stage,scene:foulSequence.scene,card:foulSequence.decision&&foulSequence.decision.card},offside:offsidePresentationSnapshot(),redCardReplay:disciplineReplay.active,pendingDive:pendingDiveDecision&&{context:pendingDiveDecision.context,decision:pendingDiveDecision.onField,whistled:pendingDiveDecision.whistled},diveReplay:diveReplay.active,crowd:{home:{...crowdMood.you},away:{...crowdMood.opp}}},ai:{you:{...TEAM_BRAIN.you},opp:{...TEAM_BRAIN.opp}},restart:{held:kickoffHeld,kind:restartMsg,taker:restartTaker&&restartTaker.id,takerAnchor:restartAnchor&&{...restartAnchor},ballAnchor:restartBallAnchor&&{...restartBallAnchor}},ball:{x:ball&&ball.x,y:ball&&ball.y,z:ball&&ball.z,vx:ball&&ball.vx,vy:ball&&ball.vy,zv:ball&&ball.zv,flightAge:ball&&ball.flightAge||0,minAerialFlightAge:ball&&ball.minAerialFlightAge||0,owner:ball&&ball.owner&&ball.owner.id,lastKicker:ball&&ball.lastKicker&&ball.lastKicker.id,kickerLock:ball&&ball.kickerLock||0},players:[...you,...opp,ykeep,okeep].filter(Boolean).map(p=>({id:p.id,team:p.team,role:p.role,attackRole:p.attackRole||null,x:p.x,y:p.y,stamina:p.stamina,action:p.action,locomotionState:p.locomotionState||'idle',turnAngle:+Number(p.turnAngle||0).toFixed(3),turnCost:+Number(p.turnCost||0).toFixed(3),firstTouch:p.firstTouch&&{type:p.firstTouch.type,action:p.firstTouch.action,until:p.firstTouch.until}}))}),
     getReport:()=>JSON.parse(JSON.stringify(report)),
     getDefaultPlaystyle:()=>JSON.parse(JSON.stringify(DEFAULT_PLAYSTYLE)),
@@ -8835,13 +8808,14 @@ function buildGoal(gx){
   let selectedStarter=null,selectedBench=null;
   let build173ShadowRenderFrameSequence=0,build173ShadowSimulationStepIndex=0;
   let DT=1,_lastT=0,_acc=0;const STEP=1000/60;
-  function updateWithCamera(){update();tickLiveCameraDirector();}
-  const build173SimulationTick=build173V2Shadow?build173V2Shadow.selectTickRunner(updateWithCamera,()=>({renderFrameSequence:build173ShadowRenderFrameSequence,simulationStepIndex:build173ShadowSimulationStepIndex,simulationStepsPerRender:SIM_STEPS})):updateWithCamera;
+  const build173SimulationTick=build173V2Shadow?build173V2Shadow.selectTickRunner(update,()=>({renderFrameSequence:build173ShadowRenderFrameSequence,simulationStepIndex:build173ShadowSimulationStepIndex,simulationStepsPerRender:SIM_STEPS})):update;
 
   if(video)video.bind({
     started:()=>started,
     time:()=>5400*Number(clockFrames||0)/MATCH_FRAMES,
-    camera:()=>({mode:cameraMode,rig:goalReplay.active?goalReplay.kind:disciplineReplay.active?disciplineReplay.kind:diveReplay.active?'dive-replay':celebrate>0?'celebration':matchPhase==='walkout'?'walkout':kickoffHeld?restartMsg:cameraMode==='dynamic'?liveCameraDirector.snapshot().angle:cameraMode}),
+    baseCamera:()=>cameraMode,
+    camera:()=>({mode:cameraMode,rig:goalReplay.active?goalReplay.kind:disciplineReplay.active?disciplineReplay.kind:diveReplay.active?'dive-replay':celebrate>0?'celebration':matchPhase==='walkout'?'walkout':kickoffHeld?restartMsg:cameraMode}),
+    setCamera:mode=>{setCameraMode(mode,false);restartCameraCut=true;},
     replay:()=>goalReplay.active?goalReplay.kind:disciplineReplay.active?disciplineReplay.kind:diveReplay.active?'dive-replay':null,
     celebration:()=>celebrate>0&&!goalReplay.active,
     canReplayPop:()=>started&&matchPhase==='play'&&!paused&&!matchOver&&!kickoffHeld&&!foulSequence&&!pendingDiveDecision&&!offsidePresentation&&!confrontationSequence&&!externalSetPieceActive&&officialPauseUntil<=performance.now(),
@@ -8859,7 +8833,7 @@ function buildGoal(gx){
     pollGamepad();
     const t=now||performance.now(),rawElapsed=_lastT?Math.max(0,t-_lastT):0;if(!_lastT)_lastT=t;_acc+=Math.min(100,rawElapsed);_lastT=t;
     let fixedTicks=0;
-    try{while(_acc>=STEP){DT=1;for(let n=0;n<SIM_STEPS;n++){build173ShadowSimulationStepIndex=n;build173SimulationTick();}build173ShadowRenderFrameSequence++;_acc-=STEP;fixedTicks++;}recordReplayFrame(t);if(video)video.update();cameraRenderAlpha=clamp(_acc/STEP,0,1);draw();}
+    try{while(_acc>=STEP){DT=1;for(let n=0;n<SIM_STEPS;n++){build173ShadowSimulationStepIndex=n;build173SimulationTick();}build173ShadowRenderFrameSequence++;_acc-=STEP;fixedTicks++;}recordReplayFrame(t);if(video)video.update();draw();}
     catch(err){liveV2Stop(err);window.DartyStartup.fail('The game stopped while building the pitch.');console.error(err);errorBox.style.display='block';errorBox.textContent='Runtime error: '+err.message+'\n'+(err.stack||'');return;}
     if(report&&report.performance&&started&&!paused&&!matchOver&&document.visibilityState==='visible'&&rawElapsed>0&&rawElapsed<5000){const perf=report.performance,sample=+rawElapsed.toFixed(2),renderInfo=renderer.info&&renderer.info.render||{};perf.renderFrames++;perf.simulation.ticks+=fixedTicks*SIM_STEPS;if(fixedTicks>1)perf.simulation.catchUpFrames++;perf.simulation.maximumTicksInRender=Math.max(perf.simulation.maximumTicksInRender,fixedTicks*SIM_STEPS);if(rawElapsed>100)perf.simulation.clampedElapsedFrames++;if(sample>25)perf.longFrames.over25Ms++;if(sample>40)perf.longFrames.over40Ms++;if(sample>80)perf.longFrames.over80Ms++;perf.renderer.maximumDrawCalls=Math.max(perf.renderer.maximumDrawCalls,Number(renderInfo.calls)||0);perf.renderer.maximumTriangles=Math.max(perf.renderer.maximumTriangles,Number(renderInfo.triangles)||0);perf.renderer.canvasWidth=cv.width;perf.renderer.canvasHeight=cv.height;perf.samples.push(sample);if(perf.samples.length>3600)perf.samples.splice(0,perf.samples.length-3600);}
     requestAnimationFrame(loop);
