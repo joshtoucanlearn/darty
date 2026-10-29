@@ -112,6 +112,7 @@ export function createHeadlessMatch(inputUrl, { seed, minutes, keeperTrace = fal
     getSize(vector) { return vector.set(640, 360); }
   };
   execute(read('match-engine/darty-impact-v1.js'), 'darty-impact-v1.js');
+  execute(read('match-engine/darty-camera-director.js'), 'darty-camera-director.js');
   document.write = text => {
     const filename = text.match(/src="([^"?]+)/)?.[1];
     if (filename) execute(read('match-engine/' + filename), filename);
