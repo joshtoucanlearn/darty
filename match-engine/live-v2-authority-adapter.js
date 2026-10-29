@@ -739,13 +739,17 @@
         const lineup = team.lineup.map(row => ({ id: String(row.id), slotId: String(row.slotId), position: String(row.position) }));
         const validation = dependencies.formation.validateLineup(formation, lineup);
         if (!validation.valid) throw new Error('formation V2 lineup invalid: ' + validation.errors.join(';'));
+        // Keep the stable lineup for validation, but remove dismissed players'
+        // actual slots through Formation V2's existing short-handed adaptation.
+        const unavailableSlotIds = lineup.filter(row => snapshot.players.some(player =>
+          player.id === row.id && player.sentOff && !player.isGK)).map(row => row.slotId);
         const referenceId = snapshot.ball.ownerId || snapshot.ball.targetId;
         const referencePlayer = referenceId && snapshot.players.find(player => player.id === referenceId && player.teamId === team.id);
         const carrierProgress = referencePlayer ? clamp(team.attackingDirection === 1
           ? (referencePlayer.x - snapshot.pitch.xMin) / (snapshot.pitch.xMax - snapshot.pitch.xMin)
           : (snapshot.pitch.xMax - referencePlayer.x) / (snapshot.pitch.xMax - snapshot.pitch.xMin), 0, 1) : null;
         output[team.id] = dependencies.formation.resolve({
-          formation, phase: phaseState.phases[team.id], tick: snapshot.tick, lineup,
+          formation, phase: phaseState.phases[team.id], tick: snapshot.tick, lineup, unavailableSlotIds,
           philosophy: philosophyFor(team, formation), pitch: METRIC_PITCH,
           attackingDirection: team.attackingDirection,
           offsideLine: (team.offsideLine - snapshot.pitch.xMin) / snapshot.units.xPerMetre,
@@ -1020,8 +1024,12 @@
       // whether the named attacker becomes involved or another player resets
       // the phase. Recovery never grants possession here.
       const flightType = String(snapshot.ball.flightType || '').toLowerCase();
-      if (/(shot|cross|corner|free-kick|penalty|clearance)/.test(flightType)) return { byId: {}, rows: [] };
       const ball = metricBall(snapshot.ball, snapshot), speed = Math.hypot(ball.velocity.x, ball.velocity.y);
+      // Flight labels retain kick provenance after the ball stops. A grounded,
+      // stationary ball is collectible even if that old label still says shot.
+      // Moving services and shots keep their existing protected flight path.
+      const stopped = snapshot.ball.z === 0 && speed === 0 && ball.velocity.z === 0;
+      if (!stopped && /(shot|cross|corner|free-kick|penalty|clearance)/.test(flightType)) return { byId: {}, rows: [] };
       if (ball.position.z > LOOSE_BALL_MAX_HEIGHT_METRES || speed > LOOSE_BALL_MAX_SPEED_METRES_PER_SECOND) {
         return { byId: {}, rows: [] };
       }
@@ -1086,7 +1094,7 @@
           byId[row.playerId] = row; rows.push(row);
         };
         const selected = candidates[0];
-        if (selected && selected.etaSeconds <= (selected.intended ? LOOSE_BALL_MAX_ETA_SECONDS + 1 : LOOSE_BALL_MAX_ETA_SECONDS)) {
+        if (selected && (stopped || selected.etaSeconds <= (selected.intended ? LOOSE_BALL_MAX_ETA_SECONDS + 1 : LOOSE_BALL_MAX_ETA_SECONDS))) {
           addAssignment(selected, 'v2-loose-ball-recovery');
         }
         // Team arbitration still names one fastest automatic recovery runner,

@@ -238,7 +238,7 @@
       "path": "match-engine/match.html",
       "purpose": "V2-only playable host with exact three-workflow fail-closed preflight",
       "baselineSha256": "8380734db3a142293c5bca2a22f6b6cc9e6a0fa658f9f0c26cce8ad1801cf678",
-      "candidateSha256": "e30479ddd5accbab4d2edf014e5992dbee4439c14e2452f38603c02221759654",
+      "candidateSha256": "633efa3f96ca87f76f4cd165c7fc8f7b85ccc76c5b55d59bbaffcf2121eee521",
       "pinState": "frozen",
       "expectedRelation": "authoritative-v2-only-three-workflow-host-plus-nonplayable-compatibility-scaffold"
     },
@@ -500,7 +500,7 @@
       "path": "match-engine/live-v2-authority-adapter.js",
       "purpose": "outer offline normal-match gameplay transaction with rollback and host-level strict-stop enforcement",
       "baselineAbsent": true,
-      "candidateSha256": "02a701efd49de0a3cdea13776b6596c3d7fe2a00877937e190a5b5495f69d478",
+      "candidateSha256": "973770887b668eb947a101c2bc566b413c1965fe01bcde9cabc9734a987edb9e",
       "pinState": "frozen",
       "authorityScope": ["single-player-quick-play", "cpu-versus-cpu"]
     },

@@ -2116,6 +2116,14 @@
   let liveV2PendingFoul=null,liveV2TickCarrier=null,liveV2DribbleLeaseOwnerId=null,liveV2PendingDribbleAction=null,liveV2DribbleActionSerial=0,liveV2ConsumedDribbleActionIds=new Set(),liveV2LastDribbleLogKey='';
   let liveV2AuthorityCounters={legacyOutfieldLocomotion:0,legacyCpu:0,legacyLooseBallIntegration:0,candidateTicks:0};
   let liveV2AuthorityTotals={candidateTicks:0,lastCommittedTick:0,gameplayEpochs:0};
+  let liveV2ProgressTick=0,liveV2ProgressWait=0;
+  function liveV2GuardProgress(){
+    const committed=liveV2AuthorityTotals.lastCommittedTick;
+    if(!liveV2Authority||liveV2StrictStopped||matchPhase!=='play'||liveV2ControlPhase()!=='live'||inReset()||committed!==liveV2ProgressTick){liveV2ProgressTick=committed;liveV2ProgressWait=0;return;}
+    // Keeper possession can legitimately suspend gameplay for up to 300 host
+    // ticks. A live host must resume commits or use the existing strict stop.
+    if(++liveV2ProgressWait>=600)liveV2Stop('FL V2 gameplay has not committed for 600 live host ticks');
+  }
   function liveV2FailureCode(detail){const value=String(detail||'').toLowerCase();if(!value)return'none';if(value.includes('sequential')||value.includes('stale'))return'tick-sequence';if(value.includes('movement'))return'movement-projection';if(value.includes('launch'))return'launch-handoff';if(value.includes('ball'))return'ball-projection';if(value.includes('formation'))return'formation-projection';if(value.includes('cpu')||value.includes('intelligence'))return'cpu-projection';if(value.includes('transaction'))return'host-transaction';if(value.includes('non-finite'))return'non-finite-projection';return'authority-fault';}
   function liveV2AuthorityTelemetry(){const requested=!!LIVE_V2_PREFLIGHT.requested,failure=liveV2AttachFailure||null,active=requested&&LIVE_V2_PREFLIGHT.eligible===true&&!failure&&!liveV2ControlDisabled&&(!!liveV2Authority||!!liveV2ControlRuntime),progressed=liveV2AuthorityTotals.candidateTicks>0||liveV2ControlTick>0;return{requested:requested?'fl-v2':'fl-v2-required',effective:failure||liveV2StrictStopped?'fl-v2-stopped':active?(progressed?'fl-v2-live':'fl-v2-armed'):'fl-v2-stopped',authorityChangedAt:Date.now(),failureCode:failure?liveV2FailureCode(failure):null,failure,lastCommittedTick:Number(liveV2AuthorityTotals.lastCommittedTick)||0,currentEpochTick:Number(liveV2Tick)||0,gameplayEpochs:Number(liveV2AuthorityTotals.gameplayEpochs)||0,controlTick:Number(liveV2ControlTick)||0,candidateTicks:Number(liveV2AuthorityTotals.candidateTicks)||0};}
   function recordLiveV2Authority(reason='state-change'){if(!report||!report.playtestId||!Array.isArray(report.events))return;const snapshot=liveV2AuthorityTelemetry(),previous=[...report.events].reverse().find(event=>event.type==='engine-authority');report.engineAuthority=snapshot;if(previous&&previous.effective===snapshot.effective&&previous.failureCode===snapshot.failureCode)return;logEvent('engine-authority',null,null,{reason,...snapshot});persistPlaytestLog(true);}
@@ -2160,7 +2168,7 @@
     const cpuVcpu=LIVE_V2_PREFLIGHT.workflow==='cpu-v-cpu';
     if(liveV2StrictStopped||!liveV2Authority||LIVE_V2_PREFLIGHT.eligible!==true||!started||matchPhase!=='play'||paused||matchOver||AUTO!==cpuVcpu||twoPlayerEnabled||FREE_KICK_PRACTICE||ONLINE_HOST||externalSetPieceActive||kickoffHeld||inReset()||!clockRunning||celebrate>0||offsidePresentation||goalReplay.active||disciplineReplay.active||diveReplay.active||specialPSequence.active||foulSequence||pendingDiveDecision||confrontationSequence||instantGoalShot)return false;
     if(!cpuVcpu&&(!controlled||controlled.isGK||controlled.sentOff))return false;
-    if(ball.owner&&ball.owner.isGK||[...you,...opp].some(player=>player&&player.sentOff))return false;
+    if(ball.owner&&ball.owner.isGK)return false;
     // D3 (Joshua, 19 Oct 2026: "fix this"): a skill, slide, dive, flair trip, flick or aerial
     // lock no longer hands the whole match back to the old engine. Only that player is animated
     // by the host until the move ends (liveV2HostOwnsPlayer); everyone else stays in FL V2.
@@ -2327,7 +2335,7 @@
   }
   function liveV2RunTick(){
     liveV2TickApplied=false;liveV2TickBallApplied=false;liveV2PendingFoul=null;liveV2TickCarrier=liveV2Carrier();liveV2AuthorityCounters={legacyOutfieldLocomotion:0,legacyCpu:0,legacyLooseBallIntegration:0,candidateTicks:0};if(!liveV2CanAdvance()){liveV2ObserveBoundary();return false;}
-    const saved=liveV2CaptureTransactionState(),nextTick=liveV2Tick+1,launchAtPlan=liveV2PendingLaunch,frame=liveV2Authority.planTick(liveV2Snapshot(nextTick));if(!frame){const status=liveV2Authority.status();if(!status.enabled)liveV2Stop(status.failure||'candidate planning fault');return false;}
+    const saved=liveV2CaptureTransactionState(),nextTick=liveV2Tick+1,launchAtPlan=liveV2PendingLaunch,frame=liveV2Authority.planTick(liveV2Snapshot(nextTick));if(!frame){const status=liveV2Authority.status();liveV2Stop(status.failure||'candidate planning fault');return false;}
     let prepared=null,controlPlan=null;try{prepared=liveV2Authority.prepareCommit(frame);if(!prepared)throw new Error('candidate host transaction prepare fault');controlPlan=liveV2PrepareControl();if(!liveV2Authority.applyPrepared(prepared)){const status=liveV2Authority.status();throw new Error(status&&status.failure||'candidate host transaction apply fault');}if(!liveV2Authority.finalizePrepared(prepared)){const status=liveV2Authority.status();throw new Error(status&&status.failure||'candidate host transaction finalize fault');}liveV2CommitControl(controlPlan);}
     catch(error){liveV2RestoreTransactionState(saved);if(prepared)liveV2Authority.rollbackPrepared(prepared,error);if(controlPlan)try{liveV2ControlApi.rollback(liveV2ControlRuntime,controlPlan,'outer-host-rollback',liveV2ControlCapability);}catch(_){}liveV2Stop(error);return false;}
     liveV2Tick=nextTick;if(liveV2PendingLaunch===launchAtPlan)liveV2PendingLaunch=null;liveV2TickApplied=true;liveV2TickBallApplied=!!frame.hostProjection.ball;if(!liveV2WasEligible)liveV2AuthorityTotals.gameplayEpochs++;liveV2WasEligible=true;liveV2AuthorityCounters={...frame.hostProjection.authorityCounters};liveV2AuthorityTotals.candidateTicks+=Number(liveV2AuthorityCounters.candidateTicks)||0;liveV2AuthorityTotals.lastCommittedTick++;dartyRecordCommittedContacts(frame.hostProjection);liveV2Badge(LIVE_V2_PREFLIGHT.workflow==='cpu-v-cpu'?'V2 · CPU':'V2 · SP');recordLiveV2Authority('first-live-authority-tick');return true;
@@ -5435,6 +5443,7 @@ function beginDedicatedSetPiece(kind,team,taker,x,y){
   function update(){
     if(!started)return;
     if(liveV2StrictStopped)return;
+    liveV2GuardProgress();if(liveV2StrictStopped)return;
     const now=performance.now();
     liveV2ControlApplied=false;liveV2PeriodTransitionApplied=false;
     // Match-control V2 owns every fixed tick, including pauses, replays,
@@ -8670,7 +8679,7 @@ function buildGoal(gx){
     const t=now||performance.now(),rawElapsed=_lastT?Math.max(0,t-_lastT):0;if(!_lastT)_lastT=t;_acc+=Math.min(100,rawElapsed);_lastT=t;
     let fixedTicks=0;
     try{while(_acc>=STEP){DT=1;for(let n=0;n<SIM_STEPS;n++){build173ShadowSimulationStepIndex=n;build173SimulationTick();}build173ShadowRenderFrameSequence++;_acc-=STEP;fixedTicks++;}recordReplayFrame(t);if(video)video.update();draw();}
-    catch(err){window.DartyStartup.fail('The game stopped while building the pitch.');console.error(err);errorBox.style.display='block';errorBox.textContent='Runtime error: '+err.message+'\n'+(err.stack||'');return;}
+    catch(err){liveV2Stop(err);window.DartyStartup.fail('The game stopped while building the pitch.');console.error(err);errorBox.style.display='block';errorBox.textContent='Runtime error: '+err.message+'\n'+(err.stack||'');return;}
     if(report&&report.performance&&started&&!paused&&!matchOver&&document.visibilityState==='visible'&&rawElapsed>0&&rawElapsed<5000){const perf=report.performance,sample=+rawElapsed.toFixed(2),renderInfo=renderer.info&&renderer.info.render||{};perf.renderFrames++;perf.simulation.ticks+=fixedTicks*SIM_STEPS;if(fixedTicks>1)perf.simulation.catchUpFrames++;perf.simulation.maximumTicksInRender=Math.max(perf.simulation.maximumTicksInRender,fixedTicks*SIM_STEPS);if(rawElapsed>100)perf.simulation.clampedElapsedFrames++;if(sample>25)perf.longFrames.over25Ms++;if(sample>40)perf.longFrames.over40Ms++;if(sample>80)perf.longFrames.over80Ms++;perf.renderer.maximumDrawCalls=Math.max(perf.renderer.maximumDrawCalls,Number(renderInfo.calls)||0);perf.renderer.maximumTriangles=Math.max(perf.renderer.maximumTriangles,Number(renderInfo.triangles)||0);perf.renderer.canvasWidth=cv.width;perf.renderer.canvasHeight=cv.height;perf.samples.push(sample);if(perf.samples.length>3600)perf.samples.splice(0,perf.samples.length-3600);}
     requestAnimationFrame(loop);
   }

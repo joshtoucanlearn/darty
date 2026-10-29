@@ -264,7 +264,8 @@ test('controlled-carry True Feel keeps ownership attached while producing readab
   for (const player of snapshot.players) {
     if (player.teamId === 'opp') {
       player.contactEligible = false;
-      player.sentOff = true;
+      // Isolate pressure with a legal team, not eleven artificial dismissals.
+      player.x = 0; player.y = -33; player.vx = player.vy = 0;
     }
   }
   const touchTicks = [], feet = [];
@@ -443,7 +444,8 @@ test('physical True Feel remains playable through a run, cut, reversal and buffe
   for (const player of snapshot.players) {
     if (player.teamId === 'opp') {
       player.contactEligible = false;
-      player.sentOff = true;
+      // Isolate pressure with a legal team, not eleven artificial dismissals.
+      player.x = 0; player.y = -33; player.vx = player.vy = 0;
     }
   }
   for (let tick = 1; tick <= 180; tick += 1) {
@@ -550,7 +552,8 @@ test('a sustained carry has readable physical touch cadence instead of a seven-f
   for (const player of snapshot.players) {
     if (player.teamId === 'opp') {
       player.contactEligible = false;
-      player.sentOff = true;
+      // Isolate pressure with a legal team, not eleven artificial dismissals.
+      player.x = 0; player.y = -33; player.vx = player.vy = 0;
     }
   }
   const touchTicks = [];

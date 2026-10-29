@@ -134,8 +134,8 @@ function protectedBuild173Payload(seed = 173173, matchType = 'co-op') {
 }
 
 test('frozen promotion bytes and lower-engine contracts are exact', () => {
-  assert.equal(hash(adapterSource), '02a701efd49de0a3cdea13776b6596c3d7fe2a00877937e190a5b5495f69d478');
-  assert.equal(hash(matchSource), 'e30479ddd5accbab4d2edf014e5992dbee4439c14e2452f38603c02221759654');
+  assert.equal(hash(adapterSource), '973770887b668eb947a101c2bc566b413c1965fe01bcde9cabc9734a987edb9e');
+  assert.equal(hash(matchSource), '633efa3f96ca87f76f4cd165c7fc8f7b85ccc76c5b55d59bbaffcf2121eee521');
   assert.equal(Adapter.VERSION, '1.0.0-offline-live-authority-playtest');
   assert.deepEqual([...Adapter.SUPPORTED_WORKFLOWS], ['single-player', 'cpu-v-cpu']);
   assert.equal(Ball.VERSION, Adapter.DEPENDENCY_CONTRACTS.ball.version);
@@ -444,14 +444,18 @@ test('offside entry, Suite lifecycle, live aim and menu are wired to real host b
   assert.match(matchSource, /control:'escape',pressed:true\}\}\);return;\}togglePause\(\)/);
 });
 
-test('controller, keyboard, restart, replay, camera and red-card containment remain Build 173', () => {
+test('controller, keyboard, restart, replay, camera and disciplinary presentation retain host ownership', () => {
   assert.match(matchSource, /pollGamepad\(\);/);
   assert.match(matchSource, /addEventListener\('keydown'/);
   assert.match(matchSource, /movementInput\(\)/);
   assert.match(adapterSource, /goalkeepersSpecialActionsRenderingRulesRestartsReplays: 'build-173'/);
   assert.match(matchSource, /kickoffHeld\|\|inReset\(\)\|\|!clockRunning/);
   assert.match(matchSource, /offsidePresentation\|\|goalReplay\.active\|\|disciplineReplay\.active/);
-  assert.match(matchSource, /\[\.\.\.you,\.\.\.opp\]\.some\(player=>player&&player\.sentOff\)/);
+  const canAdvanceStart = matchSource.indexOf('function liveV2CanAdvance()');
+  const canAdvance = matchSource.slice(canAdvanceStart, matchSource.indexOf('  // D3:', canAdvanceStart));
+  assert.doesNotMatch(canAdvance, /some\(player=>player&&player\.sentOff\)/);
+  assert.match(adapterSource, /lineup, unavailableSlotIds/);
+  assert.match(matchSource, /offender\.sentOff=true/);
   assert.match(matchSource, /liveV2Authority\.reset\('build-173-dead-ball-presentation-or-special-action-handoff'\)/);
 });
 
