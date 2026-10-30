@@ -2,6 +2,8 @@
 // presentations, restarts and the V2 period clock. No browser or network.
 // node tools/headless-cpu-match.mjs --url-file /path/match-url.txt --seeds 1,2 --minutes 2
 import fs from 'node:fs';
+import {createLooseRaceMetrics} from './loose-race-metrics.mjs';
+import { createAttackMetrics } from './attack-metrics.mjs';
 import { createCombinationMetrics } from './combination-metrics.mjs';
 import { createCohesionMetrics } from './cohesion-metrics.mjs';
 import path from 'node:path';
@@ -15,7 +17,7 @@ const require = createRequire(import.meta.url);
 const { createClock } = require('../match-engine/darty-video-capture.js');
 const read = filename => fs.readFileSync(path.join(root, filename), 'utf8');
 const html = read('match-engine/match.html');
-const sourceHashes = Object.fromEntries(['match-engine/match.html', 'match-engine/live-v2-authority-adapter.js', 'tools/headless-cpu-match.mjs', 'tools/cohesion-metrics.mjs', 'tools/combination-metrics.mjs', 'match-engine/dribbling-state-v2.js', 'match-engine/first-touch-v2.js', 'match-engine/live-v2-contact-authority-composer.js', 'match-engine/formation-behaviour-v2.js', 'match-engine/cpu-intelligence-v2.js']
+const sourceHashes = Object.fromEntries(['match-engine/match.html', 'match-engine/live-v2-authority-adapter.js', 'tools/headless-cpu-match.mjs', 'tools/cohesion-metrics.mjs', 'tools/attack-metrics.mjs', 'tools/loose-race-metrics.mjs', 'tools/combination-metrics.mjs', 'match-engine/dribbling-state-v2.js', 'match-engine/first-touch-v2.js', 'match-engine/movement-engine-v2.js', 'match-engine/live-v2-contact-authority-composer.js', 'match-engine/formation-behaviour-v2.js', 'match-engine/cpu-intelligence-v2.js']
   .map(filename => [filename, createHash('sha256').update(read(filename)).digest('hex')]));
 const noop = () => {};
 
@@ -48,7 +50,7 @@ export function countsAsFullTime(state, { stalled = false, capped = false } = {}
     state.progress.maximumLiveTicksWithoutCommit < 600 && state.progress.commitCounterRegressions === 0;
 }
 
-export function createHeadlessMatch(inputUrl, { seed, minutes, keeperTrace = false, passRace = true, physicalTouch = true } = {}) {
+export function createHeadlessMatch(inputUrl, { seed, minutes, keeperTrace = false, passRace = true, physicalTouch = true, scripted = false } = {}) {
   const url = new URL(inputUrl);
   const payload = JSON.parse(Buffer.from(new URLSearchParams(url.hash.slice(1)).get('flMatch'), 'base64url'));
   seed ??= payload.simulationSeed;
@@ -67,6 +69,8 @@ export function createHeadlessMatch(inputUrl, { seed, minutes, keeperTrace = fal
   const progress = createCommitProgressMonitor();
   const cohesion = createCohesionMetrics();
   const actions = createCombinationMetrics();
+  const attack = createAttackMetrics();
+  const races = createLooseRaceMetrics();
   const canvasContext = new Proxy({}, {
     get(object, key) {
       if (key === 'measureText') return text => ({ width: String(text).length * 8 });
@@ -95,7 +99,7 @@ export function createHeadlessMatch(inputUrl, { seed, minutes, keeperTrace = fal
   };
   const context = vm.createContext(vm.constants.DONT_CONTEXTIFY);
   Object.assign(context, {
-    console, document, __cohesion: cohesion, __actions: actions, location: url, navigator: { getGamepads: () => [], userAgent: 'Node fixed-tick host' },
+    console, document, __cohesion: cohesion, __actions: actions, __attack: attack, __races: races, location: url, navigator: { getGamepads: () => [], userAgent: 'Node fixed-tick host' },
     localStorage: { getItem: () => null, setItem: noop, removeItem: noop },
     URL, URLSearchParams, TextEncoder, TextDecoder, Uint8Array,
     atob: text => Buffer.from(text, 'base64').toString('binary'),
@@ -127,12 +131,30 @@ export function createHeadlessMatch(inputUrl, { seed, minutes, keeperTrace = fal
   if (!context.__FL_V2_LIVE_PREFLIGHT.eligible) throw new Error('headless spectator preflight rejected');
   // Lab overrides stay in this VM; the browser capture gate and shipping
   // defaults remain unchanged. Record the adapter's actual profile in state.
+  const movementApi=context.FootballLegacyMovementEngineV2;
+  context.FootballLegacyMovementEngineV2={...movementApi,advance(...args){races.commands(args[1]);return movementApi.advance(...args);}};
   const authorityApi = context.FootballLegacyLiveV2Authority;
   context.FootballLegacyLiveV2Authority = { ...authorityApi, createAttachment: options =>
     authorityApi.createAttachment({ ...options, cpuPassRaceFilter: passRace, trueFeelPhysicalTouchAuthority: physicalTouch }) };
   const start = html.indexOf('<script>\n(function(){') + '<script>'.length;
   const end = html.lastIndexOf('</script>\n<script src="set-piece-system.js"');
   const bridge = `
+    const observedLogEvent=logEvent;
+    logEvent=function(...args){observedLogEvent(...args);const event=report.events[report.events.length-1];
+      if(event){const actor=args[2],target=event.targetId&&[...you,...opp].find(p=>p.id===event.targetId),progress=attackDirection(event.team)===1?(ball.x-M)/(W-2*M):1-(ball.x-M)/(W-2*M);
+        const dir=attackDirection(event.team),line=dir*offsideLine(event.team),tx=Number(event.intendedX??target?.x??ball.x);
+        __races.event({...event,actorId:actor&&actor.id,time:performance.now()});
+        const receiver=event.receiverId&&[...you,...opp].find(p=>p.id===event.receiverId),actorProgress=actor?(attackDirection(actor.team)===1?(actor.x-M)/(W-2*M):1-(actor.x-M)/(W-2*M)):null;
+        __attack.event({...event,actorId:actor&&actor.id,actorRole:actor&&positionFamily(actor),actorTouches:actor?.stats?.touches,time:performance.now(),actorProgress,passOriginProgress:progress,
+          receiverRole:receiver&&positionFamily(receiver),receiverProgress:receiver?(attackDirection(receiver.team)===1?(receiver.x-M)/(W-2*M):1-(receiver.x-M)/(W-2*M)):null,
+          passProgressM:actor?dir*(tx-actor.x)*105/(W-2*M):0,behindLineM:(dir*tx-line)*105/(W-2*M)});
+        __actions.event({...event,actorId:actor&&actor.id,time:performance.now(),progress,inBox:progress>=1-16.5/105&&Math.abs(ball.y*68/H-34)<=20.16,
+          defenderId:event.defenderId||(event.type==='ai-skill-selection'&&actor?teamList(other(actor.team)).filter(p=>!p.isGK&&!p.sentOff).sort((a,b)=>D(a,actor)-D(b,actor))[0]?.id:null),cpu:!!actor&&!teamHasHumanController(actor.team),nearestDefender:actor&&teamList(other(actor.team)).some(p=>!p.sentOff&&!p.isGK&&D(p,actor)<120),
+          opponentGapMetres:actor?Math.min(...teamList(other(actor.team)).filter(p=>!p.sentOff&&!p.isGK).map(p=>Math.hypot((p.x-ball.x)*105/(W-2*M),(p.y-ball.y)*68/H))):null,
+          distanceMetres:target?Math.hypot((Number(event.intendedX||target.x)-ball.x)*105/(W-2*M),(Number(event.intendedY||target.y)-ball.y)*68/H):null});}
+      if(event&&(event.type==='pass'||event.type==='pass-resolved'))__cohesion.event({...event,
+        progress:attackDirection(event.team)===1?(ball.x-M)/(W-2*M):1-(ball.x-M)/(W-2*M)});};
+    let cohesionTicks=0;
     const keeperTraceEnabled=${!!keeperTrace},keeperTraceRows=[];
     let keeperTraceShot=0;
     const keeperTraceLog=logEvent;
@@ -157,23 +179,22 @@ export function createHeadlessMatch(inputUrl, { seed, minutes, keeperTrace = fal
         keeperTraceRows.push({type:'animation-transition',shotId:keeperTraceShot,frame:clockFrames,hostMs:performance.now(),
           playerId:gk.id,team:gk.team,animation:gk.saveAnimation,action:gk.action,actionT:gk.actionT,duration:gk.keeperAnimationDuration});
     };
-    const observedLogEvent=logEvent;
-    logEvent=function(...args){observedLogEvent(...args);const event=report.events[report.events.length-1];
-      if(event){const actor=args[2],target=event.targetId&&[...you,...opp].find(p=>p.id===event.targetId),progress=attackDirection(event.team)===1?(ball.x-M)/(W-2*M):1-(ball.x-M)/(W-2*M);
-        __actions.event({...event,cpu:true,defenderId:event.defenderId||(event.type==='ai-skill-selection'&&actor?teamList(other(actor.team)).filter(p=>!p.isGK&&!p.sentOff).sort((a,b)=>D(a,actor)-D(b,actor))[0]?.id:null),actorId:actor&&actor.id,time:performance.now(),progress,inBox:progress>=1-16.5/105&&Math.abs(ball.y*68/H-34)<=20.16,
-          distanceMetres:target?Math.hypot((Number(event.intendedX||target.x)-ball.x)*105/(W-2*M),(Number(event.intendedY||target.y)-ball.y)*68/H):null});}
-      if(event&&(event.type==='pass'||event.type==='pass-resolved'))__cohesion.event({...event,
-        progress:attackDirection(event.team)===1?(ball.x-M)/(W-2*M):1-(ball.x-M)/(W-2*M)});};
-    let cohesionTicks=0;
     window.__headless={
+      scenario(code){return eval(code);},
       keeperTrace:()=>({events:keeperTraceRows,teams:report.teams}),
       tick(){const live=matchPhase==='play'&&liveV2ControlPhase()==='live';
         try{DT=1;update();recordReplayFrame(performance.now());}catch(error){liveV2Stop(error);}
         const owner=logicalLivePossessionOwner();
+        __attack.frame({time:performance.now(),live,ownerId:owner?.id,ball:{x:(ball.x-M)*105/(W-2*M),y:ball.y*68/H},players:[...you,...opp].map(p=>({id:p.id,team:p.team,isGK:p.isGK,x:(p.x-M)*105/(W-2*M),y:p.y*68/H,touches:p.stats.touches}))});
+        __races.frame({time:performance.now(),live,ownerId:owner?.id,ball:{x:(ball.x-M)*105/(W-2*M),y:(ball.y-H/2)*68/H,z:(ball.z||0)/PITCH_UNITS_PER_METRE,
+          vx:(ball.vx||0)*60*105/(W-2*M),vy:(ball.vy||0)*60*68/H,isShot:ball.isShot,knockOn:!!ball.directionalKnockOnContract,flightType:ball.flightType},
+          players:[...you,...opp].map(p=>({id:p.id,team:p.team,isGK:p.isGK,sentOff:p.sentOff,x:(p.x-M)*105/(W-2*M),y:(p.y-H/2)*68/H,
+            vx:(p.vx||0)*60*105/(W-2*M),vy:(p.vy||0)*60*68/H,gait:p.gait,pace:p.attrs.pace}))});
+        const challengeId=__actions.takeOnDefenderId(),challenged=challengeId&&liveV2PlayerById(challengeId);
         __actions.possession(owner&&{id:owner.id,team:owner.team,time:performance.now(),y:owner.y*68/H,
           progress:attackDirection(owner.team)===1?(owner.x-M)/(W-2*M):1-(owner.x-M)/(W-2*M),
           defenders:Object.fromEntries(teamList(other(owner.team)).filter(p=>!p.sentOff).map(p=>[p.id,attackDirection(owner.team)*(p.x-owner.x)*105/(W-2*M)])),
-          defenderBehind:teamList(other(owner.team)).some(p=>!p.sentOff&&D(p,owner)<180&&attackDirection(owner.team)*(owner.x-p.x)>45)},live);
+          defenderBehind:!!(challenged&&!challenged.sentOff&&attackDirection(owner.team)*(owner.x-challenged.x)>45)},live);
         if(live)__cohesion.possession({owner:owner&&{family:positionFamily(owner)},loose:!owner&&!ball.target});
         else __cohesion.possession({owner:null,loose:false});
         if(live&&++cohesionTicks%60===0){const source=owner||ball.lastKicker;
@@ -196,11 +217,12 @@ export function createHeadlessMatch(inputUrl, { seed, minutes, keeperTrace = fal
         halfTime:report.events.some(e=>e.type==='half-time'),fullTime:report.events.some(e=>e.type==='full-time')})
     };
   `;
-  execute(html.slice(start, end).replace('  setCameraMode(cameraMode,false);', bridge + '\n  setCameraMode(cameraMode,false);'), 'match-host.js');
+  execute(html.slice(start, end).replace('liveV2Tick=nextTick;', '__actions.frame(frame.cpu,frame.hostProjection);__races.assignment(frame.hostProjection);liveV2Tick=nextTick;').replace('  setCameraMode(cameraMode,false);', bridge + '\n  setCameraMode(cameraMode,false);'), 'match-host.js');
   clock.advance(200); // The host's existing 180 ms automatic start.
   return {
+    scenario(code) { if(!scripted)throw new Error('scripted fixture access not enabled');return context.__headless.scenario(code); },
     keeperTrace: () => context.__headless.keeperTrace(),
-    state: () => ({ ...context.__headless.state(), progress: progress.snapshot(), cohesion: cohesion.snapshot(), actions: actions.snapshot() }),
+    state: () => ({ ...context.__headless.state(), progress: progress.snapshot(), cohesion: cohesion.snapshot(), actions: actions.snapshot(), attack: attack.snapshot(), races: races.snapshot() }),
     step() { clock.advance(1000 / 60); const sample = context.__headless.tick(); progress.observe(sample.live, sample.committed); }
   };
 }

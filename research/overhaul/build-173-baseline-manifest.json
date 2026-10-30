@@ -238,7 +238,7 @@
       "path": "match-engine/match.html",
       "purpose": "V2-only playable host with exact three-workflow fail-closed preflight",
       "baselineSha256": "8380734db3a142293c5bca2a22f6b6cc9e6a0fa658f9f0c26cce8ad1801cf678",
-      "candidateSha256": "eed0101f0c6e7b303bcd0896767afb710da483280e67ee31560e50371b1da587",
+      "candidateSha256": "49de01a1e3dab4f620f6fca0539faff5b06040f7ba924ab898607d59c9ebccc4",
       "pinState": "frozen",
       "expectedRelation": "authoritative-v2-only-three-workflow-host-plus-nonplayable-compatibility-scaffold"
     },
@@ -409,21 +409,21 @@
       "path": "match-engine/dribbling-state-v2.js",
       "purpose": "deterministic physical touch separation, logical possession lease and buffered action authority",
       "baselineAbsent": true,
-      "candidateSha256": "fa5f32916cc938bc258266d1570c8483456f1428152fb857c8f7856b5683eb5b",
+      "candidateSha256": "565372f134c7932b39d71e9290a4d0d1f45b05b33b4793337dd45e76ee5d8073",
       "authorityScope": ["single-player-quick-play", "cpu-versus-cpu"]
     },
     {
       "path": "match-engine/movement-engine-v2.js",
       "purpose": "deterministic FL V2 locomotion and player collision authority",
       "baselineAbsent": true,
-      "candidateSha256": "e8848db45518ef54ed5cec5e65091160605decfb9995d23b9769395f1eafa0b3",
+      "candidateSha256": "e51f06f224514a715464a048c02a8103e39e76433ed5228c52ac155151f9fc91",
       "authorityScope": ["single-player-quick-play", "cpu-versus-cpu", "v2-shadow"]
     },
     {
       "path": "match-engine/cpu-intelligence-v2.js",
       "purpose": "deterministic FL V2 player and team decision authority",
       "baselineAbsent": true,
-      "candidateSha256": "14f8604c800a3c745ecd2cce7d33b1b62263c14c98fe2c7f64b07c1ed626989f",
+      "candidateSha256": "ea9fa56b4f5963ea06a13e6c726503b26a75be0ae36464b3e469580bd7b6eb70",
       "authorityScope": ["single-player-quick-play", "cpu-versus-cpu", "v2-shadow"]
     },
     {
@@ -458,7 +458,7 @@
       "path": "match-engine/live-v2-contact-authority-composer.js",
       "purpose": "ordered reaction-rated first-touch, passive body-deflection, aerial and protected legacy-contact arbitration",
       "baselineAbsent": true,
-      "candidateSha256": "4fbf59d30cfc21f97c29655312e491ab1a1bfce8576572e19bf49727673cf83d",
+      "candidateSha256": "f2cac84c8c0affd27b16875177912f2a2ac35e8df55477a1c5f620179a7fed24",
       "authorityScope": ["single-player-quick-play", "cpu-versus-cpu"]
     },
     {
@@ -500,7 +500,7 @@
       "path": "match-engine/live-v2-authority-adapter.js",
       "purpose": "outer offline normal-match gameplay transaction with rollback and host-level strict-stop enforcement",
       "baselineAbsent": true,
-      "candidateSha256": "a8839c8f1cb07b8a188c963672816fc421ecfcd4e7cf6dacf4df6382bda9648a",
+      "candidateSha256": "cbd0a00dbb5447d95ed5267da6f323019935b6df3dba5a101aa284172a52c792",
       "pinState": "frozen",
       "authorityScope": ["single-player-quick-play", "cpu-versus-cpu"]
     },

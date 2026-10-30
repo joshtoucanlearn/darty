@@ -13,12 +13,12 @@ const Ball = require('../match-engine/ball-engine-v2.js');
 const Composer = require('../match-engine/live-v2-contact-authority-composer.js');
 
 const HASHES = Object.freeze({
-  'live-v2-contact-authority-composer.js': '4fbf59d30cfc21f97c29655312e491ab1a1bfce8576572e19bf49727673cf83d',
+  'live-v2-contact-authority-composer.js': 'f2cac84c8c0affd27b16875177912f2a2ac35e8df55477a1c5f620179a7fed24',
   'first-touch-v2.js': 'f548c5c33c0d82ce044ebb083ec6deac0deb212f8287608f77e490794894152c',
   'first-touch-authority-adapter-v2.js': '2c6bf8b63e327c653556d73ec4c820b742038e63fb1f46217ef912eccec432f2',
   'aerial-contact-v2.js': '54bf086bef9e0f149f9ed2445454da510fca5908e79aa77d95ba5f70d5e8b1ba',
   'ball-engine-v2.js': 'e2b6776a12ebcf8353e322c181e2f38dbb18c1c41d10c1cebf134418a296a819',
-  'movement-engine-v2.js': 'e8848db45518ef54ed5cec5e65091160605decfb9995d23b9769395f1eafa0b3'
+  'movement-engine-v2.js': 'e51f06f224514a715464a048c02a8103e39e76433ed5228c52ac155151f9fc91'
 });
 
 function sha(file) {
@@ -435,4 +435,26 @@ test('hostile malformed structures fail without partial mutation or ambient auth
     'Math.random', 'Date.now', 'performance.now', 'requestAnimationFrame(',
     'setTimeout(', 'setInterval(', 'document.', 'window.addEventListener'
   ]) assert.equal(source.includes(forbidden), false, forbidden);
+});
+
+test('an aerial-model winner can chest a high ball using physical First Touch without manufacturing ownership',()=>{
+  const input=aerialFixture({ballPosition:{x:52.8,y:.02,z:1.35},ballVelocity:{x:-5,y:0,z:-1},
+    aerialIntent:{sequence:'chest-win',epoch:7,commandTick:96,actorId:'receiver',technique:'header',intent:'clear',receiveMode:'chest',target:{x:75,y:0,z:2}}});
+  const result=Composer.compose(input,capability());
+  assert.equal(result.contactType,'first-touch',JSON.stringify(result.presentation));
+  assert.equal(result.presentation.technique,'chest-control');
+  assert.equal(result.presentation.duel.winnerId,'receiver');
+  assert.equal(result.consumedAerialIds.length,1);
+  assert.equal(result.ballState.lastContact.colliderId,'receiver');
+  assert.ok(!result.ownerCandidateId||result.presentation.possessionDisposition==='candidate-acquire');
+});
+
+test('generic First Touch cannot bypass a pending high-ball aerial contest',()=>{
+  const input=aerialFixture({ballPosition:{x:52.8,y:.02,z:1.35},ballVelocity:{x:-5,y:0,z:-1}});
+  input.aerialIntent=null;input.aerialFlightActive=true;
+  const waiting=Composer.compose(input,capability());
+  assert.equal(waiting.status,'aerial-pending');assert.equal(waiting.ownerCandidateId,null);
+  assert.equal(waiting.ownedContact,false);assert.equal(waiting.suppressLegacy.aerialDuel,true);
+  input.aerialFlightActive=false;
+  assert.equal(Composer.compose(input,capability()).contactType,'first-touch','the fixture must exercise the previously reachable generic high reception');
 });

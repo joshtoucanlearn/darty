@@ -17,7 +17,7 @@ function fixture({height=12,lateral=90,pace=10,rating=80}={}){
       action:'idle',actionT:0,diveT:0,diveCooldown:0},controlled=null,twoPlayerEnabled=false,AUTO=true;
     const events=[],logEvent=(type,team,gk,extra)=>events.push({type,frame:clockFrames,action:gk.action,actionT:gk.actionT,...extra});
     const goalkeeperPositioningContract=()=>({state:'angle-set',prepared:true,targetX:3244,targetY:H/2,depth:16,threatX:ball.x,threatY:ball.y});
-    const goalkeeperLooseBallContext=()=>null,goalkeeperOneVOneContext=()=>null,moveGoalkeeperWithBall=()=>{},
+    const keeperParryContactAllowed=()=>true,goalkeeperLooseBallContext=()=>null,goalkeeperOneVOneContext=()=>null,moveGoalkeeperWithBall=()=>{},
       secondTeamHasHuman=()=>false,showEvent=()=>{},keeperKick=()=>keeperKicks++;
     let kickoffHeld=false,restartMsg='',restartTaker=null,penaltyCalls=0,keeperKicks=0;
     const updatePenaltyKeeperDecision=()=>penaltyCalls++;

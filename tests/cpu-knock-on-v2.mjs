@@ -34,3 +34,16 @@ test('CPU chooses tiers from space and rated execution quality, and waits for th
  }
  assert.deepEqual(new Set(choices),new Set(['light','strong','double']));
 });
+
+test('CPU jogging touch uses the unchanged human free-roll planner at low and high control without a chase boost',()=>{
+ for(const control of [1,50,99]) {
+  const actor={id:'carrier',team:'you',x:1000,y:1000,vx:speed(3.5),vy:0,fx:1,fy:0,attrs:{control,pace:84}};
+  let received;const before=[actor.vx,actor.vy];
+  const ctx=vm.createContext({clamp,rad:12.75,worldDistanceMetres:metres,worldBallSpeedForMetresPerSecond:speed,facing:p=>({x:p.fx,y:p.fy}),logEvent:()=>{},
+   performDirectionalKnockOn:(p,stick,isSecond,state,options)=>{received=ctx.directionalKnockOnPlan(p,stick,options);return true;}});
+  vm.runInContext(plan+'\n'+launch+';this.launch=liveV2LaunchDribbleKnockOn;',ctx);
+  assert.equal(ctx.launch(actor,{dribbleId:'jog',target:{x:1400,y:1000},maneuver:{knockOnTier:'baseline'}}),true);
+  assert.equal(received.tier,'baseline-free-roll');assert.equal(received.groundDampingModel,null);
+  assert.ok(received.touchDistanceMetres>3);assert.deepEqual([actor.vx,actor.vy],before);
+ }
+});

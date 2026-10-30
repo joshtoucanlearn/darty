@@ -608,7 +608,7 @@ test('a clearly superior progressive coordinated run beats routine short circula
   assert.equal(decision.carrierIntent.reason, 'release-coordinated-run');
 });
 
-test('routine run does not override safer circulation without the required lane advantage', () => {
+test('a clean short outlet beats a covered forward lane while the run stays independently authored', () => {
   const players = [
     player('carrier', 'home', 1500, 1070, {
       role: 'central-midfielder', position: 'CM', passing: 92, awareness: 92, control: 90
@@ -635,6 +635,8 @@ test('routine run does not override safer circulation without the required lane 
     Intelligence.DEFAULT_CONFIG.routineProgressiveRunClearanceBonus);
   assert.equal(decision.carrierIntent.type, 'pass');
   assert.equal(decision.carrierIntent.targetPlayerId, 'support');
+  assert.ok(decision.supportPassOptions.find(p=>p.targetPlayerId==='runner').risk.probability >
+    decision.carrierIntent.risk.probability);
   assert.equal(decision.carrierIntent.reason, 'short-support-circulation');
 });
 
@@ -681,8 +683,8 @@ test('elite shooting extends a clear shot decision into a realistic edge-of-box 
 });
 
 test('CPU shot choice varies the strike instead of emitting one generic driven shot', () => {
-  const decisionFor = ({ x, y, shooting = 82, control = 84, opponents = [] }) => Intelligence.decide(snapshot({
-    tick: 186,
+  const decisionFor = ({ x, y, shooting = 82, control = 84, opponents = [], tick = 186 }) => Intelligence.decide(snapshot({
+    tick,
     players: [
       player('carrier', 'home', x, y, { role: 'striker', position: 'ST', shooting, control }),
       ...opponents
@@ -692,13 +694,17 @@ test('CPU shot choice varies the strike instead of emitting one generic driven s
   }), null, { maximumCommittedRuns: 0 }).carrierIntent;
   const close = decisionFor({ x: 2940, y: 1070 });
   const wide = decisionFor({ x: 2680, y: 620 });
-  const central = decisionFor({ x: 2720, y: 1070, shooting: 70, control: 68 });
+  const central = Array.from({length:20},(_,i)=>decisionFor({x:2720,y:1070,shooting:70,control:68,tick:186+i*24})).find(i=>i.type==='shot');
   assert.equal(close.type, 'shot');
   assert.equal(close.shotProfile.technique, 'low-driven');
   assert.equal(wide.type, 'shot');
-  assert.equal(wide.shotProfile.technique, 'placed');
+  assert.ok(['placed','power'].includes(wide.shotProfile.technique));
+  assert.equal(wide.shotProfile.wideAngle,true);
   assert.equal(central.type, 'shot');
   assert.equal(central.shotProfile.technique, 'driven');
+  const frequency=rating=>Array.from({length:256},(_,i)=>decisionFor({x:2940,y:1070,shooting:rating,tick:1+i*24})).filter(i=>i.type==='shot').length;
+  assert.ok(frequency(1)>0,'low ratings still choose a real shot');
+  assert.ok(frequency(99)>frequency(1),'ratings scale frequency rather than availability');
 });
 
 test('a screened centre lane selects an open goal third without bypassing defenders', () => {

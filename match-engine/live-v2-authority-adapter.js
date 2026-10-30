@@ -73,10 +73,10 @@
   const HUMAN_INPUT_RESPONSIVENESS_MULTIPLIER = 1.42;
   const CPU_PASS_RACE_MIN_MARGIN_TICKS = 6;
   const CPU_PASS_RECEIVER_READY_BUFFER_TICKS = 8;
-  const CPU_PASS_PROGRESSION_READY_BUFFER_TICKS = -4;
+  const CPU_PASS_PROGRESSION_READY_BUFFER_TICKS = 0;
   const CPU_PASS_PROGRESSION_MIN_CONFIDENCE = 0.72;
   const CPU_PASS_PROGRESSION_MIN_METRES = 4;
-  const CPU_PASS_PROGRESSION_MIN_OPPONENT_MARGIN_TICKS = -2;
+  const CPU_PASS_PROGRESSION_MIN_OPPONENT_MARGIN_TICKS = 6;
   // D1 (19 Oct 2026): long balls take up to 2.4 s to come down, so the race
   // must follow them that far plus the receiver's six-tick margin.
   const CPU_PASS_RACE_MAX_TICKS = 180;
@@ -89,8 +89,8 @@
   // ordinary lanes must run the same physical receiver/opponent projection as
   // every other pass. CPU Intelligence measures these two values in canonical
   // pitch units (roughly 30.25 units per metre along the long axis).
-  const CPU_SHORT_SUPPORT_FAST_LANE_CLEARANCE = 60;
-  const CPU_SHORT_SUPPORT_FAST_RECEIVER_SPACE = 75;
+  const CPU_SHORT_SUPPORT_FAST_LANE_CLEARANCE = 120;
+  const CPU_SHORT_SUPPORT_FAST_RECEIVER_SPACE = 150;
   const TURNOVER_TACKLE_PROTECTION_TICKS = 30;
   // Difficulty changes how quickly and ambitiously the CPU reads the match.
   // It never changes footballer speed, reach, collision, pass accuracy or shot
@@ -156,9 +156,9 @@
   // release failed its own race and the carrier ran into pressure instead.
   // Releases of 20-30 m stay on the ground as driven passes (a defender standing
   // on the line can still cut them out); only longer releases are lofted.
-  function cpuLongPassLaunch(distanceMetres) {
+  function cpuLongPassLaunch(distanceMetres, forceLoft) {
     const distance = finite(distanceMetres, 20);
-    if (distance <= 30) return { speed: clamp(11 + distance * 0.45, 17, 24), liftAngleDeg: 0 };
+    if (distance <= 30 && !forceLoft) return { speed: clamp(11 + distance * 0.45, 17, 24), liftAngleDeg: 0 };
     const drop = clamp(distance - 1.5, 15, 46);
     if (drop <= 31) return { speed: clamp((drop + 19.4) / 1.95, 17, 31), liftAngleDeg: 22 };
     return { speed: clamp((drop + 17.6) / 2.1, 17, 31), liftAngleDeg: 28 };
@@ -169,6 +169,18 @@
     if (long) return clamp(15 + distance * 0.18, 18, 23);
     if (shortSupport) return clamp(7.2 + distance * 0.38, 8.4, 14.5);
     return clamp(8 + distance * 0.42, 9.5, 17);
+  }
+  function keeperOutgoingContactPlan(input){
+    if(input.sameOwnDistribution)return {allowed:false,separated:false};
+    if(!input.sameOutgoingParry)return {allowed:true,separated:false};
+    const b=input.ball,k=input.keeper,dx=b.x-k.x,dy=b.y-k.y,d=Math.hypot(dx,dy);
+    const separated=Boolean(input.separated)||d>input.reach+.3;
+    const pace=Math.hypot(b.vx,b.vy),closing=dx*(b.vx-k.vx)+dy*(b.vy-k.vy);
+    // One hand contact cannot be caught/parried repeatedly while its outgoing
+    // ball is still inside the broad dive envelope. A new opponent touch is
+    // immediately eligible; the keeper can also chase and re-enter a ball
+    // that has genuinely separated, or pick it up when it has settled.
+    return {allowed:separated&&(closing<-.05||pace<.6),separated};
   }
 
   function cpuPhysicalActionAllowed(transition, tick) {
@@ -248,6 +260,12 @@
       contact: supplied.contact || root.FootballLegacyLiveV2ContactAuthorityComposer,
       dribbling: supplied.dribbling || localDribbling || root.FootballLegacyDribblingStateV2
     };
+  }
+
+  function keeperDeflectionPlan(input,options){
+    const cpu=dependenciesFrom(options).cpu;
+    if(!cpu||typeof cpu.keeperDeflectionPlan!=='function')throw new Error('V2 keeper contact planner unavailable');
+    return cpu.keeperDeflectionPlan(input);
   }
 
   function validateDependencies(dependencies) {
@@ -372,6 +390,10 @@
         // Animation/reception locks can delay a deliberate touch without
         // making the footballer's body intangible to the MR ball.
         bodyContactEligible: player.bodyContactEligible !== false,
+        stunTicks: clamp(Math.trunc(finite(player.stunTicks, 0)), 0, 600),
+        skillCooldownTicks: Math.max(0, finite(player.skillCooldownTicks, 0)),
+        lowChallenge: Boolean(player.lowChallenge),
+        skillExitTarget: player.skillExitTarget ? point(player.skillExitTarget, { x: player.x, y: player.y }) : null,
         tackleActive: Boolean(player.tackleActive), shoulderActive: Boolean(player.shoulderActive),
         control: player.control && typeof player.control === 'object' ? {
           x: clamp(finite(player.control.x, 0), -1, 1), y: clamp(finite(player.control.y, 0), -1, 1),
@@ -594,7 +616,7 @@
         ballState: null, ballContext: dependencies.ball.createSimulationContext({ seed: (deterministicSeed ^ Math.imul(resetEpoch + 1, 0x9e3779b9)) >>> 0 || deterministicSeed }),
         lastBallProjection: null, lastLaunchSequence: '', lastTackleState: new Set(),
         lastCarrierEmission: { you: '', opp: '' }, possession: { teamId: null, ownerId: null, inFlight: false, intendedReceiverId: null, intendedTarget: null, intendedTargetWindowMetres: null, arrivalWindowEntered: false, releaseTick: null, reactionStimulus: null, offsideCandidate: null },
-        transition: null,
+        transition: null, aerialFlight: null,
         consumedFirstTouchIds: [], consumedFirstTouchThroughTick: 0,
         consumedAerialIds: [],
         dribblingState: dependencies.dribbling.createState({ epoch: resetEpoch })
@@ -653,6 +675,7 @@
           lastCarrierEmission: clone(domain.lastCarrierEmission),
           possession: clone(domain.possession),
           transition: clone(domain.transition),
+          aerialFlight: clone(domain.aerialFlight),
           consumedFirstTouchIds: clone(domain.consumedFirstTouchIds),
           consumedFirstTouchThroughTick: domain.consumedFirstTouchThroughTick,
           consumedAerialIds: clone(domain.consumedAerialIds),
@@ -688,6 +711,18 @@
             restoredDribbling.physicalSeparated && !restoredBall) {
           throw new Error('live V2 serialized dribbling state is inconsistent');
         }
+        const restoredAerialFlight = payload.domain.aerialFlight || null;
+        if (restoredAerialFlight && (typeof restoredAerialFlight.key !== 'string' ||
+            !restoredAerialFlight.landing || !Number.isFinite(restoredAerialFlight.landing.x) ||
+            !Number.isFinite(restoredAerialFlight.landing.y) || !Number.isSafeInteger(restoredAerialFlight.releaseTick) ||
+            !Number.isSafeInteger(restoredAerialFlight.projectedTick) || !Number.isSafeInteger(restoredAerialFlight.arrivalTick))) {
+          throw new Error('live V2 serialized aerial forecast is invalid');
+        }
+        if (restoredAerialFlight?.trajectory && (!Array.isArray(restoredAerialFlight.trajectory) ||
+            restoredAerialFlight.trajectory.length > 240 || restoredAerialFlight.trajectory.some(p =>
+              !Number.isSafeInteger(p.tick) || !Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.z)))) {
+          throw new Error('live V2 serialized aerial trajectory is invalid');
+        }
         const stagedDomain = {
           world: restoredWorld,
           rosterSignature: String(payload.domain.rosterSignature || ''),
@@ -701,6 +736,7 @@
           lastCarrierEmission: clone(payload.domain.lastCarrierEmission || { you: '', opp: '' }),
           possession: clone(payload.domain.possession || { teamId: null, ownerId: null, inFlight: false, intendedReceiverId: null, intendedTarget: null, intendedTargetWindowMetres: null, arrivalWindowEntered: false, releaseTick: null, reactionStimulus: null, offsideCandidate: null }),
           transition: clone(payload.domain.transition),
+          aerialFlight: clone(restoredAerialFlight),
           consumedFirstTouchIds: clone(payload.domain.consumedFirstTouchIds || []),
           consumedFirstTouchThroughTick: Math.max(0, Math.trunc(finite(payload.domain.consumedFirstTouchThroughTick, 0))),
           consumedAerialIds: clone(payload.domain.consumedAerialIds || []),
@@ -769,6 +805,10 @@
     function derivePossession(snapshot) {
       const owner = snapshot.ball.ownerId && snapshot.players.find(player => player.id === snapshot.ball.ownerId);
       if (owner) return { teamId: owner.teamId, ownerId: owner.id, inFlight: false, intendedReceiverId: null, intendedTarget: null, intendedTargetWindowMetres: null, arrivalWindowEntered: false, releaseTick: null, reactionStimulus: null, offsideCandidate: null };
+      if(/keeper-deflection|woodwork-rebound|involuntary-deflection/.test(snapshot.ball.flightType))return {
+        teamId:null,ownerId:null,inFlight:false,intendedReceiverId:null,intendedTarget:null,intendedTargetWindowMetres:null,
+        arrivalWindowEntered:false,releaseTick:null,reactionStimulus:clone(domain.possession.reactionStimulus||null),deliberatePass:false,
+        offsideCandidate:clone(domain.possession.offsideCandidate||null)};
       const pendingTouch = domain.possession.pendingTouch;
       if (pendingTouch) {
         const last = snapshot.players.find(p => p.id === snapshot.ball.lastKickerId);
@@ -915,6 +955,9 @@
           pace: finite(attrs.pace, 70), acceleration: finite(attrs.accel, attrs.pace || 70), awareness: finite(attrs.awareness, 70),
           agility: finite(attrs.agility, attrs.accel || 70), committed: player.tackleActive || player.shoulderActive || Boolean(domain.world && domain.world.players.find(p => p.id === player.id)?.action),
           passing: finite(attrs.pass, 70), shooting: finite(attrs.shoot, 65), control: finite(attrs.control, 70),
+          skillCooldownTicks: player.skillCooldownTicks,
+          lowChallenge: player.lowChallenge,
+          skillExitTarget: player.skillExitTarget ? metricPoint(player.skillExitTarget, snapshot) : null,
           defending: finite(attrs.defend, 55), aggression: finite(attrs.aggression, 65), strength: finite(attrs.strength, 70),
           balance: finite(attrs.balance, 70), fx: player.fx, fy: player.fy,
           stamina: player.stamina, isGK: player.isGK, sentOff: player.sentOff, available: !player.sentOff,
@@ -928,6 +971,8 @@
           tick: snapshot.tick, fixedTickSeconds: FIXED_TICK_SECONDS, teamId: team.id,
           possessionTeamId: possession.teamId, carrierId: possession.ownerId,
           intendedReceiverId: possession.intendedReceiverId, inFlight: possession.inFlight,
+          flightType: snapshot.ball.flightType,
+          sourcePlayerId: possession.sourcePlayerId,
           attackingDirection: team.attackingDirection,
           offsideLine: (team.offsideLine - snapshot.pitch.xMin) / snapshot.units.xPerMetre,
           pitch: METRIC_PITCH, ball: { x: ballPoint.x, y: ballPoint.y }, players: allPlayers,
@@ -992,7 +1037,8 @@
       const shape = {}, run = {}, reception = {}, carrier = {}, defensive = {}, support = {};
       for (const teamId of ['you', 'opp']) {
         for (const target of formations[teamId].targets) shape[target.playerId] = target.target;
-        for (const committed of decisions[teamId].runs || []) run[committed.playerId] = committed.continuationTarget || committed.target;
+        for (const committed of decisions[teamId].runs || []) run[committed.playerId] = possession.inFlight
+          ? committed.continuationTarget || committed.target : committed.target;
         for (const intent of decisions[teamId].supportIntents || []) {
           support[intent.playerId] = intent.target;
           // These two midfield jobs are local combinations, not extra
@@ -1004,7 +1050,7 @@
         // the exact authored point. Movement must honour that same point while
         // the ball travels instead of returning the player to an older run or
         // a static formation anchor.
-        if (intent && intent.type === 'pass' && intent.targetPlayerId && intent.target) {
+        if (intent && ['pass', 'cross'].includes(intent.type) && intent.targetPlayerId && intent.target && !hasPhysicalDribblingLease(domain.dribblingState)) {
           reception[String(intent.targetPlayerId)] = intent.target;
         }
         if (intent && ['carry', 'take-on', 'protect'].includes(intent.type) && intent.target) carrier[teamId] = intent.target;
@@ -1037,6 +1083,7 @@
           x: (possession.intendedTarget.x - snapshot.pitch.xMin) / snapshot.units.xPerMetre,
           y: (possession.intendedTarget.y - (snapshot.pitch.yMin + snapshot.pitch.yMax) / 2) / snapshot.units.yPerMetre
         };
+
       }
       return { shape, run, reception, carrier, defensive, support };
     }
@@ -1057,10 +1104,48 @@
       }
       return nearestOpponent(player, snapshot);
     }
+    function shotFollowAssignments(snapshot,world) {
+      const metric=metricBall(snapshot.ball,snapshot),dir=metric.velocity.x>=0?1:-1;
+      const goalX=dir>0?105:0,time=Math.max(0,(goalX-metric.position.x)/(Math.abs(metric.velocity.x)>.1?metric.velocity.x:dir*.1));
+      const centreY=clamp(metric.position.y+metric.velocity.y*time,-4.5,4.5);
+      const byId={},rows=[];
+      for(const team of snapshot.teams){
+        const attacking=team.attackingDirection===dir;
+        const target={x:goalX-dir*(attacking?4:2),y:centreY};
+        const candidates=world.players.filter(p=>p.teamId===team.id).map(p=>({p,live:snapshot.players.find(q=>q.id===p.id)}))
+          .filter(o=>o.live&&!o.live.isGK&&!o.live.sentOff&&o.live.contactEligible)
+          .sort((a,b)=>Math.hypot(a.p.position.x-target.x,a.p.position.y-target.y)-Math.hypot(b.p.position.x-target.x,b.p.position.y-target.y)||a.p.id.localeCompare(b.p.id));
+        for(const [i,o] of candidates.slice(0,2).entries()){
+          const row={playerId:o.p.id,teamId:team.id,target:{x:target.x-dir*i*2,y:clamp(target.y+(i?3:-2),-9,9)},
+            distanceMetres:Math.hypot(o.p.position.x-target.x,o.p.position.y-target.y),intended:false,human:snapshot.humanPlayerIds.has(o.p.id),
+            authority:attacking?'v2-shot-follow-in':'v2-shot-rebound-defend'};
+          byId[o.p.id]=row;rows.push(row);
+        }
+      }
+      return {byId,rows};
+    }
+    function looseBallForecast(snapshot) {
+      const b=metricBall(snapshot.ball,snapshot),grounded=b.position.z<=.13&&b.velocity.z<=.65;
+      let state=dependencies.ball.createBallState({...domain.ballState,id:snapshot.ball.id,position:b.position,velocity:b.velocity,
+        grounded,settled:false,regime:grounded?dependencies.ball.REGIMES.ROLL:dependencies.ball.REGIMES.FLIGHT});
+      let context=dependencies.ball.createSimulationContext({seed:stableHash('loose-race:'+deterministicSeed+':'+snapshot.tick)});
+      const samples=[{tick:0,...b.position}];
+      if(Math.hypot(b.velocity.x,b.velocity.y,b.velocity.z)<.05)return samples;
+      // One shared detached MR forecast. Both teams read the same grass,
+      // bounce and knock-on turf curve; no runner or ball gains a boost.
+      for(let ticks=0;ticks<180;ticks+=15){
+        const stepped=dependencies.ball.step(state,context,15*FIXED_TICK_SECONDS,goalEnvironment());
+        for(let i=23;i<stepped.trace.samples.length;i+=24){const sample=stepped.trace.samples[i];
+          samples.push({tick:ticks+Math.ceil((i+1)/4),...sample.position});}
+        state=stepped.state;context=stepped.context;if(state.settled)break;
+      }
+      return samples;
+    }
     function looseBallRecoveryAssignments(snapshot, world, possession) {
       const gate = snapshot.contact.gate || {};
       if (snapshot.ball.ownerId || !gate.livePlay || gate.restartActive || gate.replayActive ||
-          gate.keeperAuthority || gate.specialActionAuthority) return { byId: {}, rows: [] };
+          gate.keeperAuthority) return { byId: {}, rows: [] };
+      if((snapshot.ball.flightType==='shot'||snapshot.ball.flightType==='penalty') && (Math.hypot(snapshot.ball.vx,snapshot.ball.vy,snapshot.ball.zv)>.01 || snapshot.ball.z>.01))return shotFollowAssignments(snapshot,world);
       // Pending offside provenance must not make a physically live ball
       // untouchable. Movement may send both teams toward the real loose ball;
       // the host's existing offside phase remains the sole authority deciding
@@ -1070,9 +1155,9 @@
       const ball = metricBall(snapshot.ball, snapshot), speed = Math.hypot(ball.velocity.x, ball.velocity.y);
       // Flight labels retain kick provenance after the ball stops. A grounded,
       // stationary ball is collectible even if that old label still says shot.
-      // Moving services and shots keep their existing protected flight path.
+      // High services have their own physical chase; shots have follow-in jobs.
       const stopped = snapshot.ball.z === 0 && speed === 0 && ball.velocity.z === 0;
-      if (!stopped && /(shot|cross|corner|free-kick|penalty|clearance)/.test(flightType)) return { byId: {}, rows: [] };
+      if (!stopped && !snapshot.ball.authoredRouteExpired && /(cross|corner|free-kick|penalty|clearance)/.test(flightType)) return { byId: {}, rows: [] };
       if (ball.position.z > LOOSE_BALL_MAX_HEIGHT_METRES || speed > LOOSE_BALL_MAX_SPEED_METRES_PER_SECOND) {
         return { byId: {}, rows: [] };
       }
@@ -1082,48 +1167,27 @@
       const intendedId = possession && possession.routeExpiredAtTick === snapshot.tick ? '' :
         String(possession && possession.inFlight && possession.intendedReceiverId ||
           snapshot.contact.intendedReceiverId || snapshot.ball.targetId || '');
-      const byId = {}, rows = [];
+      const byId = {}, rows = [],forecast=looseBallForecast(snapshot);
       for (const team of snapshot.teams) {
         const candidates = world.players.map(statePlayer => {
           const livePlayer = snapshot.players.find(player => player.id === statePlayer.id);
           if (!livePlayer || livePlayer.teamId !== team.id || livePlayer.sentOff || livePlayer.isGK ||
-              !livePlayer.contactEligible) return null;
+              !livePlayer.contactEligible || snapshot.dribbling.specialActionPlayerIds?.includes(livePlayer.id)) return null;
           // A deliberate in-flight pass is not a neutral loose-ball scramble.
           // The owning team follows its authored reception route while only
           // opponents may actively close the travelling ball.
           if (possession && possession.inFlight && livePlayer.teamId === possession.teamId &&
               !(possession.arrivalWindowEntered && livePlayer.id === possession.intendedReceiverId)) return null;
-          const attrs = livePlayer.attrs || {}, pace = clamp(finite(attrs.pace, 70), 1, 99);
-          const awareness = clamp(finite(attrs.awareness, 70), 1, 99), topSpeed = 5.1 + pace / 99 * 2.25;
-          // A collector behind a rolling ball and one meeting it from ahead
-          // cannot share the same short look-ahead point. Estimate each
-          // player's closing time, then lead the physical ball by a bounded
-          // fraction of that time. This remains a movement target only;
-          // First Touch still decides possession from real contact.
-          const toBall = {
-            x: ball.position.x - statePlayer.position.x,
-            y: ball.position.y - statePlayer.position.y
-          };
-          const distanceToBall = Math.hypot(toBall.x, toBall.y);
-          const towardBall = distanceToBall > 1e-6
-            ? { x: toBall.x / distanceToBall, y: toBall.y / distanceToBall }
-            : statePlayer.facing;
-          const ballEscapeSpeed = ball.velocity.x * towardBall.x + ball.velocity.y * towardBall.y;
-          const closingSpeed = Math.max(1.8, topSpeed - ballEscapeSpeed);
-          const estimatedMeetingSeconds = distanceToBall / closingSpeed;
-          const horizon = clamp(estimatedMeetingSeconds * 0.72 + Math.min(speed, 16) * 0.01,
-            LOOSE_BALL_INTERCEPT_MIN_SECONDS, LOOSE_BALL_INTERCEPT_MAX_SECONDS);
-          const target = {
-            x: clamp(ball.position.x + ball.velocity.x * horizon, METRIC_PITCH.xMin + 0.4, METRIC_PITCH.xMax - 0.4),
-            y: clamp(ball.position.y + ball.velocity.y * horizon, METRIC_PITCH.yMin + 0.4, METRIC_PITCH.yMax - 0.4)
-          };
-          const distance = Math.hypot(target.x - statePlayer.position.x, target.y - statePlayer.position.y);
-          const intended = livePlayer.id === intendedId;
-          const goalSide = team.attackingDirection * (target.x - statePlayer.position.x) >= 0;
-          const etaSeconds = Math.max(0, distance / topSpeed + (99 - awareness) * 0.0035 -
-            (intended ? LOOSE_BALL_INTENDED_ANTICIPATION_SECONDS : 0) - (goalSide ? 0.06 : 0));
-          return { playerId: livePlayer.id, teamId: team.id, target, distance, etaSeconds, intended,
-            human: snapshot.humanPlayerIds.has(livePlayer.id) };
+          const profile=movementRaceProfile(livePlayer,snapshot,true);
+          const intercept=forecast.find(sample=>sample.z<=1.05&&movementRaceEtaTicks(profile,sample)<=sample.tick);
+          const point=intercept||forecast[forecast.length-1];
+          const target={x:clamp(point.x,.4,104.6),y:clamp(point.y,-33.6,33.6)};
+          const distance=Math.hypot(target.x-statePlayer.position.x,target.y-statePlayer.position.y);
+          const intended=livePlayer.id===intendedId;
+          const etaSeconds=movementRaceEtaTicks(profile,target)*FIXED_TICK_SECONDS;
+          return {playerId:livePlayer.id,teamId:team.id,target,distance,etaSeconds,intended,
+            predictedInterceptTick:snapshot.tick+(intercept?intercept.tick:Math.ceil(etaSeconds*60)),
+            human:snapshot.humanPlayerIds.has(livePlayer.id)};
         }).filter(Boolean).sort((left, right) => left.etaSeconds - right.etaSeconds ||
           Number(right.intended) - Number(left.intended) || left.playerId.localeCompare(right.playerId));
         const addAssignment = (candidate, authority) => {
@@ -1132,12 +1196,13 @@
             playerId: candidate.playerId, teamId: candidate.teamId,
             target: { x: candidate.target.x, y: candidate.target.y },
             distanceMetres: +candidate.distance.toFixed(3), etaSeconds: +candidate.etaSeconds.toFixed(3),
-            intended: candidate.intended, human: candidate.human, authority
+            intended: candidate.intended, human: candidate.human, authority, urgency:'sprint', targetSpeed:1,
+            predictedInterceptTick:candidate.predictedInterceptTick
           };
           byId[row.playerId] = row; rows.push(row);
         };
         const selected = candidates[0];
-        if (selected && (stopped || selected.etaSeconds <= (selected.intended ? LOOSE_BALL_MAX_ETA_SECONDS + 1 : LOOSE_BALL_MAX_ETA_SECONDS))) {
+        if (selected) {
           addAssignment(selected, 'v2-loose-ball-recovery');
         }
         // Team arbitration still names one fastest automatic recovery runner,
@@ -1154,8 +1219,97 @@
       rows.sort((left, right) => left.teamId.localeCompare(right.teamId));
       return { byId, rows };
     }
+    function highBallAssignments(snapshot, world, possession, maps) {
+      const ball = metricBall(snapshot.ball, snapshot), gate = snapshot.contact.gate;
+      // A firm ground exit released from a keeper's hand drops from hand
+      // height. That is not a lofted service: an aerial job would pull its
+      // receiver away from the checked foot rendezvous before it arrives.
+      if(possession?.deliberatePass&&['ground-pass','keeper-pass','keeper-ground-roll'].includes(snapshot.ball.flightType))return {flight:null,rows:[]};
+      const peak = ball.position.z + Math.max(0, ball.velocity.z) ** 2 / 19.62;
+      if (/keeper-deflection|woodwork-rebound|involuntary-deflection/.test(snapshot.ball.flightType)&&ball.position.z<=1.4 || snapshot.ball.isShot || /shot|penalty/.test(snapshot.ball.flightType) || capability.workflow !== 'cpu-v-cpu' || snapshot.ball.ownerId || !gate.livePlay || gate.keeperAuthority ||
+          gate.restartActive || gate.specialActionAuthority || (peak < 1.05 && ball.position.z < .4) ||
+          hasPhysicalDribblingLease(domain.dribblingState)) return { flight: null, rows: [] };
+      const sourceId = possession.sourcePlayerId || snapshot.ball.lastKickerId || '';
+      const sourcePlayer = snapshot.players.find(p => p.id === sourceId);
+      const sourceTeam = sourcePlayer && sourcePlayer.teamId || possession.teamId || snapshot.ball.lastKickerTeamId || null;
+      const sequence = snapshot.ball.launchIntent && snapshot.ball.launchIntent.sequence || domain.lastLaunchSequence || 'loose';
+      const key = String(sequence) + ':' + sourceId;
+      let flight = domain.aerialFlight && domain.aerialFlight.key === key ? clone(domain.aerialFlight) : null;
+      if (!flight || snapshot.tick - flight.projectedTick >= 18) {
+        let state = dependencies.ball.createBallState({ ...(domain.ballState || {}), id: snapshot.ball.id,
+          position: ball.position, velocity: ball.velocity, angularVelocity: domain.ballState && domain.ballState.angularVelocity || { x: 0, y: 0, z: 0 },
+          grounded: false, settled: false, regime: dependencies.ball.REGIMES.FLIGHT });
+        let context = dependencies.ball.createSimulationContext({ seed: stableHash(['aerial-landing', deterministicSeed, key, snapshot.tick].join(':')) });
+        let landing = { x: state.position.x, y: state.position.y }, ticks = 0;
+        const trajectory = [];
+        // Project MR only once per 18 committed ticks. This is a detached
+        // forecast; neither the real ball nor the match's random context moves.
+        while (ticks < 240) {
+          const step = dependencies.ball.step(state, context, 15 * FIXED_TICK_SECONDS, goalEnvironment());
+          for (let i = 3; i < step.trace.samples.length; i += 16) {
+            const sample = step.trace.samples[i];
+            if (sample.position.z <= 2.65) trajectory.push({ tick: snapshot.tick + ticks + Math.ceil((i + 1) / 4),
+              x: sample.position.x, y: sample.position.y, z: sample.position.z });
+          }
+          const hit = step.trace.samples.findIndex(sample => sample.position.z <= 1.4 && sample.velocity.z <= 0);
+          if (hit >= 0) {
+            const sample = step.trace.samples[hit]; landing = { x: sample.position.x, y: sample.position.y };
+            ticks += Math.ceil((hit + 1) / 4); break;
+          }
+          state = step.state; context = step.context; ticks += 15;
+          landing = { x: state.position.x, y: state.position.y };
+          if (state.settled) break;
+        }
+        flight = { key, sourcePlayerId: sourceId, sourceTeamId: sourceTeam,
+          releaseTick: flight ? flight.releaseTick : snapshot.tick, projectedTick: snapshot.tick,
+          landing: { x: clamp(landing.x, .5, 104.5), y: clamp(landing.y, -33.5, 33.5) },
+          arrivalTick: snapshot.tick + Math.max(1, ticks), flightType: snapshot.ball.flightType, trajectory };
+      }
+      const rows = [];
+      for (const team of snapshot.teams) {
+        const candidates = snapshot.players.filter(p => p.teamId === team.id && !p.isGK && !p.sentOff &&
+          !(p.id === sourceId && snapshot.tick - flight.releaseTick < 18)).map(player => {
+          const metric = metricPoint(player, snapshot), profile = movementRaceProfile(player, snapshot,
+            player.id === possession.intendedReceiverId);
+          const height = (player.heightM || 1.8) + .18 + (finite(player.attrs?.jumping, 70) - 1) / 98 * .34;
+          const intercept = (flight.trajectory || []).find(sample => sample.tick > snapshot.tick && sample.z <= height &&
+            movementRaceEtaTicks(profile, sample) <= sample.tick - snapshot.tick);
+          const target = intercept || flight.landing, etaTicks = movementRaceEtaTicks(profile, target);
+          return { player, metric, etaTicks, target, contactTick: intercept ? intercept.tick : flight.arrivalTick,
+            reachable: !!intercept || etaTicks <= flight.arrivalTick - snapshot.tick + 12,
+            distance: Math.hypot(metric.x - target.x, metric.y - target.y) };
+        }).sort((a, b) => Number(b.reachable) - Number(a.reachable) || a.contactTick - b.contactTick || a.etaTicks - b.etaTicks ||
+          a.distance - b.distance || a.player.id.localeCompare(b.player.id));
+        const primary = candidates[0];
+        if (!primary) continue;
+        const row = { playerId: primary.player.id, teamId: team.id, target: { x: primary.target.x, y: primary.target.y },
+          authority: 'v2-high-ball-contest', etaSeconds: primary.etaTicks / 60,
+          distanceMetres: primary.distance, reachable: primary.reachable, flightKey: key,
+          predictedArrivalTick: primary.contactTick };
+        rows.push(row);
+        maps.reception[primary.player.id] = row.target;
+        delete maps.defensive[primary.player.id]; delete maps.run[primary.player.id]; delete maps.support[primary.player.id];
+        if (possession.intendedReceiverId && possession.intendedReceiverId !== primary.player.id &&
+            snapshot.players.find(p => p.id === possession.intendedReceiverId)?.teamId === team.id) delete maps.reception[possession.intendedReceiverId];
+        // The challenger attacks the ball; the remaining defensive unit drops
+        // behind the landing point to cover a missed header and the second ball.
+        for (const candidate of candidates.slice(1)) {
+          if (!/(CB|LB|RB|WB|DM|def)/i.test(candidate.player.position + ' ' + candidate.player.role) || candidate.distance > 30) continue;
+          const shape = maps.shape[candidate.player.id] || candidate.metric;
+          const target = { x: clamp(team.attackingDirection > 0 ? Math.min(shape.x, flight.landing.x - 5.5)
+            : Math.max(shape.x, flight.landing.x + 5.5), .75, 104.25), y: shape.y };
+          maps.shape[candidate.player.id] = target;
+          delete maps.defensive[candidate.player.id]; delete maps.run[candidate.player.id]; delete maps.support[candidate.player.id];
+          delete maps.reception[candidate.player.id];
+          rows.push({ playerId: candidate.player.id, teamId: team.id, target, authority: 'v2-high-ball-cover', flightKey: key });
+        }
+      }
+      return { flight, rows };
+    }
     function movementCommands(snapshot, world, formations, decisions, possession) {
-      const commands = [], maps = targetMaps(formations, decisions, snapshot, possession), recovery = looseBallRecoveryAssignments(snapshot, world, possession), nextTick = world.tick + 1;
+      const commands = [], maps = targetMaps(formations, decisions, snapshot, possession);
+      const aerial = highBallAssignments(snapshot, world, possession, maps);
+      const recovery = aerial.flight ? { byId: {}, rows: [] } : looseBallRecoveryAssignments(snapshot, world, possession), nextTick = world.tick + 1;
       const leaseOwnerId = hasPhysicalDribblingLease(domain.dribblingState)
         ? String(domain.dribblingState.logicalOwnerId || '') : '';
       const leaseBall = leaseOwnerId ? metricBall(snapshot.ball, snapshot) : null;
@@ -1165,10 +1319,33 @@
         y: clamp(leaseBall.position.y + leaseBall.velocity.y * FIXED_TICK_SECONDS,
           METRIC_PITCH.yMin, METRIC_PITCH.yMax)
       } : null;
+      const raceJostles={};
+      const racers=recovery.rows.filter(r=>r.authority==='v2-loose-ball-recovery'&&!r.human);
+      if(racers.length===2&&racers[0].teamId!==racers[1].teamId){
+        const pair=racers.map(r=>({r,p:world.players.find(p=>p.id===r.playerId),live:snapshot.players.find(p=>p.id===r.playerId)}));
+        const [a,b]=pair,ball=metricBall(snapshot.ball,snapshot).position;
+        if(a.p&&b.p&&!a.p.action&&!b.p.action){
+          const gap=Math.hypot(a.p.position.x-b.p.position.x,a.p.position.y-b.p.position.y),
+            da=Math.hypot(a.p.position.x-ball.x,a.p.position.y-ball.y),db=Math.hypot(b.p.position.x-ball.x,b.p.position.y-ball.y),
+            toward=unit({x:a.r.target.x-a.p.position.x,y:a.r.target.y-a.p.position.y},a.p.facing),
+            normal=unit({x:b.p.position.x-a.p.position.x,y:b.p.position.y-a.p.position.y},toward),
+            alignment=Math.abs(toward.x*normal.x+toward.y*normal.y),parallel=a.p.facing.x*b.p.facing.x+a.p.facing.y*b.p.facing.y;
+          if(gap<=a.p.radius+b.p.radius+.30&&da<3.5&&db<3.5&&alignment<.65&&parallel>.25){
+            const actor=da<=db?a:b,target=actor===a?b:a;raceJostles[actor.p.id]=target.p.id;
+          }
+        }
+      }
       const leaseRecoveryRows = [], receptionGuidanceRows = [];
       const currentTackles = new Set(snapshot.players.filter(player => player.tackleActive).map(player => player.id));
       for (const statePlayer of world.players) {
         const livePlayer = snapshot.players.find(player => player.id === statePlayer.id); if (!livePlayer) continue;
+        // Physical skill/contact stagger already exists in the host handoff.
+        // Respect its remaining duration rather than immediately accelerating
+        // a wrong-footed defender back through the carrier's chosen exit.
+        if (livePlayer.stunTicks > 0) {
+          commands.push({ id: 'stagger-stop:' + livePlayer.id + ':' + nextTick, tick: nextTick, playerId: livePlayer.id, type: 'stop' });
+          continue;
+        }
         const isHuman = snapshot.humanPlayerIds.has(livePlayer.id);
         const tackleEdge = currentTackles.has(livePlayer.id) && !domain.lastTackleState.has(livePlayer.id);
         const shoulderEdge = livePlayer.shoulderActive && !domain.lastTackleState.has('shoulder:' + livePlayer.id);
@@ -1208,11 +1385,17 @@
           leaseRecoveryRows.push(row);
           return row;
         })() : null;
+        const knockOn=snapshot.dribbling.directionalKnockOnIntent;
+        const knockOnRecovery=!isHuman&&knockOn&&knockOn.playerId===livePlayer.id?(()=>{
+          const b=metricBall(snapshot.ball,snapshot),target={x:clamp(b.position.x+b.velocity.x*.12,0,105),y:clamp(b.position.y+b.velocity.y*.12,-34,34)};
+          const row={playerId:livePlayer.id,teamId:livePlayer.teamId,target,distanceMetres:Math.hypot(target.x-statePlayer.position.x,target.y-statePlayer.position.y),
+            intended:true,human:false,authority:'v2-knock-on-chase'};leaseRecoveryRows.push(row);return row;
+        })():null;
         // During a True Feel touch the player still logically owns the action,
         // but the physical ball is ahead of their feet. Guide Movement toward
         // that real MR position instead of continuing toward an unrelated
         // tactical carrier target and letting the ball drift away.
-        const recoveryIntent = leaseRecovery || recovery.byId[livePlayer.id] || null;
+        const recoveryIntent = knockOnRecovery || leaseRecovery || recovery.byId[livePlayer.id] || null;
         const receptionTarget = maps.reception[livePlayer.id] || null;
         if (isHuman) {
           const control = livePlayer.control || { x: 0, y: 0, strength: 0, sprint: false };
@@ -1333,8 +1516,9 @@
                 // do not brake the CPU while its own ball is running ahead.
                 mode = 'sprint'; intensity = Math.max(intensity, .9);
               }
+              if(knockOnRecovery||recoveryIntent.authority==='v2-loose-ball-recovery'){mode='sprint';intensity=1;}
               const pending = possession.pendingTouch;
-              if (!leaseRecoveryActive && pending && pending.targetId === livePlayer.id) {
+              if (!leaseRecoveryActive && !knockOnRecovery && pending && pending.targetId === livePlayer.id) {
                 // Follow the exit ball at its pace. Full-speed pursuit of a
                 // short receiving touch made the player run past his next boot meeting.
                 const physical = metricBall(snapshot.ball, snapshot), towardBall = {
@@ -1360,6 +1544,7 @@
               // fight that previously made an overshooting CPU receiver orbit
               // or spin while the ball stayed ownerless.
               const receptionDirection = unit(toward, statePlayer.facing);
+              const aerialMeeting = aerial.rows.find(row => row.playerId === livePlayer.id && row.authority === 'v2-high-ball-contest');
               const agility = clamp(finite(livePlayer.attrs && livePlayer.attrs.agility, 70), 1, 99);
               const balance = clamp(finite(livePlayer.attrs && livePlayer.attrs.balance, 70), 1, 99);
               const brakingRating = (agility + balance) / 2;
@@ -1371,12 +1556,19 @@
               const movingAwayFromMeeting = closingSpeed < -.35;
               const receptionBrake = movingAwayFromMeeting || distance <= stoppingDistance + .35;
               if (distance <= .28 || receptionBrake) {
-                desired = statePlayer.facing;
-                intensity = 0;
-                mode = 'idle';
+                // A high-ball challenger approaching from the wrong facing
+                // still needs to turn while shedding old momentum. A stop
+                // command preserves facing, causing a turn/stop loop. Plant
+                // with a small rated walking step; ordinary foot receptions
+                // retain their existing overshoot brake.
+                const receptionTurn = movingAwayFromMeeting && distance > .28 &&
+                  (aerialMeeting || vectorLength(statePlayer.velocity)<1.2);
+                desired = receptionTurn ? receptionDirection : statePlayer.facing;
+                intensity = receptionTurn ? .04 : 0;
+                mode = receptionTurn ? 'walk' : 'idle';
               } else {
-                const remainingTicks = Number.isSafeInteger(possession && possession.predictedArrivalTick)
-                  ? Math.max(0, possession.predictedArrivalTick - snapshot.tick) : null;
+                const arrivalTick = aerialMeeting?.predictedArrivalTick ?? possession?.predictedArrivalTick;
+                const remainingTicks = Number.isSafeInteger(arrivalTick) ? Math.max(0, arrivalTick - snapshot.tick) : null;
                 const remainingSeconds = remainingTicks == null ? null : remainingTicks * FIXED_TICK_SECONDS;
                 const paceRating = clamp(finite(livePlayer.attrs && livePlayer.attrs.pace, 70), 1, 99);
                 const runCapacity = 4.6 + (6.25 - 4.6) * (paceRating - 1) / 98;
@@ -1424,11 +1616,17 @@
           const key = 'cpu-' + (cpuMovementRoute || 'unknown') + '-sprint';
           labMovementModes[key] = (labMovementModes[key] || 0) + 1;
         }
+        if(raceJostles[livePlayer.id]&&mode==='sprint'){
+          const opponent=world.players.find(p=>p.id===raceJostles[livePlayer.id]);
+          commands.push({id:'race-shoulder:'+livePlayer.id+':'+nextTick,tick:nextTick,playerId:livePlayer.id,type:'shoulder-challenge',
+            targetId:opponent.id,direction:unit({x:opponent.position.x-statePlayer.position.x,y:opponent.position.y-statePlayer.position.y},statePlayer.facing),
+            move:desired,facing:desired,mode:'sprint',intensity:1,durationTicks:1,racePursuit:true});continue;
+        }
         commands.push(mode === 'idle' ? { id: 'stop:' + livePlayer.id + ':' + nextTick, tick: nextTick, playerId: livePlayer.id, type: 'stop' }
           : { id: 'move:' + livePlayer.id + ':' + nextTick, tick: nextTick, playerId: livePlayer.id, type: 'move', move: desired, facing: desired, mode, intensity, durationTicks: 1,
             ...(isHuman ? { responsivenessMultiplier: HUMAN_INPUT_RESPONSIVENESS_MULTIPLIER } : {}) });
       }
-      return { commands, recoveryAssignments: [...recovery.rows, ...leaseRecoveryRows, ...receptionGuidanceRows]
+      return { commands, aerialFlight: aerial.flight, recoveryAssignments: [...aerial.rows, ...recovery.rows, ...leaseRecoveryRows, ...receptionGuidanceRows]
         .sort((left, right) => left.teamId.localeCompare(right.teamId) || left.playerId.localeCompare(right.playerId)),
         stagedTackleState: new Set([...currentTackles, ...snapshot.players.filter(player => player.shoulderActive).map(player => 'shoulder:' + player.id)]) };
     }
@@ -1440,8 +1638,8 @@
         const targetId = intent.targetPlayerId == null ? '' : String(intent.targetPlayerId);
         const committedRun = (decisions[teamId].runs || []).find(run => String(run.playerId) === targetId) || null;
         const key = owner.id + '|' + intent.type + '|' + targetId + '|' + Math.floor(snapshot.tick / 6);
-        if (['shot', 'pass'].includes(intent.type) && key === stagedCarrierEmission[teamId]) continue;
-        if (['shot', 'pass'].includes(intent.type)) stagedCarrierEmission[teamId] = key;
+        if (['shot', 'pass', 'cross', 'clearance'].includes(intent.type) && key === stagedCarrierEmission[teamId]) continue;
+        if (['shot', 'pass', 'cross', 'clearance'].includes(intent.type)) stagedCarrierEmission[teamId] = key;
         const sourceTiming = intent.offsideTiming || committedRun && committedRun.offsideTiming || null;
         const offsideTiming = sourceTiming ? clone(sourceTiming) : null;
         if (offsideTiming) {
@@ -1455,9 +1653,13 @@
           dribbleId: [resetEpoch, owner.id, intent.type, intent.startedTick || 0].join(':'),
           maneuver: ['carry', 'take-on', 'protect'].includes(intent.type) ? clone(intent) : null,
           shotProfile: intent.shotProfile ? clone(intent.shotProfile) : null,
+          skillIntent: intent.skillIntent ? { ...clone(intent.skillIntent), target: livePoint(intent.skillIntent.target, snapshot) } : null,
           supportKind: intent.supportKind == null ? null : String(intent.supportKind),
           supportMetrics: intent.supportMetrics ? clone(intent.supportMetrics) : null,
           risk: intent.risk ? clone(intent.risk) : null,
+          crossKind: intent.crossKind || null, flightType: intent.flightType || null,
+          clearanceProfile: intent.clearanceProfile ? clone(intent.clearanceProfile) : null,
+          switchMetrics: intent.switchMetrics ? clone(intent.switchMetrics) : null,
           passRace: intent.passRace ? clone(intent.passRace) : null,
           rejectedPassRace: intent.rejectedPassRace ? clone(intent.rejectedPassRace) : null,
           fallbackFrom: intent.fallbackFrom == null ? null : String(intent.fallbackFrom),
@@ -1504,7 +1706,9 @@
         config.turnRateMaximum) * profile.turn / (1 + currentSpeed * config.speedTurnInertia);
       return { id: player.id, origin, velocity: state.velocity, facing: state.facing,
         reach: state.radius + .42, reactions, reactionTicks, anticipated,
-        maximumSpeed, acceleration, turnRate };
+        maximumSpeed, acceleration, turnRate,
+        restingTurnRate:turnRate*(1+currentSpeed*config.speedTurnInertia),
+        deceleration:6.1+6.3*clamp(((state.attributes.agility+state.attributes.balance)/2-1)/98,0,1) };
     }
     function movementRaceEtaTicks(profile, target) {
       const offset = { x: target.x - profile.origin.x, y: target.y - profile.origin.y };
@@ -1522,6 +1726,22 @@
         : accelerationSeconds + (distance - accelerationDistance) / Math.max(0.01, maximumSpeed);
       return profile.reactionTicks + Math.ceil((turnSeconds + travelSeconds) / FIXED_TICK_SECONDS - 1e-12);
     }
+    function receptionReadyEtaTicks(profile,target,safetyCritical=false){
+      // Safety-critical feet passes promise a prepared reception, not a
+      // glancing touch at the edge of body reach after an overshoot. Live
+      // guidance plants within this same 28 cm meeting radius.
+      if(safetyCritical)profile={...profile,reach:.28};
+      const dx=target.x-profile.origin.x,dy=target.y-profile.origin.y,d=Math.hypot(dx,dy),speed=vectorLength(profile.velocity);
+      const direction=unit({x:dx,y:dy},profile.facing),closing=profile.velocity.x*direction.x+profile.velocity.y*direction.y;
+      const stopDistance=speed*speed/(2*profile.deceleration);
+      if(speed<.2 || closing>=-.35&&d>stopDistance+.35)return movementRaceEtaTicks(profile,target);
+      // A fast receiver inside the contact radius is not already planted.
+      // Honour the same brake, turn and return used by live reception guidance.
+      const stopTime=speed/profile.deceleration,stopped={...profile,
+        origin:{x:profile.origin.x+profile.velocity.x*stopTime*.5,y:profile.origin.y+profile.velocity.y*stopTime*.5},
+        velocity:{x:0,y:0},turnRate:profile.restingTurnRate,reactionTicks:0};
+      return profile.reactionTicks+Math.ceil(stopTime*60)+movementRaceEtaTicks(stopped,target);
+    }
     function cpuPassLaunch(snapshot, owner, intent) {
       if (!intent.target) return null;
       const originLive = { x: snapshot.ball.x, y: snapshot.ball.y, z: Math.max(1, finite(snapshot.ball.z, 0)) };
@@ -1533,12 +1753,25 @@
       const metricDistance = Math.hypot(metricDelta.x, metricDelta.y);
       const metricDirection = unit(metricDelta, { x: 1, y: 0 });
       const shortSupport = ['support', 'recycle'].includes(String(intent.supportKind || ''));
-      const long = !shortSupport && metricDistance > 20;
+      const loftedBehind=intent.supportKind==='in-behind' && intent.flightType==='long-pass';
+      const long = !shortSupport && (metricDistance > 20 || loftedBehind);
       // Pace is authored once in real metres per second. The prior host-world
       // formula varied with pitch-axis scaling and could turn a tiny pass into
       // a 14-15 m/s release. The committed host consumes this exact race pace.
-      const longLaunch = long ? cpuLongPassLaunch(metricDistance) : null;
-      const speedMetresPerSecond = longLaunch ? longLaunch.speed : cpuPassPaceMetresPerSecond(metricDistance, shortSupport, long);
+      const cross = intent.type === 'cross';
+      const switchPass = genuineSwitch(snapshot, owner, intent);
+      const deliveryQuality = clamp(finite(owner.attrs && owner.attrs.pass, 70) / 99, .01, 1);
+      const deliveryError = (stableHash(['delivery', deterministicSeed, snapshot.tick, owner.id].join(':')) / 0xffffffff - .5) *
+        (1 - deliveryQuality);
+      const longLaunch = intent.throwProfile ? intent.throwProfile : cross
+        ? intent.crossKind === 'cut-back' ? null : { speed: clamp((metricDistance + 17.6) / 2.1 + deliveryError * 2, 15, 31),
+          liftAngleDeg: 28 + deliveryError * 5 }
+        : long || switchPass ? cpuLongPassLaunch(metricDistance, switchPass || loftedBehind) : null;
+      if (switchPass && longLaunch) longLaunch.liftAngleDeg += deliveryError * 3;
+      const safety=cpuPassSafetyContext(snapshot,owner,intent);
+      const speedMetresPerSecond = longLaunch ? longLaunch.speed : cross && intent.crossKind==='cut-back'
+        ? clamp(14+metricDistance*.35,16,23) : safety.ownThird || intent.firmExit
+        ? clamp(11 + metricDistance * .45, 14, 23) : cpuPassPaceMetresPerSecond(metricDistance, shortSupport, long);
       const liftAngleDeg = longLaunch ? longLaunch.liftAngleDeg : 0;
       const originMetric = {
         x: (originLive.x - snapshot.pitch.xMin) / snapshot.units.xPerMetre,
@@ -1553,9 +1786,25 @@
         liftAngleDeg,
         sideSpinRpm: 0,
         topSpinRpm: 0,
-        source: longLaunch && longLaunch.liftAngleDeg > 0 ? 'long-pass' : 'ground-pass',
+        source: intent.throwProfile ? 'throw-in' : cross ? intent.flightType || 'cross' : longLaunch && longLaunch.liftAngleDeg > 0 ? 'long-pass' : 'ground-pass',
         metadata: { adapterVersion: VERSION, targetPlayerId: intent.targetPlayerId || null }
       });
+    }
+    function cpuPassSafetyContext(snapshot,owner,intent){
+      const team=snapshot.teams.find(t=>t.id===owner.teamId),dir=team.attackingDirection;
+      const origin=metricPoint(owner,snapshot),progress=intent.target?dir*(intent.target.x-origin.x):0;
+      const ownThird=dir>0?origin.x<35:origin.x>70;
+      return {ownThird,backward:progress < -1,square:Math.abs(progress)<=1,
+        critical:ownThird || progress < -1&&intent.type!=='cross'};
+    }
+    function genuineSwitch(snapshot, owner, intent) {
+      if (!intent || intent.type !== 'pass' || intent.supportKind !== 'switch' || !intent.target) return false;
+      const origin = metricPoint(owner, snapshot), target = intent.target;
+      const distance = Math.hypot(target.x - origin.x, target.y - origin.y);
+      const side = origin.y <= 0 ? -1 : 1;
+      const congestion = snapshot.players.filter(p => p.teamId !== owner.teamId && !p.isGK && !p.sentOff)
+        .filter(p => { const q = metricPoint(p, snapshot); return Math.hypot(q.x - origin.x, q.y - origin.y) < 12 && q.y * side > -3; }).length;
+      return distance >= 25 && distance <= 45 && Math.abs(target.y - origin.y) >= 25 && target.y * side < 0 && congestion >= 2;
     }
     function boundarySafeCpuPassIntent(intent) {
       if (!intent || !intent.target) return clone(intent);
@@ -1579,17 +1828,31 @@
       const intendedTarget = point(intent.target, ownerPosition);
       const intendedDistanceMetres = Math.hypot(intendedTarget.x - ownerPosition.x,
         intendedTarget.y - ownerPosition.y);
+      const switchPass = genuineSwitch(snapshot, owner, intent);
+      // A lofted switch buys the far-side receiver time to turn. Require him
+      // ready at arrival and still ahead of interceptors; the ordinary eight
+      // tick planting buffer would reject that moving far-side reception.
+      const team=snapshot.teams.find(t=>t.id===owner.teamId),dir=team.attackingDirection;
+      const movingBehind=intent.supportKind==='in-behind' && receiver && dir*receiver.vx*60>snapshot.units.xPerMetre &&
+        dir*(intent.target.x-metricPoint(receiver,snapshot).x)>1 && dir*receiver.fx>.25 &&
+        (dir*(receiver.x-team.offsideLine)<=0 || dir*(receiver.x-(snapshot.pitch.xMin+snapshot.pitch.xMax)/2)<=0);
+      const readyBuffer = switchPass || movingBehind ? 0 : CPU_PASS_RECEIVER_READY_BUFFER_TICKS;
+      const safety=cpuPassSafetyContext(snapshot,owner,intent);
+      const raceMargin = safety.critical ? 20 : CPU_PASS_RACE_MIN_MARGIN_TICKS;
+      const contactHeight = intent.type === 'cross' ? 2.65 : CPU_PASS_RACE_MAX_CONTACT_HEIGHT_METRES;
       const base = {
         schema: 'football-legacy-cpu-pass-receiver-race-v2',
         evaluatedTick: snapshot.tick,
         passerId: owner.id,
         receiverId: receiverId || null,
         distanceMetres: Math.round(intendedDistanceMetres * 1000) / 1000,
-        requiredMarginTicks: CPU_PASS_RACE_MIN_MARGIN_TICKS,
-        requiredReceiverReadyBufferTicks: CPU_PASS_RECEIVER_READY_BUFFER_TICKS,
+        requiredMarginTicks: raceMargin,
+        requiredReceiverReadyBufferTicks: readyBuffer,
+        genuineSwitch: switchPass, movingInBehind: Boolean(movingBehind), maximumContactHeightMetres: contactHeight,
         maximumProjectionTicks: CPU_PASS_RACE_MAX_TICKS,
         boundaryRetarget: clone(intent.boundaryRetarget || null)
       };
+      Object.assign(base,{safetyCritical:safety.critical,ownThird:safety.ownThird});
       if (!receiver || receiver.teamId !== owner.teamId || receiver.isGK || receiver.sentOff || !receiver.contactEligible) {
         return { ...base, accepted: false, reason: 'receiver-ineligible', ballArrivalTick: null,
           receiverContactTick: null, opponentContactTick: null, opponentId: null, marginTicks: null, projectedFlightTicks: 0 };
@@ -1614,8 +1877,16 @@
       const opponents = snapshot.players.filter(player => player.teamId !== owner.teamId && !player.isGK && !player.sentOff)
         .sort((a, b) => a.id.localeCompare(b.id));
       const receiverRaceProfile = movementRaceProfile(receiver, snapshot, true);
-      const receiverTargetEtaTicks = movementRaceEtaTicks(receiverRaceProfile, target);
-      const opponentRaceProfiles = opponents.map(player => movementRaceProfile(player, snapshot));
+      const receiverTargetEtaTicks = movingBehind||switchPass||intent.type==='cross'
+        ? movementRaceEtaTicks(receiverRaceProfile,target) : receptionReadyEtaTicks(receiverRaceProfile,target,safety.critical);
+      // The live interception job uses urgent sprint from the current motion.
+      // Forecast that same pursuit, rather than adding a second movement
+      // reaction delay which makes a closing defender look late to the lane.
+      const opponentRaceProfiles = opponents.map(player => movementRaceProfile(player, snapshot, true));
+      const receiverSpaceMetres=Math.min(...opponentRaceProfiles.map(p=>Math.hypot(p.origin.x-target.x,p.origin.y-target.y)),Infinity);
+      const pressureArrivalTick=Math.min(...opponentRaceProfiles.map(p=>movementRaceEtaTicks(p,target)),Infinity);
+      const opponentHeaderHeights = Object.fromEntries(opponents.map(player => [player.id,
+        (player.heightM || 1.8) + .18 + (finite(player.attrs?.jumping, 70) - 1) / 98 * .34]));
       if (receiverTargetEtaTicks > CPU_PASS_RACE_MAX_TICKS) return {
         ...base,
         accepted: false,
@@ -1637,6 +1908,7 @@
         seed: stableHash(['cpu-pass-race', deterministicSeed, resetEpoch, snapshot.tick, owner.id, receiver.id].join('|'))
       });
       let ballArrivalTick = null, receiverContactTick = null, opponentContactTick = null, opponentId = null;
+      let opponentContactHeightMetres = null;
       let receiverEtaAtArrivalTick = null, projectedFlightTicks = 0;
       let closestApproach = null;
       const environment = goalEnvironment();
@@ -1659,14 +1931,20 @@
             const gap = Math.hypot(physicsSample.position.x - target.x, physicsSample.position.y - target.y);
             if (!closestApproach || gap < closestApproach.gap) closestApproach = { gap, z: physicsSample.position.z, tick };
           }
-          if (physicsSample.position.z <= CPU_PASS_RACE_MAX_CONTACT_HEIGHT_METRES) {
+          if (physicsSample.position.z <= contactHeight) {
             const sample = { x: physicsSample.position.x, y: physicsSample.position.y };
             const targetDistanceNow = Math.hypot(sample.x - target.x, sample.y - target.y);
             if (ballArrivalTick == null && targetDistanceNow <= targetWindowMetres) ballArrivalTick = tick;
             // Live Movement sends the receiver to the authored rendezvous, not
             // to an arbitrary earlier point inside this broad arrival window.
             // Pre-release acceptance must evaluate that exact same promise.
-            const receiverEta = targetDistanceNow <= targetWindowMetres ? receiverTargetEtaTicks : null;
+            // Entering a broad rendezvous window is not a boot contact. A
+            // planted short receiver cannot own a ball still 1.5–2 m away.
+            // That optimistic shortcut let a pressing forward cut out an
+            // apparently safe backward pass before it reached the defender.
+            const footMeeting=intent.type!=='cross'||intent.crossKind==='cut-back';
+            const receiveRadius=footMeeting?receiverRaceProfile.reach:targetWindowMetres;
+            const receiverEta = targetDistanceNow <= receiveRadius ? receiverTargetEtaTicks : null;
             if (receiverEta != null && receiverEta <= tick) {
               if (receiverEtaAtArrivalTick == null) receiverEtaAtArrivalTick = receiverEta;
               if (receiverContactTick == null) receiverContactTick = tick;
@@ -1676,8 +1954,19 @@
                 if (movementRaceEtaTicks(opponent, sample) <= tick) {
                   opponentContactTick = tick;
                   opponentId = opponent.id;
+                  opponentContactHeightMetres = physicsSample.position.z;
                   break;
                 }
+              }
+            }
+          }
+          // A standing/headed interception can happen before foot-height arrival.
+          // Use the same rated reach and Movement ETA as the live high-ball chase.
+          if (opponentContactTick == null && physicsSample.position.z > contactHeight && physicsSample.position.z <= 2.65) {
+            for (const opponent of opponentRaceProfiles) {
+              if (physicsSample.position.z <= opponentHeaderHeights[opponent.id] &&
+                  movementRaceEtaTicks(opponent, physicsSample.position) <= tick) {
+                opponentContactTick = tick; opponentId = opponent.id; opponentContactHeightMetres = physicsSample.position.z; break;
               }
             }
           }
@@ -1686,7 +1975,7 @@
         context = stepped.context;
         projectedFlightTicks += completedTicks;
         if (completedTicks === 0 || state.settled ||
-            (receiverContactTick != null && projectedFlightTicks >= receiverContactTick + CPU_PASS_RACE_MIN_MARGIN_TICKS && opponentContactTick == null)) break;
+            (receiverContactTick != null && projectedFlightTicks >= receiverContactTick + raceMargin && opponentContactTick == null)) break;
       }
       const marginTicks = receiverContactTick == null || opponentContactTick == null
         ? null : opponentContactTick - receiverContactTick;
@@ -1700,22 +1989,37 @@
       }
       let reason = 'receiver-arrives-with-six-tick-margin';
       if (receiverContactTick == null) reason = ballArrivalTick == null ? 'trajectory-misses-target-window' : 'receiver-cannot-arrive';
-      else if (ballArrivalTick == null || receiverTargetEtaTicks > ballArrivalTick - CPU_PASS_RECEIVER_READY_BUFFER_TICKS) {
+      else if (ballArrivalTick == null || (movingBehind ? receiverTargetEtaTicks > receiverContactTick : receiverTargetEtaTicks > ballArrivalTick - readyBuffer)) {
         reason = 'receiver-arrival-buffer-below-eight-ticks';
       }
-      else if (opponentContactTick != null && opponentContactTick < receiverContactTick + CPU_PASS_RACE_MIN_MARGIN_TICKS) {
+      else if (opponentContactTick != null && opponentContactTick < receiverContactTick + raceMargin) {
         reason = 'interception-margin-below-six-ticks';
       }
+      else if(safety.critical && (receiverSpaceMetres<5 || pressureArrivalTick<receiverContactTick+42 ||
+        intent.risk && (intent.risk.pressure>.18 || intent.risk.probability>.36))){
+        reason='receiver-not-free-for-safe-recycle';
+      }
+      // A lofted final-third service deliberately creates a physical aerial
+      // duel. It needs a reachable attacker and an arrival contest, not a
+      // guaranteed six-tick attacking win. An early low block still rejects it.
+      const contestedService=intent.type==='cross'&&intent.crossKind!=='cut-back'&&!safety.critical&&
+        receiverContactTick!=null&&opponentContactTick!=null&&opponentContactHeightMetres>=1.05&&
+        opponentContactTick>=receiverContactTick-12&&ballArrivalTick!=null;
+      if(reason==='interception-margin-below-six-ticks'&&contestedService)reason='reachable-contested-box-service';
       return {
         ...base,
-        accepted: reason === 'receiver-arrives-with-six-tick-margin',
+        accepted: ['receiver-arrives-with-six-tick-margin','reachable-contested-box-service'].includes(reason),
+        contestedService,
         reason,
         ballArrivalTick,
         receiverEtaAtArrivalTick,
         receiverReadyBufferTicks: ballArrivalTick == null ? null : ballArrivalTick - receiverTargetEtaTicks,
         receiverContactTick,
         opponentContactTick,
+        opponentContactHeightMetres,
         opponentId,
+        receiverSpaceMetres:Number.isFinite(receiverSpaceMetres)?Math.round(receiverSpaceMetres*1000)/1000:null,
+        receiverPressureArrivalTick:Number.isFinite(pressureArrivalTick)?pressureArrivalTick:null,
         marginTicks,
         projectedFlightTicks,
         targetWindowMetres: Math.round(targetWindowMetres * 1000) / 1000,
@@ -1724,10 +2028,123 @@
         trajectorySignature: dependencies.ball.stateSignature(state)
       };
     }
-    function rejectedPassFallback(snapshot, owner, rejectedRace) {
+    function clearanceIntent(snapshot,owner){
+      const team=snapshot.teams.find(t=>t.id===owner.teamId),dir=team.attackingDirection,origin=metricPoint(owner,snapshot);
+      const side=Math.abs(origin.y)>2?Math.sign(origin.y):(stableHash(owner.id)%2?1:-1);
+      const quality=clamp(finite(owner.attrs?.pass,70)/99,.01,1);
+      return {type:'clearance',targetPlayerId:null,target:{x:clamp(origin.x+dir*45,4,101),y:side*35.5},
+        confidence:.95,reason:'own-third-no-safe-exit-clear',clearanceProfile:{speedMetresPerSecond:28+quality*2,liftAngleDeg:30}};
+    }
+    function firmExitIntent(snapshot,owner){
+      const team=snapshot.teams.find(t=>t.id===owner.teamId),dir=team.attackingDirection,origin=metricPoint(owner,snapshot);
+      const candidates=snapshot.players.filter(p=>p.teamId===owner.teamId&&p.id!==owner.id&&!p.isGK&&!p.sentOff&&p.contactEligible)
+        .map(player=>{const target=metricPoint(player,snapshot),distance=Math.hypot(target.x-origin.x,target.y-origin.y),progress=dir*(target.x-origin.x);
+          const space=Math.min(...snapshot.players.filter(p=>p.teamId!==owner.teamId&&!p.sentOff&&!p.isGK)
+            .map(p=>{const q=metricPoint(p,snapshot);return Math.hypot(q.x-target.x,q.y-target.y);}),100);
+          return {player,target,distance,progress,space,score:progress*.4+Math.min(space,12)*2-distance*.1};})
+        .filter(o=>o.distance>=18&&o.distance<=45&&o.progress>=8&&o.space>=4 &&
+          (dir*(o.player.x-team.offsideLine)<=0||dir*(o.target.x-52.5)<=0))
+        .sort((a,b)=>b.score-a.score||a.player.id.localeCompare(b.player.id));
+      for(const candidate of candidates.slice(0,3)){
+        const intent=boundarySafeCpuPassIntent({type:'pass',targetPlayerId:candidate.player.id,target:candidate.target,
+          supportKind:'firm-exit',firmExit:true,confidence:.8,reason:'own-third-firm-free-outlet'});
+        const race=evaluateCpuPassRace(snapshot,owner,intent);
+        if(race.accepted)return {...intent,passRace:race};
+      }
+      return null;
+    }
+    function planKeeperExit(rawSnapshot,keeperId){
+      const snapshot=normalizeSnapshot(rawSnapshot,capability.workflow),owner=snapshot.players.find(p=>p.id===keeperId&&p.isGK&&!p.sentOff);
+      if(!enabled||!owner||snapshot.humanPlayerIds.has(owner.id))return null;
+      const origin=metricPoint(owner,snapshot),team=snapshot.teams.find(t=>t.id===owner.teamId),dir=team.attackingDirection;
+      const short=snapshot.players.filter(p=>p.teamId===owner.teamId&&!p.isGK&&!p.sentOff&&p.contactEligible)
+        .map(player=>{const target=metricPoint(player,snapshot),distance=Math.hypot(target.x-origin.x,target.y-origin.y);
+          return {player,target,distance};}).filter(o=>o.distance>=6&&o.distance<=25&&dir*(o.target.x-origin.x)>=-1)
+        .sort((a,b)=>a.distance-b.distance||a.player.id.localeCompare(b.player.id));
+      let intent=null;
+      for(const row of short.slice(0,4)){
+        const candidate=boundarySafeCpuPassIntent({type:'pass',targetPlayerId:row.player.id,target:row.target,
+          supportKind:'support',firmExit:true,confidence:.85,reason:'keeper-free-short-exit'});
+        const race=evaluateCpuPassRace(snapshot,owner,candidate);
+        if(race.accepted){intent={...candidate,passRace:race};break;}
+      }
+      intent=intent||firmExitIntent(snapshot,owner)||clearanceIntent(snapshot,owner);
+      return {...intent,keeperExit:true,teamId:owner.teamId,playerId:owner.id,target:livePoint(intent.target,snapshot)};
+    }
+    function planRestartThrow(rawSnapshot,takerId){
+      const snapshot=normalizeSnapshot(rawSnapshot,capability.workflow),owner=snapshot.players.find(p=>p.id===takerId&&!p.isGK&&!p.sentOff);
+      if(!enabled||!owner||snapshot.humanPlayerIds.has(owner.id))return null;
+      const origin=metricPoint(snapshot.ball,snapshot),team=snapshot.teams.find(t=>t.id===owner.teamId),dir=team.attackingDirection;
+      function throwing(target){
+        const distance=Math.hypot(target.x-origin.x,target.y-origin.y),seconds=clamp(.58+distance/20,.72,1.35);
+        const height=snapshot.ball.z/snapshot.units.zPerMetre,targetHeight=.75;
+        // Solve this short flight against MR drag/gravity. The legacy throw
+        // estimate lands longer throws short of the supposedly free receiver.
+        // The two local Newton steps are detached physics, never a ball warp.
+        function sample(horizontal,vertical){
+          let state=dependencies.ball.resolveLaunch({id:'cpu-throw-solve',origin:{x:0,y:0,z:height+.11},
+            direction:{x:1,y:0},speed:Math.hypot(horizontal,vertical),liftAngleDeg:Math.atan2(vertical,horizontal)*180/Math.PI,source:'throw-in'}).state;
+          let context=dependencies.ball.createSimulationContext({seed:1});
+          for(let left=seconds;left>1e-9;){const dt=Math.min(.2,left),next=dependencies.ball.step(state,context,dt,{});
+            state=next.state;context=next.context;left-=dt;}
+          return state.position;
+        }
+        let horizontal=Math.expm1(.0138*distance)/(.0138*seconds),
+          vertical=(targetHeight-height-.11+4.903325*seconds*seconds)/seconds+.35*seconds*seconds;
+        for(let i=0;i<2;i++){
+          const p=sample(horizontal,vertical),px=sample(horizontal+.1,vertical),pz=sample(horizontal,vertical+.1),
+            ex=distance-p.x,ez=targetHeight-p.z,a=(px.x-p.x)/.1,b=(pz.x-p.x)/.1,c=(px.z-p.z)/.1,d=(pz.z-p.z)/.1,det=a*d-b*c;
+          if(Math.abs(det)<1e-6)break;
+          horizontal=Math.max(1,horizontal+(ex*d-b*ez)/det);vertical+=(a*ez-ex*c)/det;
+        }
+        return {speed:Math.hypot(horizontal,vertical),liftAngleDeg:Math.atan2(vertical,horizontal)*180/Math.PI};
+      }
+      const options=snapshot.players.filter(p=>p.teamId===owner.teamId&&p.id!==owner.id&&!p.isGK&&!p.sentOff&&p.contactEligible)
+        .map(player=>{
+          const position=metricPoint(player,snapshot),velocity=metricVelocity(player,snapshot);
+          const target=boundarySafeCpuPassIntent({target:{x:position.x+velocity.x*.12,y:position.y+velocity.y*.12}}).target;
+          const distance=Math.hypot(target.x-origin.x,target.y-origin.y),progress=dir*(target.x-origin.x);
+          const space=Math.min(...snapshot.players.filter(p=>p.teamId!==owner.teamId&&!p.isGK&&!p.sentOff)
+            .map(p=>{const q=metricPoint(p,snapshot);return Math.hypot(q.x-target.x,q.y-target.y);}),100);
+          return {player,target,distance,progress,score:progress*.5+Math.min(space,15)*1.5-distance*.2};
+        }).filter(o=>o.distance>=6&&o.distance<=17.2).sort((a,b)=>b.score-a.score||a.player.id.localeCompare(b.player.id));
+      for(const row of options){
+        const intent={type:'pass',targetPlayerId:row.player.id,target:row.target,supportKind:'throw-in',
+          throwProfile:throwing(row.target),confidence:.85,reason:'checked-throw-free-receiver'};
+        const race=evaluateCpuPassRace(snapshot,owner,intent);
+        if(race.accepted)return {...intent,passRace:race,playerId:owner.id,target:livePoint(intent.target,snapshot)};
+      }
+      // A crowded throw still has to restart play. Send it firmly up the line
+      // into a real second-ball race, rather than gift a marked backward man.
+      const target={x:clamp(origin.x+dir*16,1,104),y:clamp(origin.y-Math.sign(origin.y||1)*5,-29,29)};
+      return {type:'pass',targetPlayerId:null,target:livePoint(target,snapshot),throwProfile:throwing(target),
+        playerId:owner.id,reason:'crowded-throw-up-the-line',confidence:.75};
+    }
+    function rejectedPassFallback(snapshot, owner, rejectedRace, supportOptions = []) {
       const team = snapshot.teams.find(row => row.id === owner.teamId);
       const direction = team && team.attackingDirection === -1 ? -1 : 1;
       const ownerMetric = metricPoint(owner, snapshot);
+      const safeSupport = supportOptions.filter(intent => intent.risk && intent.risk.probability < .42 &&
+        intent.risk.pressure < .5 && snapshot.players.some(p => p.id === intent.targetPlayerId &&
+          p.teamId === owner.teamId && p.contactEligible && !p.sentOff && !p.isGK));
+      // The CPU supplies its scored lane/pressure estimates. Test the best
+      // short links with the same MR interception projection as the original
+      // pass; no forced second forward ball after a rejected run.
+      for(const candidate of safeSupport.slice(0,3)){
+        const intent=boundarySafeCpuPassIntent(candidate);
+        const race=evaluateCpuPassRace(snapshot,owner,intent);
+        if(race.accepted)return {...intent,confidence:.78,
+          reason:direction*(intent.target.x-ownerMetric.x)>2 ? 'forward-outlet-after-rejected-run' : 'short-support-after-rejected-run',
+          fallbackFrom:'pass',rejectedPassRace:rejectedRace,passRace:race};
+      }
+      const safety=cpuPassSafetyContext(snapshot,owner,{target:ownerMetric});
+      if(safety.ownThird){
+        const firm=firmExitIntent(snapshot,owner);
+        if(firm)return firm;
+        const pressure=Math.min(...snapshot.players.filter(p=>p.teamId!==owner.teamId&&!p.sentOff&&!p.isGK)
+          .map(p=>{const q=metricPoint(p,snapshot);return Math.hypot(q.x-ownerMetric.x,q.y-ownerMetric.y);}),100);
+        if(pressure<10)return clearanceIntent(snapshot,owner);
+      }
       const carryTarget = {
         x: clamp(ownerMetric.x + direction * 4.5, METRIC_PITCH.xMin + 1, METRIC_PITCH.xMax - 1),
         y: clamp(ownerMetric.y, METRIC_PITCH.yMin + 1, METRIC_PITCH.yMax - 1)
@@ -1742,29 +2159,11 @@
         type: 'carry', targetPlayerId: null, target: carryTarget, confidence: .72,
         reason: 'unsafe-pass-race-carry', fallbackFrom: 'pass', passRace: rejectedRace
       };
-      const recycleCandidates = snapshot.players.filter(player => player.teamId === owner.teamId && player.id !== owner.id &&
-        !player.isGK && !player.sentOff && player.contactEligible).map(player => {
-        const target = metricPoint(player, snapshot);
-        return { player, target, distance: Math.hypot(target.x - ownerMetric.x, target.y - ownerMetric.y),
-          progress: direction * (target.x - ownerMetric.x) };
-      }).filter(row => row.distance >= 3 && row.distance <= 26 && row.progress <= 1)
-        .sort((a, b) => a.distance - b.distance || a.player.id.localeCompare(b.player.id));
-      // One deterministic nearest recycle is enough. Exhaustively projecting
-      // every teammate through MR on every rejected decision consumed the
-      // frame budget without creating a different football decision.
-      for (const candidate of recycleCandidates.slice(0, 1)) {
-        const recycleIntent = boundarySafeCpuPassIntent({ type: 'pass', targetPlayerId: candidate.player.id, target: candidate.target });
-        const recycleRace = evaluateCpuPassRace(snapshot, owner, recycleIntent);
-        if (recycleRace.accepted) return {
-          type: 'pass', targetPlayerId: candidate.player.id, target: candidate.target, confidence: .66,
-          reason: 'unsafe-progressive-pass-safe-recycle', fallbackFrom: 'pass', passRace: recycleRace,
-          rejectedPassRace: rejectedRace, offsideTiming: null
-        };
-      }
       return { type: 'wait', targetPlayerId: null, target: null, confidence: .82,
         reason: 'unsafe-pass-race-wait', fallbackFrom: 'pass', passRace: rejectedRace };
     }
     function lightweightShortSupportRace(snapshot, owner, intent) {
+      if(cpuPassSafetyContext(snapshot,owner,intent).critical)return null;
       if (!intent || intent.reason !== 'short-support-circulation' ||
           !['support', 'recycle'].includes(String(intent.supportKind || ''))) return null;
       const receiver = snapshot.players.find(player => String(player.id) === String(intent.targetPlayerId || '')) || null;
@@ -1777,7 +2176,8 @@
       const metrics = intent.supportMetrics || {};
       const laneClearance = finite(metrics.laneClearance, 0);
       const receiverSpace = finite(metrics.receiverSpace, 0);
-      if (distanceMetres < 6 || distanceMetres > 21 || receiverTargetOffsetMetres > 2.25 ||
+      if (distanceMetres < 6 || distanceMetres > 16 || receiverTargetOffsetMetres > 1.25 ||
+          !intent.risk || intent.risk.probability > .28 || intent.risk.interception > .25 ||
           laneClearance < CPU_SHORT_SUPPORT_FAST_LANE_CLEARANCE ||
           receiverSpace < CPU_SHORT_SUPPORT_FAST_RECEIVER_SPACE) return null;
       return {
@@ -1810,7 +2210,7 @@
       };
     }
     function progressiveRiskRace(snapshot, owner, intent, race) {
-      if (!race || race.accepted) return null;
+      if (!race || race.accepted || race.safetyCritical) return null;
       const team = snapshot.teams.find(row => row.id === owner.teamId);
       const direction = team && team.attackingDirection === -1 ? -1 : 1;
       const targetProgressMetres = intent.target
@@ -1831,6 +2231,7 @@
         } } : null;
     }
     function receiverFeetCorrection(snapshot, owner, intent, rejectedRace) {
+      if (intent.supportKind === 'in-behind') return null;
       if (!rejectedRace || !['receiver-cannot-arrive', 'receiver-arrival-buffer-below-eight-ticks',
         'trajectory-misses-target-window'].includes(rejectedRace.reason)) return null;
       const receiver = snapshot.players.find(player => String(player.id) === String(intent.targetPlayerId || '')) || null;
@@ -1844,6 +2245,11 @@
       };
       const distanceMetres = Math.hypot(target.x - origin.x, target.y - origin.y);
       if (distanceMetres < 6 || distanceMetres > 24) return null;
+      const direction=snapshot.teams.find(team=>team.id===owner.teamId).attackingDirection;
+      // A failed forward rendezvous is not a request to pass behind the
+      // carrier to a runner still departing on that run. Select an actual
+      // showing support player through the normal checked fallback instead.
+      if(direction*(intent.target.x-origin.x)>2&&direction*(target.x-origin.x)<-1)return null;
       return {
         ...clone(intent),
         target,
@@ -1876,7 +2282,14 @@
             commitment.ownerId !== owner.id || snapshot.tick > commitment.untilTick)) commitments[teamId] = null;
       }
       const decision = outputs[owner.teamId], intent = decision && decision.carrierIntent;
-      if (!intent || intent.type !== 'pass') {
+      if(intent&&['wait','protect','carry','take-on'].includes(intent.type)&&cpuPassSafetyContext(snapshot,owner,intent).ownThird&&
+        snapshot.players.some(p=>p.teamId!==owner.teamId&&!p.sentOff&&!p.isGK&&
+          Math.hypot((p.x-owner.x)/snapshot.units.xPerMetre,(p.y-owner.y)/snapshot.units.yPerMetre)<10)){
+        const fallback=rejectedPassFallback(snapshot,owner,{accepted:false,reason:'own-third-no-clean-short-lane'},decision.supportPassOptions);
+        if(fallback.type==='pass'||fallback.type==='clearance')return {commitments,outputs:{...outputs,
+          [owner.teamId]:{...decision,carrierIntent:fallback}}};
+      }
+      if (!intent || !['pass', 'cross'].includes(intent.type)) {
         commitments[owner.teamId] = null;
         return { outputs, commitments };
       }
@@ -1923,7 +2336,7 @@
         }
       }
       const carrierIntent = acceptedRace.accepted ? { ...clone(selectedIntent), passRace: acceptedRace }
-        : rejectedPassFallback(snapshot, owner, originalRace);
+        : rejectedPassFallback(snapshot, owner, originalRace, decision.supportPassOptions);
       // Match lab only: count pass-check outcomes when the lab provides a ledger.
       const labLedger = typeof globalThis !== 'undefined' && globalThis.__dartyLabIntents;
       if (labLedger) {
@@ -2055,7 +2468,48 @@
         stagedContext: stepped.context, stagedProjection: clone(boundedKnockOn.projection),
         stagedLaunchSequence: launchSequence, directionalKnockOn: boundedKnockOn };
     }
-    function contactPlan(snapshot, movementState, plannedBall, possession) {
+    function cpuHighBallAerialIntent(snapshot, movementState, ballState, possession, flight) {
+      if (capability.workflow !== 'cpu-v-cpu' || !flight ||
+          !ballState || ballState.velocity.z > 1.5 || ballState.position.z < .4) return null;
+      const ball = ballState.position, sourceTeam = flight.sourceTeamId;
+      const candidates = movementState.players.map(player => {
+        const roster = snapshot.players.find(p => p.id === player.id), attrs = roster && roster.attrs || {};
+        const gap = Math.hypot(player.position.x - ball.x, player.position.y - ball.y);
+        const access = gap < .01 ? 1 : ((ball.x - player.position.x) * player.facing.x +
+          (ball.y - player.position.y) * player.facing.y) / gap;
+        const maximumHeight = (roster && roster.heightM || 1.8) + .18 + (finite(attrs.jumping, 70) - 1) / 98 * .34;
+        return { player, roster, gap, maximumHeight, access,
+          score: finite(attrs.heading, 70) * .44 + finite(attrs.jumping, 70) * .25 + finite(attrs.awareness, 70) * .16 - gap * 45 };
+      }).filter(p => p.roster && p.roster.contactEligible && !p.roster.sentOff && !p.roster.isGK &&
+        p.gap <= .86 && ball.z <= p.maximumHeight &&
+        p.access >= (ball.z >= 1.05 ? -.78 : -.3) &&
+        !(p.player.id === snapshot.ball.lastKickerId && snapshot.tick - flight.releaseTick < 28))
+        .sort((a, b) => b.score - a.score || a.player.id.localeCompare(b.player.id));
+      const selected = candidates[0];
+      if (!selected) return null;
+      const team = snapshot.teams.find(t => t.id === selected.player.teamId), direction = team.attackingDirection;
+      const distanceToGoal = direction > 0 ? 105 - ball.x : ball.x;
+      const shoot = distanceToGoal < 21 && Math.abs(ball.y) < 20.16;
+      const technique = ball.z >= 1.05 ? 'header' : 'volley';
+      const opponentGap = Math.min(...movementState.players.filter(p => p.teamId !== selected.player.teamId)
+        .map(p => Math.hypot(p.position.x - ball.x, p.position.y - ball.y)), Infinity);
+      const unopposedReceipt = !shoot && (direction > 0 ? ball.x : 105 - ball.x) > 12 && opponentGap > 2.2;
+      const preferChest = unopposedReceipt &&
+        stableHash([flight.key, selected.player.id, 'chest'].join(':')) / 0xffffffff <
+          .15 + finite(selected.roster.attrs.control, 70) / 99 * .65;
+      // With time and space, receive the delivery rather than heading an
+      // uncontested ball straight back into another loose contest. A nearby
+      // opponent cancels the wait and the aerial model resolves the challenge.
+      if (preferChest && (ball.z > 1.6 || ball.z >= 1.05 && selected.gap > .5)) return null;
+      if (unopposedReceipt && !preferChest) return null;
+      return { sequence: ['cpu-high', stableHash(flight.key), selected.player.id].join(':'), epoch: resetEpoch,
+        commandTick: Math.max(1, snapshot.tick - (technique === 'header' ? 4 : 5)), actorId: selected.player.id,
+        technique, intent: shoot ? 'shoot' : 'clear',
+        receiveMode: preferChest && ball.z >= 1.05 && ball.z <= 1.6 ? 'chest' : null,
+        target: shoot ? { x: direction > 0 ? 105 : 0, y: ball.y > 0 ? -1.6 : 1.6, z: .85 }
+          : { x: clamp(ball.x + direction * 25, 2, 103), y: clamp(ball.y + (ball.y <= 0 ? -8 : 8), -30, 30), z: 1.8 } };
+    }
+    function contactPlan(snapshot, movementState, plannedBall, possession, cpu, aerialFlight) {
       if (!plannedBall.stagedState || movementState.ballOwnerId != null) return null;
       let aerialIntent = null;
       if (snapshot.contact.aerialIntent) {
@@ -2075,6 +2529,8 @@
           }
         };
       }
+      const cpuService = capability.workflow === 'cpu-v-cpu' && (Boolean(aerialFlight) || /(cross|corner)/.test(snapshot.ball.flightType));
+      if (!aerialIntent && cpuService) aerialIntent = cpuHighBallAerialIntent(snapshot, movementState, plannedBall.stagedState, possession, aerialFlight);
       const activeIds = new Set(movementState.players.map(player => player.id));
       const priorBallPosition = metricBall(snapshot.ball, snapshot).position;
       const stimulus = possession && possession.reactionStimulus ||
@@ -2121,7 +2577,7 @@
             // decide when that attempt exists; the authored endpoint is a
             // rendezvous aid, not an invisible contact permission boundary.
             contactEligible: !player.sentOff && !player.isGK && player.contactEligible &&
-              (!ownAuthoredFlight || intendedReceiver),
+              (cpuService || !ownAuthoredFlight || intendedReceiver),
             bodyContactEligible: !player.sentOff && !player.isGK && player.bodyContactEligible,
             heightM: player.heightM,
             attributes: clone(player.attrs)
@@ -2137,6 +2593,7 @@
         firstTouchIntent: snapshot.contact.firstTouchIntent,
         reactionContext,
         aerialIntent,
+        aerialFlightActive: Boolean(aerialFlight),
         consumedFirstTouchIds: domain.consumedFirstTouchIds,
         consumedFirstTouchThroughTick: domain.consumedFirstTouchThroughTick,
         consumedAerialIds: domain.consumedAerialIds,
@@ -2148,7 +2605,32 @@
           result.consumedFirstTouchThroughTick < domain.consumedFirstTouchThroughTick ||
           result.consumedFirstTouchThroughTick > snapshot.tick ||
           !dependencies.ball.isBallState(result.ballState)) throw new Error('live contact composer result contract failed');
-      return result;
+      if (!cpuService && result.ownedContact && result.ownerCandidateId && result.contactType === 'first-touch' &&
+          plannedBall.stagedState.position.z <= .6 && vectorLength(plannedBall.stagedState.velocity) <= 18) {
+        const actor = snapshot.players.find(p => p.id === result.ownerCandidateId);
+        const intent = actor && cpu[actor.teamId] && cpu[actor.teamId].firstTimeIntent;
+        if (intent && !snapshot.humanPlayerIds.has(actor.id) && actor.id === possession.intendedReceiverId) {
+          // The incoming physical first-touch resolver proves foot contact.
+          // Redirect that contact into a checked pass without granting a frame
+          // of ownership or invoking the host's pass/combination planners.
+          const origin = liveBall(plannedBall.stagedState, snapshot);
+          const releaseSnapshot = { ...snapshot, ball: { ...snapshot.ball, ...origin, ownerId: actor.id } };
+          const candidate = boundarySafeCpuPassIntent(intent);
+          const race = evaluateCpuPassRace(releaseSnapshot, actor, candidate);
+          if (race.accepted) {
+            const launch = cpuPassLaunch(releaseSnapshot, actor, candidate);
+            return { ...result, ownerCandidateId: null,
+              ballState: dependencies.ball.createBallState({ ...launch.state,
+                contactCount: result.ballState.contactCount, lastContact: result.ballState.lastContact,
+                lastOuterTick: snapshot.tick, simulationTime: result.ballState.simulationTime }),
+              presentation: { ...result.presentation, firstTimePass: { ...clone(candidate), passRace: race,
+                origin: clone(plannedBall.stagedState.position), sourceTeamId: actor.teamId } } };
+          }
+        }
+      }
+      return cpuService ? { ...result, sourceFlight: snapshot.ball.flightType, sourceTeam: aerialFlight && aerialFlight.sourceTeamId || snapshot.ball.lastKickerTeamId,
+        flightKey: aerialFlight && aerialFlight.key || null,
+        suppressLegacy: { ...result.suppressLegacy, aerialDuel: true } } : result;
     }
     function hasPhysicalDribblingLease(state) {
       return Boolean(state && state.physicalSeparated === true &&
@@ -2178,20 +2660,21 @@
     }
     function cpuDribblingAction(snapshot, intelligence, carrierId) {
       if (!carrierId || snapshot.humanPlayerIds.has(carrierId)) return null;
-      const row = intelligence.projection.find(intent => intent.playerId === carrierId && ['pass', 'shot'].includes(intent.type));
+      const row = intelligence.projection.find(intent => intent.playerId === carrierId && ['pass', 'shot', 'cross', 'clearance'].includes(intent.type));
       if (!row) return null;
       const shotProfile = row.type === 'shot' && row.shotProfile && typeof row.shotProfile === 'object'
         ? row.shotProfile : null;
       return {
         id: ['cpu-dribble-action', resetEpoch, carrierId, row.type, row.targetPlayerId || 'none', Math.floor(snapshot.tick / 6)].join(':'),
-        type: row.type,
+        type: ['cross','clearance'].includes(row.type) ? 'pass' : row.type,
         actorId: carrierId,
         targetPlayerId: row.targetPlayerId,
         target: row.target,
         power: clamp(finite(shotProfile && shotProfile.power, finite(row.confidence, 0.65)), 0, 1),
         variant: shotProfile ? String(shotProfile.technique || 'driven') : 'normal',
         delivery: { supportKind: row.supportKind, supportMetrics: row.supportMetrics, passRace: row.passRace,
-          offsideTiming: row.offsideTiming, reason: row.reason, risk: row.risk },
+          offsideTiming: row.offsideTiming, reason: row.reason, risk: row.risk, type: row.type,
+          crossKind: row.crossKind, flightType: row.flightType, switchMetrics: row.switchMetrics, clearanceProfile: row.clearanceProfile },
         source: 'cpu-v2',
         commandTick: snapshot.tick
       };
@@ -2393,6 +2876,40 @@
           dependencies.dribbling.restoreState(result.serializedState).schema !== dependencies.dribbling.STATE_SCHEMA) {
         throw new Error('live Dribbling V2 result contract failed');
       }
+      const released = result.releasedAction;
+      if (authorityProfile.cpuPassRaceFilter && released?.source === 'cpu-v2' && released.type === 'pass' && released.delivery?.type !== 'clearance') {
+        // A queued pass waits for an actual boot meeting. Its lane/receiver
+        // promise can go stale during that touch, so validate the release from
+        // the newly committed positions and ball, not the old queue frame.
+        const players = snapshot.players.map(player => {
+          const moved = movementState.players.find(p => p.id === player.id);
+          return moved ? { ...player, ...livePoint(moved.position, snapshot),
+            vx: moved.velocity.x * snapshot.units.xPerMetre / 60,
+            vy: moved.velocity.y * snapshot.units.yPerMetre / 60,
+            fx: moved.facing.x, fy: moved.facing.y } : player;
+        });
+        const releaseSnapshot = { ...snapshot, players,
+          ball: { ...snapshot.ball, ...liveBall(result.ballState, snapshot), ownerId: carrierId } };
+        const owner = players.find(p => p.id === carrierId);
+        let intent = boundarySafeCpuPassIntent({ ...released.delivery,
+          type: released.delivery?.type || 'pass', targetPlayerId: released.targetPlayerId,
+          target: metricPoint(released.target, snapshot), confidence: released.power });
+        let race = evaluateCpuPassRace(releaseSnapshot, owner, intent);
+        if (!race.accepted) {
+          const corrected = receiverFeetCorrection(releaseSnapshot, owner, intent, race);
+          if (corrected) {
+            const correctedRace = evaluateCpuPassRace(releaseSnapshot, owner, corrected);
+            if (correctedRace.accepted) { intent = corrected; race = correctedRace; }
+          }
+        }
+        const checked = race.accepted ? { ...released, target: livePoint(intent.target, snapshot),
+          delivery: { ...released.delivery, passRace: race,
+            releaseRecheck: { queuedTick: released.commandTick, checkedTick: snapshot.tick } } } : null;
+        return { ...result, releasedAction: checked,
+          telemetry: { ...result.telemetry, releasedActionId: checked?.id || null,
+            releasePassRecheck: { accepted: race.accepted, reason: race.reason } },
+          presentation: { ...result.presentation, releasedAction: checked } };
+      }
       return result;
     }
     function planTick(rawSnapshot) {
@@ -2481,10 +2998,10 @@
               opponents: movement.state.players.filter(p => p.teamId !== receiver.teamId),
               attackingDirection: team.attackingDirection, bounds: METRIC_PITCH,
               direction: human ? { x: control.x, y: control.y } : null, sprint: Boolean(human && control.sprint), combinationTarget,
-              combination: Boolean(!human && combination && combination.linkId === receiverId) }), source: 'cpu-v2' };
+              combination: Boolean(!human && combination && combination.linkId === receiverId), cpu: true }), source: 'cpu-v2' };
           }
         }
-        const contactResult = activeLeaseAtStart ? null : contactPlan(ballSnapshot, movement.state, plannedBall, possession);
+        const contactResult = activeLeaseAtStart ? null : contactPlan(ballSnapshot, movement.state, plannedBall, possession, cpu.outputs, commands.aerialFlight);
         const contact = contactResult;
         let stagedWorld = movement.state;
         let stagedBallState = plannedBall.stagedState;
@@ -2513,7 +3030,19 @@
           const contactActorId = String(contact.presentation && contact.presentation.playerId ||
             contact.ballState && contact.ballState.lastContact && contact.ballState.lastContact.colliderId || '');
           const contactActor = contactActorId && snapshot.players.find(player => player.id === contactActorId);
-          if (!contactOwner && possession.inFlight && contact.contactType === 'involuntary-deflection' && contactActor) {
+          const firstTimePass = contact.presentation && contact.presentation.firstTimePass;
+          if (firstTimePass) {
+            const target = livePoint(firstTimePass.target, snapshot);
+            postMovementPossession = { teamId: firstTimePass.sourceTeamId, ownerId: null, inFlight: true,
+              intendedReceiverId: firstTimePass.targetPlayerId, intendedTarget: target,
+              intendedTargetWindowMetres: firstTimePass.passRace.targetWindowMetres,
+              arrivalWindowEntered: false, releaseTick: snapshot.tick, reactionStimulus: null,
+              sourcePlayerId: contact.presentation.playerId, deliberatePass: true, offsideCandidate: null };
+          } else if (!contactOwner && contact.ownedContact && contact.contactType === 'aerial-volley') {
+            postMovementPossession = { teamId: null, ownerId: null, inFlight: false,
+              intendedReceiverId: null, intendedTarget: null, intendedTargetWindowMetres: null,
+              arrivalWindowEntered: false, releaseTick: null, reactionStimulus: null, offsideCandidate: null };
+          } else if (!contactOwner && possession.inFlight && contact.contactType === 'involuntary-deflection' && contactActor) {
             // A real MR body ricochet ends the now-invalid authored rendezvous
             // for either team, while retaining the original kick's offside
             // provenance because an involuntary deflection is not deliberate.
@@ -2530,7 +3059,7 @@
               }),
               offsideCandidate: clone(possession.offsideCandidate || null)
             };
-          } else if (!contactOwner && possession.inFlight && contactActor && contactActor.teamId !== possession.teamId) {
+          } else if (!contactOwner && contact.ownedContact && possession.inFlight && contactActor && contactActor.teamId !== possession.teamId) {
             // A V2-retained opposition deflection also ends the old team's
             // pass route even if the Build 173 host has not yet reflected a
             // new lastKickerId. Ownership stays loose for the next arbitration.
@@ -2625,7 +3154,7 @@
         if (activeLeaseAtStart && leaseOwnerId) suppressedLeaseActions.add(leaseOwnerId);
         if (dribbling.releasedAction && dribbling.releasedAction.actorId) suppressedLeaseActions.add(String(dribbling.releasedAction.actorId));
         const hostIntelligence = intelligence.projection.filter(intent =>
-          !(suppressedLeaseActions.has(intent.playerId) && ['pass', 'shot'].includes(intent.type)));
+          !(suppressedLeaseActions.has(intent.playerId) && ['pass', 'shot', 'cross', 'clearance'].includes(intent.type)));
         const dribblingProjection = {
           schema: dribbling.schema,
           version: dribbling.version,
@@ -2670,6 +3199,7 @@
             ballState: stagedBallState, ballContext: plannedBall.stagedContext, lastBallProjection: stagedBallProjection,
             lastLaunchSequence: plannedBall.stagedLaunchSequence, lastTackleState: commands.stagedTackleState,
             lastCarrierEmission: intelligence.stagedCarrierEmission, possession: postMovementPossession, transition: stagedTransition,
+            aerialFlight: contact && contact.ownedContact ? null : commands.aerialFlight,
             consumedFirstTouchIds: contact ? clone(contact.consumedFirstTouchIds) : domain.consumedFirstTouchIds,
             consumedFirstTouchThroughTick: contact ? contact.consumedFirstTouchThroughTick : domain.consumedFirstTouchThroughTick,
             consumedAerialIds: contact ? clone(contact.consumedAerialIds) : domain.consumedAerialIds,
@@ -2808,7 +3338,7 @@
       return { schema: 'football-legacy-live-v2-reset', version: VERSION, resetEpoch, reason: String(reason || 'build-173-restart-handoff') };
     }
     return Object.freeze({ schema: 'football-legacy-live-v2-attachment', version: VERSION, planTick, prepareCommit, applyPrepared,
-      finalizePrepared, abortPrepared, rollbackPrepared, commitTick, reset, status, exportState, restoreState,
+      finalizePrepared, abortPrepared, rollbackPrepared, commitTick, reset, status, exportState, restoreState, planKeeperExit, planRestartThrow,
       disable: reason => freeze(reason || 'manual adapter freeze') });
   }
 
@@ -2818,6 +3348,6 @@
     CPU_DECISION_PROFILES, LIVE_MOVEMENT_CONTACT_CONFIG,
     HUMAN_RECEPTION_GUIDANCE_MAX_DISTANCE_METRES, HUMAN_RECEPTION_GUIDANCE_STRONG_INPUT,
     HUMAN_RECEPTION_GUIDANCE_OPPOSING_DOT,
-    cpuPhysicalActionAllowed, cpuDifficultyConfig, stableHash, createCapability, createAttachment
+    keeperDeflectionPlan, keeperOutgoingContactPlan, cpuPhysicalActionAllowed, cpuDifficultyConfig, stableHash, createCapability, createAttachment
   });
 });

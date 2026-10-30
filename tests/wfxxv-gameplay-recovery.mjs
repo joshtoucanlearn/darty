@@ -91,7 +91,7 @@ test('a clean unpressured short kick-off receipt is promoted from retained loose
     'a visibly heavy kick-off touch must remain loose');
 
   const transaction = sourceBetween(matchSource, 'function liveV2PrepareHostTick', 'function liveV2RunTick');
-  assert.match(transaction, /liveV2ApplyDribbling\(projection\);finalizeCleanKickoffReception\(ball\)/,
+  assert.match(transaction, /liveV2ApplyDribbling\(projection\);liveV2ApplyCpuTouches\(projection\);finalizeCleanKickoffReception\(ball\)/,
     'possession finalization must run after V2 dribbling so it cannot be erased in the same transaction');
   assert.match(source, /state\.owner=actor;state\.target=null/);
 });

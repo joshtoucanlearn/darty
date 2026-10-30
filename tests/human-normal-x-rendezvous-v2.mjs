@@ -54,6 +54,9 @@ const context = vm.createContext({
   liveV2PendingLaunch: null,
   liveV2LaunchSerial: 0,
   liveV2CpuOffsideTiming: null,
+  kickoffHeld: false,
+  restartMsg: '',
+  offsidePositionAtKick: () => null,
   ball: { z: 0 }
 });
 vm.runInContext(

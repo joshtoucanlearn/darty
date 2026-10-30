@@ -232,7 +232,8 @@
       acknowledged: value.acknowledged !== false,
       resolved: Boolean(value.resolved),
       outcome: value.outcome == null ? null : String(value.outcome),
-      visible: value.visible !== false
+      visible: value.visible !== false,
+      ...(value.racePursuit===true&&type==='shoulder-challenge'?{racePursuit:true}:{})
     };
   }
 
@@ -362,7 +363,8 @@
       mode: CONTEXT_MODES.has(requestedMode) ? requestedMode : 'run',
       responsivenessMultiplier: clamp(finite(source.responsivenessMultiplier, 1), 1, 1.5),
       durationTicks: Math.max(1, Math.trunc(finite(source.durationTicks, 1))),
-      targetId: source.targetId == null ? null : String(source.targetId)
+      targetId: source.targetId == null ? null : String(source.targetId),
+      ...(source.racePursuit===true&&type==='shoulder-challenge'?{racePursuit:true}:{})
     };
   }
 
@@ -418,6 +420,8 @@
       player.control = createControl({ commandId: command.id, startTick: tick, untilTick: tick, mode: 'idle' });
       return;
     }
+    if(command.racePursuit)player.control=createControl({commandId:command.id,startTick:tick,untilTick:tick+command.durationTicks-1,
+      move:command.move,facing:command.facing,intensity:1,mode:'sprint'});
     const tackle = command.type === 'stand-tackle', slide = command.type === 'slide-tackle';
     const windupTicks = slide ? config.slideWindupTicks : tackle ? config.tackleWindupTicks : config.shoulderWindupTicks;
     const contactTicks = slide ? config.slideContactTicks : tackle ? config.tackleContactTicks : config.shoulderContactTicks;
@@ -435,7 +439,8 @@
       acknowledged: true,
       resolved: false,
       outcome: null,
-      visible: true
+      visible: true,
+      ...(command.racePursuit?{racePursuit:true}:{})
     });
     player.visibleAction = true;
     player.locomotionState = command.type + '-windup';
@@ -520,7 +525,7 @@
     let desiredDirection = inputMagnitude > 1e-9 ? normalize(rawMove, player.facing) : player.facing;
     let forcedSpeed = null;
     let forcedAcceleration = null;
-    if (liveAction && livePhase !== 'complete') {
+    if (liveAction && !liveAction.racePursuit && livePhase !== 'complete') {
       mode = liveAction.type;
       desiredDirection = liveAction.direction;
       if (livePhase === 'windup') forcedSpeed = liveAction.type === 'slide-tackle' ? 1.5 : liveAction.type === 'stand-tackle' ? 1.2 : 2.2;
@@ -608,8 +613,8 @@
     }
     player.position.x += player.velocity.x * dt;
     player.position.y += player.velocity.y * dt;
-    const sprinting = control.mode === 'sprint' && inputMagnitude > 0.15 && !liveAction;
-    const running = control.mode === 'run' && inputMagnitude > 0.35 && !liveAction;
+    const sprinting = control.mode === 'sprint' && inputMagnitude > 0.15 && (!liveAction||liveAction.racePursuit);
+    const running = control.mode === 'run' && inputMagnitude > 0.35 && (!liveAction||liveAction.racePursuit);
     if (sprinting) {
       const resilience = 1.18 - player.attributes.stamina / 99 * 0.36;
       player.stamina = clamp(player.stamina - config.sprintStaminaDrainPerSecond * resilience * dt, 0, 100);
@@ -621,7 +626,7 @@
     }
     if (liveAction) {
       player.visibleAction = true;
-      player.locomotionState = liveAction.type + '-' + livePhase;
+      player.locomotionState = liveAction.racePursuit?contextualMode:liveAction.type + '-' + livePhase;
     } else {
       player.visibleAction = false;
       player.contextMode = contextualMode;
@@ -704,6 +709,9 @@
           actorAttrs.acceleration * 0.08 + alignment * 12 + approach.relativeClosingSpeed * 2.2;
         targetScore = targetAttrs.control * 0.32 + targetAttrs.balance * 0.3 + targetAttrs.strength * 0.22 +
           (shielding ? 16 : 0);
+      } else if(action.racePursuit){
+        actorScore=actorAttrs.strength*.40+actorAttrs.balance*.32+actorAttrs.pace*.16+magnitude(actor.velocity)*1.4;
+        targetScore=targetAttrs.strength*.40+targetAttrs.balance*.32+targetAttrs.pace*.16+magnitude(target.velocity)*1.4;
       } else {
         actorScore = actorAttrs.strength * 0.46 + actorAttrs.balance * 0.18 + actorAttrs.aggression * 0.16 +
           approach.relativeClosingSpeed * 2.4 + alignment * 8;
@@ -717,7 +725,8 @@
         type: contactType, commandId: action.commandId, tick, actorId: actor.id, targetId: target.id,
         alignment: rounded(alignment), closestDistance: approach.closestDistance,
         relativeClosingSpeed: approach.relativeClosingSpeed, approachSpeedMps, actorScore: rounded(actorScore),
-        targetScore: rounded(targetScore), outcome: action.outcome
+        targetScore: rounded(targetScore), outcome: action.outcome,
+        ...(action.racePursuit?{racePursuit:true}:{})
       });
       const outcomeType = slide ? (won ? 'slide-win' : 'slide-contact-lost') : action.type === 'stand-tackle'
         ? (won ? 'tackle-win' : 'tackle-contact-lost')

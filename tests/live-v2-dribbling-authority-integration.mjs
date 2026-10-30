@@ -119,6 +119,47 @@ function runTick(live, snapshot) {
   return frame;
 }
 
+test('a queued CPU pass rechecks the physical release and holds when a defender closes its lane', () => {
+  for (const closeLane of [false, true]) {
+    let askForPass = false;
+    const cpu = { ...CPU, decide(snapshot, memory, options) {
+      const decision = CPU.decide(snapshot, memory, options);
+      if (snapshot.carrierId !== 'you-CAM' || snapshot.teamId !== 'you') return decision;
+      return { ...decision, supportPassOptions: [], carrierIntent: askForPass
+        ? { type: 'pass', targetPlayerId: 'you-RW', target: { x: 52, y: 0 },
+          reason: 'queued-release-fixture', supportKind: 'support', confidence: .9 }
+        : { type: 'carry', target: { x: 65, y: 0 }, reason: 'physical-touch-fixture', confidence: .9 } };
+    } };
+    const { live } = attachment('cpu-v-cpu', { dependencies: { ...dependencies, cpu } });
+    let snapshot = initialSnapshot('cpu-v-cpu');
+    const owner = snapshot.players.find(p => p.id === 'you-CAM');
+    Object.assign(owner, { x: 40, y: 0, vx: .1, vy: 0, fx: 1, fy: 0 });
+    Object.assign(snapshot.players.find(p => p.id === 'you-RW'), { x: 52, y: 0, vx: 0, vy: 0 });
+    for (const p of snapshot.players.filter(p => p.teamId === 'opp')) Object.assign(p, { x: 92, y: 25, vx: 0, vy: 0 });
+    Object.assign(snapshot.ball, { x: 40, y: 0, vx: .1, vy: 0 });
+    let buffered = null, checked = null;
+    for (let tick = 1; tick <= 150; tick++) {
+      const projection = runTick(live, snapshot).hostProjection;
+      if (projection.physicalBallSeparated) askForPass = true;
+      if (projection.dribbling.bufferedAction) buffered = projection.dribbling.bufferedAction;
+      if (projection.dribbling.telemetry.releasePassRecheck) { checked = projection; break; }
+      snapshot = advanceSnapshot(snapshot, projection, tick + 1);
+      if (buffered && closeLane) {
+        const actor = snapshot.players.find(p => p.id === 'you-CAM');
+        Object.assign(snapshot.players.find(p => p.id === 'opp-LCB'),
+          { x: actor.x + 4.5, y: .15, vx: 0, vy: 0, fx: -1, fy: 0 });
+      }
+    }
+    assert.ok(buffered?.delivery.passRace.accepted, 'the original queue was accepted before the lane changed');
+    assert.ok(checked, 'real dribbling physics reaches the boot meeting');
+    assert.equal(checked.physicalBallSeparated, false);
+    assert.equal(checked.logicalBallOwnerId, 'you-CAM');
+    assert.equal(checked.dribbling.telemetry.releasePassRecheck.accepted, !closeLane);
+    if (closeLane) assert.equal(checked.dribbling.releasedAction, null);
+    else assert.equal(checked.dribbling.releasedAction.delivery.passRace.evaluatedTick, checked.snapshotTick);
+  }
+});
+
 function groundThroughSnapshot(receiverControl) {
   const snapshot = initialSnapshot('single-player');
   const passer = snapshot.players.find(player => player.id === 'you-CAM');
@@ -574,7 +615,7 @@ test('a sustained carry has readable physical touch cadence instead of a seven-f
   assert.ok(!intervals.includes(7), 'the playtest seven-frame loop must not return');
 });
 
-test('a CPU directional reception exits the old rendezvous and can be physically gathered', () => {
+test('a CPU cushions its physical reception before selecting the shared human free-roll or sprint ladder', () => {
   const { live } = attachment('cpu-v-cpu');
   let snapshot = initialSnapshot('cpu-v-cpu');
   const receiver = snapshot.players.find(p => p.id === 'you-CAM');
@@ -588,18 +629,16 @@ test('a CPU directional reception exits the old rendezvous and can be physically
     const frame = runTick(live, snapshot);
     const contact = frame.hostProjection.contact;
     if (contact && contact.contactType === 'first-touch') {
-      assert.equal(contact.receivingIntent.type, 'directional-touch');
-      assert.equal(frame.hostProjection.logicalBallOwnerId, null, 'a directional touch grants no invisible possession');
-      assert.equal(live.exportState().domain.possession.teamId, 'you');
-      assert.equal(live.exportState().domain.possession.ownerId, null);
-      assert.ok(live.exportState().domain.possession.pendingTouch);
+      assert.equal(contact.receivingIntent.type, 'cushion');
+      assert.ok(contact.receivingIntent.touchDistanceM>=.18&&contact.receivingIntent.touchDistanceM<=.46);
+      if(frame.hostProjection.logicalBallOwnerId===null)assert.equal(live.exportState().domain.possession.ownerId,null,'a loose cushion has no manufactured owner');
       directional = true;
     }
     if (directional && frame.hostProjection.logicalBallOwnerId === receiver.id) { gathered = true; break; }
     snapshot = advanceSnapshot(snapshot, frame.hostProjection, tick + 1);
   }
   assert.equal(directional, true);
-  assert.equal(gathered, true, 'the receiver must chase and gather rather than repeat active directional touches');
+  assert.equal(gathered, true, 'the receiver physically gathers without the old automatic CPU directional nudge');
 });
 
 test('an interceptor resolves its own trap rather than inheriting the intended directional touch', () => {

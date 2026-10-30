@@ -1,21 +1,25 @@
 // Observational action ledger: actual releases and physical outcomes only.
 export function createCombinationMetrics() {
-  const counts = { oneTwos: 0, thirdManCombinations: 0, switches: 0, switchesCompleted: 0,
-    crosses: 0, crossesCompleted: 0, boxEntries: 0, headers: 0, volleys: 0, shotsFromCrosses: 0,
-    takeOns: 0, takeOnsWon: 0, progressiveCarries: 0, dispossessions: 0, finalThirdEntries: 0, boxSlotRuns: 0, tacklesWon: 0, skillsUsed: 0, knockOns: 0, knockOnsWon: 0,
-    directionalFirstTouches: 0, directionalKept: 0, directionalLost: 0, directionalToCarry: 0, directionalToPass: 0, directionalToShot: 0, nextActionWithinOneSecond: 0, knockOnNextActionWithinOneSecond: 0 };
+  const counts = {"oneTwos": 0, "thirdManCombinations": 0, "switches": 0, "switchesCompleted": 0, "crosses": 0, "crossesCompleted": 0, "boxEntries": 0, "headers": 0, "volleys": 0, "shotsFromCrosses": 0, "takeOns": 0, "takeOnsWon": 0, "progressiveCarries": 0, "dispossessions": 0, "finalThirdEntries": 0, "boxSlotRuns": 0, "tacklesWon": 0, "skillsUsed": 0, "knockOns": 0, "knockOnsWon": 0, "directionalFirstTouches": 0, "directionalKept": 0, "directionalLost": 0, "directionalToCarry": 0, "directionalToPass": 0, "directionalToShot": 0, "nextActionWithinOneSecond": 0, "knockOnNextActionWithinOneSecond": 0, "firstTimeLayoffs": 0, "openPlayCrosses": 0, "openPlayCrossesCompleted": 0, "earlyCrosses": 0, "bylineCrosses": 0, "cutBacks": 0, "aerialContacts": 0, "aerialDuelsContested": 0, "aerialWinsYou": 0, "aerialWinsOpp": 0, "attackingAerialWins": 0, "defendingAerialWins": 0, "chestControls": 0, "aerialSecondBallsYou": 0, "aerialSecondBallsOpp": 0};
   const skills = {}, carryDirections = {}, receiving = {};
   let touch = null, knockOn = null;
-  const byLength = {}, byThird = {}, decisions = {}, history = [];
-  let pending = null, carry = null, previousOwner = null, lastCross = null, takeOn = null;
+  const byLength = {}, byThird = {}, byDecision = {}, passDiagnostics = [], decisions = {}, history = [];
+  const aerial = { challengerFrames: 0, reachableFrames: 0, coverFrames: 0, flights: {}, contacts: [] };
+  let aerialRows = [];
+  let pending = null, carry = null, previousOwner = null, lastCross = null, crossReceipt = null, takeOn = null, released = false, pendingSecondBall = null, slotKeys = new Set();
   const bucket = (map, key) => map[key] ||= { attempted: 0, completed: 0 };
   const inBox = p => p.progress >= 1 - 16.5 / 105 && Math.abs(p.y - 34) <= 20.16;
   function terminal(event) {
     if (!pending) return;
+    if (event.completed) bucket(byDecision, pending.reason || 'unlabelled-pass').completed++;
+    passDiagnostics.push({ reason: pending.reason || 'unlabelled-pass', length: pending.length,
+      third: pending.third, distanceMetres: pending.distanceMetres, completed: !!event.completed, terminalReason: event.reason || null,
+      risk: pending.risk || null, race: pending.race || null });
     if (event.completed) {
       for (const map of [bucket(byLength, pending.length), bucket(byThird, pending.third)]) map.completed++;
       if (pending.switch) counts.switchesCompleted++;
-      if (pending.cross) counts.crossesCompleted++;
+      if (pending.openPlay) counts.openPlayCrossesCompleted++;
+      if (pending.cross) { counts.crossesCompleted++; crossReceipt = { actorId: event.receiverId, team: pending.team, time: event.time }; }
       if (pending.progress < 2 / 3 && event.progress >= 2 / 3) counts.finalThirdEntries++;
       if (!pending.inBox && event.inBox) counts.boxEntries++;
       const prior = history.at(-1);
@@ -55,40 +59,68 @@ export function createCombinationMetrics() {
         if (e.time - knockOn.time <= 1000) counts.knockOnNextActionWithinOneSecond++;
         knockOn.action = true;
       }
+      if (['shot', 'headed-pass', 'clearance'].includes(e.type)) released = true;
       if (e.type === 'pass') {
+        released = true;
+        if (crossReceipt && crossReceipt.actorId === e.actorId) crossReceipt = null;
         const d = e.distanceMetres;
         pending = { actorId: e.actorId, team: e.team, receiver: e.targetId, progress: e.progress, inBox: e.inBox,
-          time: e.time, length: d < 10 ? 'short-under-10m' : d <= 25 ? 'medium-10-25m' : 'long-over-25m',
+          time: e.time, distanceMetres: d, length: !Number.isFinite(d) ? 'unknown-length' : d < 10 ? 'short-under-10m' : d <= 25 ? 'medium-10-25m' : 'long-over-25m',
           third: e.progress < 1 / 3 ? 'defensive' : e.progress < 2 / 3 ? 'middle' : 'attacking',
           cross: /cross|corner/.test(e.flightType || ''), switch: false };
         for (const map of [bucket(byLength, pending.length), bucket(byThird, pending.third)]) map.attempted++;
+        bucket(byDecision, 'unlabelled-pass').attempted++;
         if (pending.cross) { counts.crosses++; lastCross = { team: e.team, time: e.time }; }
       } else if (e.type === 'v2-pass-decision') {
         decisions[e.reason] = (decisions[e.reason] || 0) + 1;
+        if (e.firstTime) counts.firstTimeLayoffs++;
         if (pending) {
+          bucket(byDecision, pending.reason || 'unlabelled-pass').attempted--;
           pending.reason = e.reason;
+          bucket(byDecision, pending.reason || 'unlabelled-pass').attempted++;
+          pending.risk = e.risk || null;
+          pending.race = e.passRace ? Object.fromEntries(Object.entries(e.passRace)
+            .filter(([key, value]) => !/Id$/.test(key) && (value === null || ['number', 'boolean', 'string'].includes(typeof value)))) : null;
           if (e.reason === 'switch-congested-side') { pending.switch = true; counts.switches++; }
         }
       } else if (e.type === 'pass-resolved') terminal(e);
+      else if (e.type === 'v2-aerial-duel') {
+        aerial.contacts.push({ flightType: e.flightType, contested: !!e.contested, sourceTeam: e.sourceTeam,
+          winnerTeam: e.winnerTeamId, opponentGapMetres: e.opponentGapMetres,
+          assignments: aerialRows.map(r => ({ team: r.teamId, id: r.playerId, distance: r.distanceMetres, reachable: r.reachable })) });
+        counts.aerialContacts++;
+        if (e.technique === 'chest-control') counts.chestControls++;
+        if (e.contested) {
+          counts.aerialDuelsContested++; counts[e.winnerTeamId === 'you' ? 'aerialWinsYou' : 'aerialWinsOpp']++;
+          counts[e.winnerTeamId === e.sourceTeam ? 'attackingAerialWins' : 'defendingAerialWins']++;
+        }
+        pendingSecondBall = e.controlled ? null : { time: e.time };
+      }
       else if (e.type === 'v2-box-slot-run') counts.boxSlotRuns++;
-      else if (e.type === 'v2-cross') { /* release is already counted as a pass */ }
-      else if (e.type === 'v2-aerial-contact' && e.outcome !== 'missed') {
+      else if (e.type === 'v2-cross') {
+        counts.openPlayCrosses++; if (pending) pending.openPlay = true;
+        counts[e.kind === 'early' ? 'earlyCrosses' : e.kind === 'byline' ? 'bylineCrosses' : 'cutBacks']++;
+      }
+      else if (e.type === 'v2-aerial-contact' && e.outcome !== 'miss' && e.outcome !== 'missed') {
         if (e.technique === 'header') counts.headers++; else counts.volleys++;
       } else if (e.type === 'header') counts.headers++;
       else if (e.type === 'volley') counts.volleys++;
-      else if (e.type === 'shot' && (e.fromCross || lastCross && lastCross.team === e.team && e.time - lastCross.time <= 5000)) counts.shotsFromCrosses++;
-      else if (e.type === 'ai-take-on-attempt' || e.type === 'ai-skill-selection' && e.defenderId) {
+      else if (e.type === 'shot' && (e.fromCross || crossReceipt && crossReceipt.actorId === e.actorId && crossReceipt.team === e.team && e.time - crossReceipt.time <= 5000)) counts.shotsFromCrosses++;
+      else if (e.type === 'ai-take-on-attempt' || e.type === 'ai-skill-selection' && e.defenderId || e.type === 'skill-utility' && e.engaged && e.cpu) {
         // The retained host executor can emit both selection and attempt for
         // one action. Count the contact episode once; wins are observed below.
         if (!takeOn || takeOn.actorId !== e.actorId || e.time !== takeOn.time) {
           counts.takeOns++; takeOn = { actorId: e.actorId, team: e.team, time: e.time, progress: e.progress, defenderId: e.defenderId };
         }
       }
+      if (e.type === 'ai-take-on-result' && e.outcome === 'defender-eliminated' && takeOn) { counts.takeOnsWon++; takeOn = null; }
+      if (e.type === 'shot' && e.shotType === 'header' || e.type === 'headed-pass' || e.type === 'clearance' && e.method === 'header') counts.headers++;
+      if (e.type === 'shot' && e.shotType === 'volley') counts.volleys++;
       if (['restart', 'half-time', 'full-time', 'goal'].includes(e.type)) {
-        if (touch && !touch.kept) counts.directionalLost++; touch = null; knockOn = null; history.length = 0; carry = null; previousOwner = null; takeOn = null; }
+        if (touch && !touch.kept) counts.directionalLost++; touch = null; knockOn = null; history.length = 0; carry = null; previousOwner = null; takeOn = null; pendingSecondBall = null; }
     },
     possession(owner, live) {
-      if (!live) { carry = null; previousOwner = null; takeOn = null; return; }
+      if (!live) { carry = null; previousOwner = null; takeOn = null; released = false; pendingSecondBall = null; slotKeys.clear(); return; }
       if (!owner) { carry = null; return; }
       if (touch) {
         if (owner.team !== touch.team || owner.time - touch.time > 3500) { if (!touch.kept) counts.directionalLost++; touch = null; }
@@ -105,8 +137,12 @@ export function createCombinationMetrics() {
         }
       }
       if (knockOn && (owner.team !== knockOn.team || owner.time - knockOn.time > 3500)) knockOn = null;
-      if (previousOwner && owner.team !== previousOwner.team) { counts.dispossessions++; takeOn = null; }
-      previousOwner = owner;
+      if (pendingSecondBall) {
+        if (owner.time - pendingSecondBall.time <= 6000) counts[owner.team === 'you' ? 'aerialSecondBallsYou' : 'aerialSecondBallsOpp']++;
+        pendingSecondBall = null;
+      }
+      if (previousOwner && owner.team !== previousOwner.team) { if (!released) counts.dispossessions++; takeOn = null; }
+      previousOwner = owner; released = false;
       if (takeOn && owner.id === takeOn.actorId && owner.time - takeOn.time <= 3500 &&
           owner.progress - takeOn.progress >= 2 / 105 && (takeOn.defenderId && owner.defenders ? owner.defenders[takeOn.defenderId] < -.5 : owner.defenderBehind)) { counts.takeOnsWon++; takeOn = null; }
       if (takeOn && owner.time - takeOn.time > 3500) takeOn = null;
@@ -122,6 +158,22 @@ export function createCombinationMetrics() {
       if (carry.previousBox === false && inBox(owner)) counts.boxEntries++;
       carry.previousProgress = owner.progress; carry.previousBox = inBox(owner);
     },
-    snapshot: () => ({ counts: { ...counts }, byLength, byThird, decisions, skills, carryDirections, receiving })
+    frame(cpu, projection) {
+      aerialRows = (projection?.recoveryAssignments || []).filter(r => r.authority === 'v2-high-ball-contest');
+      for (const row of aerialRows) {
+        aerial.challengerFrames++; if (row.reachable) aerial.reachableFrames++;
+        aerial.flights[row.flightKey] ||= { teams: {}, cover: false };
+        aerial.flights[row.flightKey].teams[row.teamId] = true;
+      }
+      for (const row of projection?.recoveryAssignments || []) if (row.authority === 'v2-high-ball-cover') {
+        aerial.coverFrames++; if (aerial.flights[row.flightKey]) aerial.flights[row.flightKey].cover = true;
+      }
+      const next = new Set(Object.values(cpu).flatMap(team => (team.supportIntents || []).filter(p => p.type.startsWith('box-')).map(p => p.playerId)));
+      for (const key of next) if (!slotKeys.has(key)) counts.boxSlotRuns++;
+      slotKeys = next;
+    },
+    takeOnDefenderId: () => takeOn && takeOn.defenderId,
+    snapshot: () => ({ counts: { ...counts }, byLength, byThird, byDecision, passDiagnostics,
+      decisions, aerial, skills, carryDirections, receiving })
   };
 }

@@ -523,6 +523,7 @@
     const near = opponents.reduce((n, p) => Math.min(n, Math.hypot(p.position.x - player.position.x,
       p.position.y - player.position.y)), Infinity);
     const pressure = clamp((3.5 - near) / 3.5, 0, 1);
+    const cushionDistance=input.cpu ? .18+clamp(speed/9,0,1)*.28 : profile.cushion;
     if (input.combinationTarget && near > 1.8) {
       const target = input.combinationTarget, toward = { x: target.position.x - player.position.x,
         y: target.position.y - player.position.y }, gap = length(toward);
@@ -533,9 +534,12 @@
     // A planned wall pass needs a clean meeting for the immediate release.
     // Use the existing combination rather than forcing a carry first.
     if (input.combination) return { type: 'cushion', direction: unit(velocity, { x: dir, y: 0 }),
-      touchDistanceM: profile.cushion, active: false };
+      touchDistanceM: cushionDistance, active: false };
     if (near < 2.4) return { type: speed < 1.4 ? 'trap' : 'cushion', direction: unit(velocity, { x: dir, y: 0 }),
-      touchDistanceM: profile.cushion * (1 - pressure * .25), active: false };
+      touchDistanceM: input.cpu?cushionDistance:profile.cushion * (1 - pressure * .25), active: false };
+    // CPU open-space touches use the human free-roll/stride ladder after
+    // this physical reception. No parallel 0.6-1.2 m CPU nudge model.
+    if(input.cpu)return {type:'cushion',direction:unit(velocity,{x:dir,y:0}),touchDistanceM:cushionDistance,active:false};
     const options = [0, -.8, .8].map(side => {
       const direction = unit({ x: dir, y: side });
       const facing = unit(player.facing || velocity, { x: dir, y: 0 });
@@ -564,7 +568,7 @@
         score: clearance - Math.abs(side) * .05, inside };
     }).filter(p => p.inside && p.margin > .12).sort((a, b) => b.score - a.score);
     if (!options.length) return { type: 'cushion', direction: unit(velocity, { x: dir, y: 0 }),
-      touchDistanceM: profile.cushion, active: false };
+      touchDistanceM: cushionDistance, active: false };
     return { type: 'directional-touch', direction: options[0].direction, touchDistanceM: options[0].touchDistanceM, active: true };
   }
 

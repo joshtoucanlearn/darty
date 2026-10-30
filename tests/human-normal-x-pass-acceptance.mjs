@@ -121,6 +121,7 @@ function executeNormalX({ power, direction = { x: 1, y: 0 }, teammates = [], pas
     liveV2PendingLaunch: null,
     liveV2LaunchSerial: 0,
     liveV2CpuOffsideTiming: null,
+    offsidePositionAtKick: () => null,
     clockFrames: 1000,
     recordPass: () => {},
     logEvent: (kind, eventTeam, actor, details) => logs.push({ kind, team: eventTeam, actor, details }),

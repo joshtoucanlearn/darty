@@ -57,7 +57,11 @@ test('production host: same seed gives identical first 300 frames and 300 live f
   assert.equal(JSON.stringify(a.dartyCapture.events()),JSON.stringify(b.dartyCapture.events()));
   assert.equal(a.dartyCapture.time(),b.dartyCapture.time());
   assert.equal(a.FLMatch.getState().ball.x,b.FLMatch.getState().ball.x);
-  assert.ok(a.dartyCapture.events().filter(e=>e.type==='pass').length>2);
+  // A genuine carry/cross/shot sequence is active football too. Requiring
+  // three passes here tied capture determinism to the old circulation tempo.
+  assert.ok(a.dartyCapture.events().some(e=>e.type==='pass'));
+  assert.ok(a.dartyCapture.events().some(e=>['shot','save','goal'].includes(e.type)),
+    'the live sequence reaches an attacking outcome');
   assert.throws(()=>a.dartyCapture.step(.5),/integer/);
   const detached=a.dartyCapture.events();detached[0].camera.mode='changed';
   assert.notEqual(a.dartyCapture.events()[0].camera.mode,'changed');
