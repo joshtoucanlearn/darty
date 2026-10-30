@@ -238,7 +238,7 @@
       "path": "match-engine/match.html",
       "purpose": "V2-only playable host with exact three-workflow fail-closed preflight",
       "baselineSha256": "8380734db3a142293c5bca2a22f6b6cc9e6a0fa658f9f0c26cce8ad1801cf678",
-      "candidateSha256": "951c8d1ce51bcbe76dc6f3508363235026eea34dffb93b517c0b207e4fd61a8b",
+      "candidateSha256": "2f62ec5f7b02fe8385be55c7ae5df20ff1f0c685d0bccad4ce2d9e74949b339b",
       "pinState": "frozen",
       "expectedRelation": "authoritative-v2-only-three-workflow-host-plus-nonplayable-compatibility-scaffold"
     },
@@ -423,7 +423,7 @@
       "path": "match-engine/cpu-intelligence-v2.js",
       "purpose": "deterministic FL V2 player and team decision authority",
       "baselineAbsent": true,
-      "candidateSha256": "7e98b2cde90cb67f0fc7f3a2a33dcbd110a1232f25878f31b1020987ed8f06cd",
+      "candidateSha256": "a44ab4ef20f1a83d8fa472d0924922c497f8916819da36b4a7d2709b96d4ebbb",
       "authorityScope": ["single-player-quick-play", "cpu-versus-cpu", "v2-shadow"]
     },
     {
@@ -500,7 +500,7 @@
       "path": "match-engine/live-v2-authority-adapter.js",
       "purpose": "outer offline normal-match gameplay transaction with rollback and host-level strict-stop enforcement",
       "baselineAbsent": true,
-      "candidateSha256": "859902e59682ba7ef8b9c2fe4af0ebc40dba1757c8d7e2f890f339cfa9f8797d",
+      "candidateSha256": "d6550e984dd3ee813fe3f9533b7d96c6b55bc1982f676deacca070696d2fc3a2",
       "pinState": "frozen",
       "authorityScope": ["single-player-quick-play", "cpu-versus-cpu"]
     },

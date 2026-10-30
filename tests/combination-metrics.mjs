@@ -39,6 +39,12 @@ test('dispossessions exclude interceptions of a released pass and box slots coun
   m.event({type:'pass',team:'opp',actorId:'d',targetId:'e',time:200,progress:.5,distanceMetres:8});
   m.possession(null,true);m.event({type:'pass-resolved',completed:false});m.possession(owner,true);
   assert.equal(m.snapshot().counts.dispossessions,1);
+  for(const type of ['shot','headed-pass','clearance']){
+    m.possession(null,false);m.possession(owner,true);
+    m.event({type,team:'you',actorId:'a',time:220});m.possession(null,true);
+    m.possession({id:'d',team:'opp',progress:.5,y:34,time:300},true);
+    assert.equal(m.snapshot().counts.dispossessions,1,`${type} is an intentional release, not a carry dispossession`);
+  }
   m.frame({you:{supportIntents:[{playerId:'a',type:'box-near-post'},{playerId:'b',type:'box-far-post'}]}});
   m.frame({you:{supportIntents:[{playerId:'a',type:'box-penalty-spot'},{playerId:'b',type:'box-far-post'}]}});
   assert.equal(m.snapshot().counts.boxSlotRuns,2);

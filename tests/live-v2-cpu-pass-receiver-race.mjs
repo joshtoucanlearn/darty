@@ -1261,8 +1261,8 @@ test('every high-ball flight type admits both teams to a rated physical aerial c
 });
 test('high-ball movement sends one reachable challenger per team and drops defensive cover behind the landing point',()=>{
   const target={x:60,y:0},fixture=snapshotFixture({receiver:{x:55,y:0},target});
-  Object.assign(fixture.snapshot.players.find(p=>p.id==='opp-LCB'),worldPoint({x:65,y:0}));
-  Object.assign(fixture.snapshot.players.find(p=>p.id==='opp-RCB'),worldPoint({x:72,y:8}));
+  Object.assign(fixture.snapshot.players.find(p=>p.id==='opp-LCB'),worldPoint({x:65,y:0}),{fx:1,fy:0});
+  Object.assign(fixture.snapshot.players.find(p=>p.id==='opp-RCB'),worldPoint({x:72,y:8}),{fx:1,fy:0});
   const origin=worldPoint(target);
   fixture.snapshot.ball={...fixture.snapshot.ball,...origin,z:8*UNITS.zPerMetre,vz:0,ownerId:null,targetId:null,
     lastKickerId:OWNER_ID,lastKickerTeamId:'you',flightType:'long-pass',launchIntent:{sequence:'landing-cover',sourcePlayerId:OWNER_ID,sourceTeamId:'you',
@@ -1275,7 +1275,17 @@ test('high-ball movement sends one reachable challenger per team and drops defen
   assert.ok(cover.target.x>=challengers.find(p=>p.teamId==='opp').target.x+5.5);
   const saved=live.exportState(),resumed=attachment('cpu-v-cpu',target);assert.equal(resumed.restoreState(saved),true);
   const next=advanceFlightSnapshot(fixture.snapshot,frame);
-  assert.deepEqual(runTick(resumed,next).hostProjection,runTick(live,next).hostProjection);
+  const nextFrame=runTick(live,next);
+  assert.deepEqual(runTick(resumed,next).hostProjection,nextFrame.hostProjection);
+  const invalid=structuredClone(saved);
+  invalid.domain.aerialFlight.trajectory[0].x='invalid';
+  assert.equal(attachment('cpu-v-cpu',target).restoreState(withValidChecksum(invalid)),false);
+  let moving=advanceFlightSnapshot(next,nextFrame);
+  for(let i=0;i<40;i++)moving=advanceFlightSnapshot(moving,runTick(live,moving));
+  assert.ok(moving.players.find(p=>p.id==='opp-LCB').x<worldPoint({x:65,y:0}).x,
+    'the challenger actually travels toward the landing trajectory');
+  assert.ok(moving.players.find(p=>p.id==='opp-RCB').x>worldPoint({x:72,y:8}).x,
+    'the covering defender actually drops behind rather than only publishing a target');
 });
 
 test('an attacker who meets an opposing clearance near goal may finish instead of automatically clearing it',()=>{
@@ -1318,4 +1328,27 @@ test('an unpressured high-ball receiver can wait for a rated chest absorption in
     if(chestFound)break;
   }
   assert.ok(chestFound,'a reachable, unpressured long ball should admit chest control');
+});
+
+test('a physically staggered defender brakes until the skill/contact stagger expires',()=>{
+  const held=snapshotFixture({interceptor:{x:65,y:0}}),free=structuredClone(held);
+  held.snapshot.players.find(p=>p.id==='opp-LCB').stunTicks=10;
+  const heldLive=attachment('cpu-v-cpu',held.target),freeLive=attachment('cpu-v-cpu',free.target);
+  runTick(heldLive,held.snapshot);runTick(freeLive,free.snapshot);
+  assert.equal(heldLive.exportState().domain.world.players.find(p=>p.id==='opp-LCB').control.mode,'idle');
+  assert.notEqual(freeLive.exportState().domain.world.players.find(p=>p.id==='opp-LCB').control.mode,'idle');
+});
+
+test('pass races account for a reachable headed interception above foot reception height',()=>{
+  let headedInterception=false;
+  for(const x of [58,59,60,61,62,63,64]){
+    const fixture=snapshotFixture({receiver:{x:65,y:0},target:{x:65,y:0},interceptor:{x,y:0}});
+    Object.assign(fixture.snapshot.players.find(p=>p.id==='opp-LCB').attrs,{pace:1,acceleration:1,accel:1,agility:99,jumping:99});
+    const frame=runTick(attachment('cpu-v-cpu',fixture.target),fixture.snapshot);
+    const intent=frame.hostProjection.intelligence.find(p=>p.playerId===OWNER_ID),race=intent.rejectedPassRace||intent.passRace;
+    if(race?.opponentContactHeightMetres>1.45){
+      assert.equal(race.accepted,false);assert.equal(race.opponentId,'opp-LCB');headedInterception=true;break;
+    }
+  }
+  assert.ok(headedInterception,'a defender under the lofted trajectory can head it before its foot-height arrival');
 });

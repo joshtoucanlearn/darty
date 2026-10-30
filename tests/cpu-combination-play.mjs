@@ -83,14 +83,16 @@ test('wide final-third carriers choose early crosses, byline service and cutback
     Object.assign(state.players[1], { position: 'ST', x: kind === 'byline' ? 97 : 94, y: 34 });
     Object.assign(state.players[2], { position: 'ST', x: 93, y: 41 });
     state.players.push({ ...state.players[1], id: 'spot', position: 'AM', x: 91, y: 30 },
-      { ...state.players[1], id: 'edge', position: 'CM', x: 87, y: 43 });
-    if(x===80)Object.assign(state.players.at(-3),{x:82,y:7});
+      { ...state.players[1], id: 'edge', position: 'CM', x: 87, y: 43 },
+      { ...state.players[1], id: 'outlet', position: 'CM', x: 78, y: 20, formationAnchor: { x: 78, y: 20 } });
+    if(x===80)Object.assign(state.players.find(p=>p.teamId==='opp'),{x:82,y:7});
     state.offsideLine = 103; state.ball = { x, y: 7 };
     const decision = CPU.decide(state,null,{maximumCommittedRuns:0});
     const slots = decision.supportIntents.filter(p => p.type.startsWith('box-'));
     assert.equal(slots.length, 4);
     assert.equal(new Set(slots.map(p => p.playerId)).size, 4);
     assert.equal(new Set(slots.map(p => p.slot)).size, 4);
+    assert.ok(decision.supportIntents.some(p => p.type === 'return-outlet'), 'box occupation preserves the short return outlet');
     assert.equal(decision.carrierIntent.type, 'cross', JSON.stringify(decision.carrierIntent));
     assert.equal(decision.carrierIntent.crossKind, kind);
     assert.ok(['cross', 'low-cross'].includes(decision.carrierIntent.flightType));
@@ -113,6 +115,7 @@ test('switches need near-side congestion and a genuinely distant far-side outlet
 test('box runners continue through service, retain rest defenders and exclude sent-off players', () => {
   const state = fixture(); Object.assign(state, { carrierId: null, inFlight: true, intendedReceiverId: 'link', flightType: 'cross' });
   state.ball = { x: 89, y: 10 }; state.players[2].sentOff = true;
+  state.players.push({...state.players[1],id:'service-runner',position:'ST',x:90,y:30,formationAnchor:{x:90,y:30}});
   const decision = CPU.decide(state);
   const slots = decision.supportIntents.filter(p => p.type.startsWith('box-'));
   assert.ok(slots.length);
@@ -149,4 +152,52 @@ test('wide carriers can keep width on a real drive and then deliver from the byl
   driver.tick=2;driver.players[0].x=96;driver.ball.x=96;
   const delivery=CPU.decide(driver).carrierIntent;
   assert.equal(delivery.type,'cross');assert.ok(['byline','cut-back'].includes(delivery.crossKind));
+});
+
+test('wide box occupation preserves the passer return run and third-man layoff',()=>{
+  const first=CPU.decide(fixture()),state=fixture(2);
+  Object.assign(state,{carrierId:null,inFlight:true,intendedReceiverId:'link'});
+  Object.assign(state.players[0],{x:74,y:12});Object.assign(state.players[2],{x:77,y:25});
+  Object.assign(state.players[1],{x:82,y:7});state.ball={x:78,y:7};
+  const decision=CPU.decide(state,first.memory);
+  assert.ok(decision.supportIntents.some(p=>p.playerId==='origin'&&p.type==='give-and-go'));
+  assert.ok(decision.supportIntents.some(p=>p.playerId==='third'&&p.type==='third-man'));
+  assert.ok(!decision.supportIntents.some(p=>p.type.startsWith('box-')&&['origin','third','link'].includes(p.playerId)));
+  Object.assign(state,{tick:3,carrierId:'link',inFlight:false});
+  Object.assign(state.players[0],{x:84,y:12});Object.assign(state.players[2],{x:86,y:23});
+  const receipt=CPU.decide(state,decision.memory);
+  assert.ok(['give-and-go-return','third-man-layoff'].includes(receipt.carrierIntent.reason),
+    'a wide receiver completes a valid combination before starting a new cross/drive');
+});
+
+test('V2 selects real escape space for take-ons and ratings scale selection without disabling low ratings',()=>{
+  const sample=(id,rating,lowChallenge=false,gap=2.7)=>{
+    const state=fixture();state.carrierId=id;Object.assign(state.players[0],{id,position:'RW',x:60,y:34,control:rating,awareness:rating});
+    state.players=state.players.filter(p=>!['link','third'].includes(p.id));
+    Object.assign(state.players.at(-1),{x:60+gap,y:34,lowChallenge});state.ball={x:60,y:34};
+    return CPU.decide(state,null,{maximumCommittedRuns:0}).carrierIntent;
+  };
+  let low=0,high=0;const skills=new Set();
+  for(let i=0;i<96;i++){
+    const a=sample('escape-'+i,15),b=sample('escape-'+i,95);
+    if(a.skillIntent)low++;
+    if(b.skillIntent){high++;skills.add(b.skillIntent.skill);assert.ok(b.target.x>60);assert.ok(Math.abs(b.target.y-34)>2);}
+    for(const action of [sample('escape-'+i,95,true),sample('escape-'+i,95,false,2.2)])if(action.skillIntent)skills.add(action.skillIntent.skill);
+  }
+  assert.ok(low>0);assert.ok(high>low);
+  assert.deepEqual([...skills].sort(),['fake-shot','flick-up','roulette','stepover']);
+  const state=fixture();state.players[0].skillExitTarget={x:58,y:33};
+  assert.equal(CPU.decide(state).carrierIntent.reason,'finish-physical-skill-exit');
+});
+
+test('an open shot retains Stage A priority over an available combination or new cross',()=>{
+  const first=CPU.decide(fixture()),flight=fixture(2);
+  Object.assign(flight,{carrierId:null,inFlight:true,intendedReceiverId:'link'});
+  const linked=CPU.decide(flight,first.memory),receipt=fixture(3);
+  receipt.carrierId='link';Object.assign(receipt.players[1],{x:93,y:34,shooting:90});
+  Object.assign(receipt.players[0],{x:95,y:25});Object.assign(receipt.players[2],{x:95,y:42});
+  const decision=CPU.decide(receipt,linked.memory);
+  assert.ok(decision.memory.combination.move,'the alternative combination is still active');
+  assert.equal(decision.carrierIntent.type,'shot');
+  assert.equal(decision.carrierIntent.reason,'goal-range-and-shot-lane-open');
 });

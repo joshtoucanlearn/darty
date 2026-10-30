@@ -5,6 +5,8 @@ export function createCombinationMetrics() {
     takeOns: 0, takeOnsWon: 0, progressiveCarries: 0, dispossessions: 0, finalThirdEntries: 0, boxSlotRuns: 0, aerialContacts: 0, aerialDuelsContested: 0, aerialWinsYou: 0, aerialWinsOpp: 0,
     attackingAerialWins: 0, defendingAerialWins: 0, chestControls: 0, aerialSecondBallsYou: 0, aerialSecondBallsOpp: 0 };
   const byLength = {}, byThird = {}, decisions = {}, history = [];
+  const aerial = { challengerFrames: 0, reachableFrames: 0, coverFrames: 0, flights: {}, contacts: [] };
+  let aerialRows = [];
   let pending = null, carry = null, previousOwner = null, lastCross = null, crossReceipt = null, takeOn = null, released = false, pendingSecondBall = null, slotKeys = new Set();
   const bucket = (map, key) => map[key] ||= { attempted: 0, completed: 0 };
   const inBox = p => p.progress >= 1 - 16.5 / 105 && Math.abs(p.y - 34) <= 20.16;
@@ -33,6 +35,7 @@ export function createCombinationMetrics() {
   }
   return {
     event(e) {
+      if (['shot', 'headed-pass', 'clearance'].includes(e.type)) released = true;
       if (e.type === 'pass') {
         released = true;
         if (crossReceipt && crossReceipt.actorId === e.actorId) crossReceipt = null;
@@ -52,6 +55,9 @@ export function createCombinationMetrics() {
         }
       } else if (e.type === 'pass-resolved') terminal(e);
       else if (e.type === 'v2-aerial-duel') {
+        aerial.contacts.push({ flightType: e.flightType, contested: !!e.contested, sourceTeam: e.sourceTeam,
+          winnerTeam: e.winnerTeamId, opponentGapMetres: e.opponentGapMetres,
+          assignments: aerialRows.map(r => ({ team: r.teamId, id: r.playerId, distance: r.distanceMetres, reachable: r.reachable })) });
         counts.aerialContacts++;
         if (e.technique === 'chest-control') counts.chestControls++;
         if (e.contested) {
@@ -72,7 +78,7 @@ export function createCombinationMetrics() {
       else if (e.type === 'shot' && (e.fromCross || crossReceipt && crossReceipt.actorId === e.actorId && crossReceipt.team === e.team && e.time - crossReceipt.time <= 5000)) counts.shotsFromCrosses++;
       else if (e.type === 'ai-take-on-attempt' || e.type === 'skill-utility' && e.engaged && e.cpu) {
         counts.takeOns++; takeOn = { actorId: e.actorId, team: e.team, defenderId: e.defenderId, time: e.time, progress: e.progress };
-      } else if (e.type === 'ai-take-on-result' && e.outcome === 'defender-eliminated') counts.takeOnsWon++;
+      } else if (e.type === 'ai-take-on-result' && e.outcome === 'defender-eliminated') { counts.takeOnsWon++; takeOn = null; }
       if (e.type === 'shot' && e.shotType === 'header' || e.type === 'headed-pass' || e.type === 'clearance' && e.method === 'header') counts.headers++;
       if (e.type === 'shot' && e.shotType === 'volley') counts.volleys++;
       if (['restart', 'half-time', 'full-time', 'goal'].includes(e.type)) { history.length = 0; carry = null; previousOwner = null; takeOn = null; pendingSecondBall = null; }
@@ -95,12 +101,21 @@ export function createCombinationMetrics() {
       if (carry.previousBox === false && inBox(owner)) counts.boxEntries++;
       carry.previousProgress = owner.progress; carry.previousBox = inBox(owner);
     },
-    frame(cpu) {
+    frame(cpu, projection) {
+      aerialRows = (projection?.recoveryAssignments || []).filter(r => r.authority === 'v2-high-ball-contest');
+      for (const row of aerialRows) {
+        aerial.challengerFrames++; if (row.reachable) aerial.reachableFrames++;
+        aerial.flights[row.flightKey] ||= { teams: {}, cover: false };
+        aerial.flights[row.flightKey].teams[row.teamId] = true;
+      }
+      for (const row of projection?.recoveryAssignments || []) if (row.authority === 'v2-high-ball-cover') {
+        aerial.coverFrames++; if (aerial.flights[row.flightKey]) aerial.flights[row.flightKey].cover = true;
+      }
       const next = new Set(Object.values(cpu).flatMap(team => (team.supportIntents || []).filter(p => p.type.startsWith('box-')).map(p => p.playerId)));
       for (const key of next) if (!slotKeys.has(key)) counts.boxSlotRuns++;
       slotKeys = next;
     },
     takeOnDefenderId: () => takeOn && takeOn.defenderId,
-    snapshot: () => ({ counts: { ...counts }, byLength, byThird, decisions })
+    snapshot: () => ({ counts: { ...counts }, byLength, byThird, decisions, aerial })
   };
 }

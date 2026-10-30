@@ -137,6 +137,7 @@ export function createHeadlessMatch(inputUrl, { seed, minutes, passRace = true, 
       if(event){const actor=args[2],target=event.targetId&&[...you,...opp].find(p=>p.id===event.targetId),progress=attackDirection(event.team)===1?(ball.x-M)/(W-2*M):1-(ball.x-M)/(W-2*M);
         __actions.event({...event,actorId:actor&&actor.id,time:performance.now(),progress,inBox:progress>=1-16.5/105&&Math.abs(ball.y*68/H-34)<=20.16,
           cpu:!!actor&&!teamHasHumanController(actor.team),nearestDefender:actor&&teamList(other(actor.team)).some(p=>!p.sentOff&&!p.isGK&&D(p,actor)<120),
+          opponentGapMetres:actor?Math.min(...teamList(other(actor.team)).filter(p=>!p.sentOff&&!p.isGK).map(p=>Math.hypot((p.x-ball.x)*105/(W-2*M),(p.y-ball.y)*68/H))):null,
           distanceMetres:target?Math.hypot((Number(event.intendedX||target.x)-ball.x)*105/(W-2*M),(Number(event.intendedY||target.y)-ball.y)*68/H):null});}
       if(event&&(event.type==='pass'||event.type==='pass-resolved'))__cohesion.event({...event,
         progress:attackDirection(event.team)===1?(ball.x-M)/(W-2*M):1-(ball.x-M)/(W-2*M)});};
@@ -193,7 +194,7 @@ export function createHeadlessMatch(inputUrl, { seed, minutes, passRace = true, 
         halfTime:report.events.some(e=>e.type==='half-time'),fullTime:report.events.some(e=>e.type==='full-time')})
     };
   `;
-  execute(html.slice(start, end).replace('liveV2Tick=nextTick;', '__actions.frame(frame.cpu);liveV2Tick=nextTick;').replace('  setCameraMode(cameraMode,false);', bridge + '\n  setCameraMode(cameraMode,false);'), 'match-host.js');
+  execute(html.slice(start, end).replace('liveV2Tick=nextTick;', '__actions.frame(frame.cpu,frame.hostProjection);liveV2Tick=nextTick;').replace('  setCameraMode(cameraMode,false);', bridge + '\n  setCameraMode(cameraMode,false);'), 'match-host.js');
   clock.advance(200); // The host's existing 180 ms automatic start.
   return {
     keeperTrace: () => context.__headless.keeperTrace(),
