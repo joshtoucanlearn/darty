@@ -60,24 +60,12 @@
     minimumControlIntensity: 0.16,
     minimumCarrierSpeed: 0.55,
     captureRadiusMin: 0.58,
-    captureRadiusMax: 0.82,
+    captureRadiusMax: 1.0,
     heavySeparationMin: 1.35,
     heavySeparationMax: 2.15,
     turnoverMargin: 0.06
   });
-  const TOUCH_CADENCE_BASE_TICKS = deepFreeze({
-    walk: 33,
-    jog: 31,
-    run: 28,
-    sprint: 24
-  });
   const TOUCH_CADENCE_PHASE_TICKS = Object.freeze([-1, 1, 0, 2, -2]);
-  const TOUCH_DISTANCE_MULTIPLIER = deepFreeze({
-    walk: 0.72,
-    jog: 0.86,
-    run: 1,
-    sprint: 1.08
-  });
 
   if (!Ball || Ball.VERSION !== '2.0.0-shadow' ||
       Ball.STATE_SCHEMA !== 'football-legacy-ball-v2-state' ||
@@ -151,14 +139,6 @@
       hash = Math.imul(hash, 16777619);
     }
     return (hash >>> 0) || 0x9e3779b9;
-  }
-
-  function random01(seed, salt) {
-    let value = (Number(seed) >>> 0) ^ stableHash(salt);
-    value ^= value << 13;
-    value ^= value >>> 17;
-    value ^= value << 5;
-    return (value >>> 0) / 4294967296;
   }
 
   function canonical(value) {
@@ -521,8 +501,74 @@
     });
   }
 
+  // Shared ordinary dribbling: pace opens the touch and control keeps it
+  // economical. Receiving parameters below are for CPU choices; accepted
+  // human receiving intents pass through unchanged.
+  function touchProfile(input) {
+    const speed = clamp(finite(input.speed, 0), 0, 12), control = clamp(finite(input.control, 70), 1, 99) / 99;
+    const agility = clamp(finite(input.agility, 70), 1, 99) / 99;
+    const pressure = clamp(finite(input.pressure, 0), 0, 1), turn = clamp(finite(input.turn, 0), 0, 1);
+    const sprint = input.sprint === true;
+    const distance = clamp((.38 + speed * .085 + (1 - control) * (.25 + speed * .05) +
+      pressure * .10) * (sprint ? 1.22 : 1) * (1 - turn * .35), .35, 1.85);
+    return { distance, cadence: Math.round(clamp(34 - speed * 1.15 - control * 3 - turn * agility * 4, 19, 34)),
+      cushion: clamp(.18 + speed * .035 + (1 - control) * .10, .18, .46),
+      directional: clamp(.6 + speed * .045 + (1 - control) * .20, .6, 1.2) };
+  }
+
+  function receivingIntent(input) {
+    const player = input.player, opponents = input.opponents || [], dir = input.attackingDirection || 1;
+    const velocity = player.velocity || { x: 0, y: 0 }, speed = length(velocity);
+    const attrs = player.attributes || {}, profile = touchProfile({ speed, control: attrs.control, agility: attrs.agility });
+    const near = opponents.reduce((n, p) => Math.min(n, Math.hypot(p.position.x - player.position.x,
+      p.position.y - player.position.y)), Infinity);
+    const pressure = clamp((3.5 - near) / 3.5, 0, 1);
+    if (input.combinationTarget && near > 1.8) {
+      const target = input.combinationTarget, toward = { x: target.position.x - player.position.x,
+        y: target.position.y - player.position.y }, gap = length(toward);
+      if (gap >= 2 && gap <= 5.5 && near > 4 && opponents.every(p => Math.hypot(p.position.x - target.position.x, p.position.y - target.position.y) > 2.4)) return { type: 'layoff', direction: unit(toward),
+        touchDistanceM: clamp(gap * (.85 + (1 - clamp(finite(attrs.control, 70), 1, 99) / 99) * .25), 1, 4),
+        active: true, targetPlayerId: target.id };
+    }
+    // A planned wall pass needs a clean meeting for the immediate release.
+    // Use the existing combination rather than forcing a carry first.
+    if (input.combination) return { type: 'cushion', direction: unit(velocity, { x: dir, y: 0 }),
+      touchDistanceM: profile.cushion, active: false };
+    if (near < 2.4) return { type: speed < 1.4 ? 'trap' : 'cushion', direction: unit(velocity, { x: dir, y: 0 }),
+      touchDistanceM: profile.cushion * (1 - pressure * .25), active: false };
+    const options = [0, -.8, .8].map(side => {
+      const direction = unit({ x: dir, y: side });
+      const facing = unit(player.facing || velocity, { x: dir, y: 0 });
+      const longTouch = near >= 7 && dot(facing, direction) >= .9;
+      const touchDistanceM = longTouch ? clamp(1.5 + speed * .045 + (1 - clamp(finite(attrs.control, 70), 1, 99) / 99) * .12, 1.5, 2) : profile.directional;
+      const target = { x: player.position.x + direction.x * touchDistanceM,
+        y: player.position.y + direction.y * touchDistanceM };
+      const clearance = opponents.reduce((n, p) => Math.min(n, Math.hypot(target.x - p.position.x,
+        target.y - p.position.y)), 12);
+      const agility = clamp(finite(attrs.agility, 70), 1, 99) / 99;
+      const control = clamp(finite(attrs.control, 70), 1, 99) / 99;
+      const turn = (1 - dot(facing, direction)) * .5;
+      const receiverEta = .34 + touchDistanceM / (2.8 + speed * .45 + agility * 1.4) +
+        turn * (.20 - agility * .08) + (1 - control) * .10;
+      const opponentEta = opponents.reduce((eta, p) => {
+        const delta = { x: target.x - p.position.x, y: target.y - p.position.y }, gap = length(delta);
+        const toward = unit(delta), v = p.velocity || { x: 0, y: 0 };
+        const pace = 5.2 + clamp(finite(p.attributes && p.attributes.pace, 70), 1, 99) / 99 * 2.4;
+        const closing = dot(v, toward);
+        return Math.min(eta, gap / Math.max(2, pace * .75 + Math.max(0, closing) * .25) + Math.max(0, -closing) * .06);
+      }, 10);
+      const bounds = input.bounds || { xMin: 0, xMax: 105, yMin: -34, yMax: 34 };
+      const inside = target.x >= bounds.xMin + .4 && target.x <= bounds.xMax - .4 &&
+        target.y >= bounds.yMin + .4 && target.y <= bounds.yMax - .4;
+      return { direction, touchDistanceM, clearance, margin: opponentEta - receiverEta,
+        score: clearance - Math.abs(side) * .05, inside };
+    }).filter(p => p.inside && p.margin > .12).sort((a, b) => b.score - a.score);
+    if (!options.length) return { type: 'cushion', direction: unit(velocity, { x: dir, y: 0 }),
+      touchDistanceM: profile.cushion, active: false };
+    return { type: 'directional-touch', direction: options[0].direction, touchDistanceM: options[0].touchDistanceM, active: true };
+  }
+
   function touchCadenceTicks(request, carrier, quality, sequence) {
-    const mode = carryMode(request, carrier);
     const desired = carrier ? carrierDirection(request, carrier, quality) : { x: 1, y: 0 };
     const turn = turnSeverity(request, carrier, desired);
     const pressure = carrier ? pressureAt(request, carrier).score : 0;
@@ -532,8 +578,8 @@
     // stops a steady carry becoming another metronome. Pressure and a changed
     // exit shorten the next meeting without making elite control synonymous
     // with frantic extra contacts.
-    return Math.round(clamp(TOUCH_CADENCE_BASE_TICKS[mode] + cadencePhase - turn * 3 - pressure * 2 +
-      (quality.score - 0.7) * 2, CONFIG.minimumTouchCadenceTicks, CONFIG.maximumTouchCadenceTicks));
+    return Math.round(clamp(touchProfile({ speed: carrier ? length(carrier.velocity) : 0, control: quality.control,
+      agility: quality.agility, turn, pressure }).cadence + cadencePhase, CONFIG.minimumTouchCadenceTicks, CONFIG.maximumTouchCadenceTicks));
   }
 
   function releaseTouch(request, state, carrier) {
@@ -542,15 +588,16 @@
     const intended = carrierDirection(request, carrier, quality);
     const sequence = state.touchSequence + 1;
     const foot = selectFoot(sequence, facing, intended), contact = touchContact(facing, intended);
-    const randomError = random01(request.seed, [request.epoch, request.tick, carrier.id, sequence, 'touch-error'].join('|')) * 2 - 1;
-    const errorMagnitude = randomError * ((1 - quality.score) * 0.18 + pressure.score * 0.11 + profile.error);
+    const carrierSpeed = length(carrier.velocity), mode = carryMode(request, carrier);
+    const turn = turnSeverity(request, carrier, intended);
+    const profileTouch = touchProfile({ speed: carrierSpeed, control: quality.control, agility: quality.agility,
+      pressure: pressure.score, turn, sprint: mode === 'sprint' });
     const perpendicular = { x: -intended.y, y: intended.x };
-    const direction = unit({ x: intended.x + perpendicular.x * errorMagnitude, y: intended.y + perpendicular.y * errorMagnitude }, intended);
-    const carrierSpeed = length(carrier.velocity), intensity = request.carrierInput.intensity || clamp(carrierSpeed / 7.2, 0, 1);
-    const mode = carryMode(request, carrier), turn = turnSeverity(request, carrier, intended);
-    const targetSeparation = clamp((0.56 + carrierSpeed * 0.055 + intensity * 0.25 +
-      (1 - quality.score) * 0.34 + pressure.score * 0.18) * profile.distanceMultiplier *
-      TOUCH_DISTANCE_MULTIPLIER[mode] * (1 - turn * 0.3), 0.44, 1.48);
+    const overrun = dot(carrier.velocity, perpendicular) / Math.max(1, carrierSpeed);
+    const errorMagnitude = overrun * (1 - quality.score) * (.16 + carrierSpeed * .018);
+    const direction = unit({ x: intended.x + perpendicular.x * errorMagnitude,
+      y: intended.y + perpendicular.y * errorMagnitude }, intended);
+    const targetSeparation = profileTouch.distance * profile.distanceMultiplier;
     const leaseTicks = Math.round(clamp(10 + targetSeparation * 3 + (1 - quality.score) * 2 +
       pressure.score * 2 + profile.leaseTicks, CONFIG.minimumLeaseTicks, CONFIG.maximumLeaseTicks));
     // Match footage and the strict-V2 playtest both require readable carries,
@@ -568,7 +615,7 @@
     const additionalSpeed = (1.15 + targetSeparation * 0.92 + pressure.score * 0.45 +
       (1 - quality.score) * 0.35) * profile.speedMultiplier;
     const carrierAlongExit = dot(carrier.velocity, direction);
-    const retainedAlong = Math.max(0, carrierAlongExit) * (0.86 - turn * 0.18);
+    const retainedAlong = Math.max(0, carrierAlongExit) * (1 - turn * 0.18);
     const lateralVelocity = {
       x: carrier.velocity.x - direction.x * carrierAlongExit,
       y: carrier.velocity.y - direction.y * carrierAlongExit
@@ -602,7 +649,7 @@
       lastContact: {
         colliderId: 'dribble-boot:' + carrier.id + ':' + foot,
         materialId: 'boot',
-        normal: { x: -direction.x, y: -direction.y, z: 0 },
+        normal: { x: -direction.x || 0, y: -direction.y || 0, z: 0 },
         normalSpeed: Math.max(0, additionalSpeed),
         outerTick: request.tick,
         substepCount: 0
@@ -889,8 +936,13 @@
       }
 
       const opponent = nearestOpponentToBall(request, carrier.id, ballState.position);
-      const captureRadius = clamp(CONFIG.captureRadiusMin + quality.score * 0.18 - pressure.score * 0.04,
+      const captureRadius = clamp(CONFIG.captureRadiusMin + quality.score * 0.18 + length(carrier.velocity) * .028 - pressure.score * 0.04,
         CONFIG.captureRadiusMin, CONFIG.captureRadiusMax);
+      // A sprint stride reaches farther and meets its pushed ball later.
+      // An explicit release keeps the earliest physical meeting, so a pass
+      // or shot input does not wait for the decorative stride to finish.
+      const meetingTicks = state.bufferedAction ? CONFIG.minimumSeparatedTicks :
+        Math.round(CONFIG.minimumSeparatedTicks + clamp(length(carrier.velocity) / 8, 0, 1) * 4);
       const heavyThreshold = clamp(CONFIG.heavySeparationMin + quality.score * 0.7 - pressure.score * 0.2,
         CONFIG.heavySeparationMin, CONFIG.heavySeparationMax);
       const opponentCaptureRadius = opponent
@@ -903,7 +955,7 @@
       } else if (request.carrierInput.shield && separation <= captureRadius + 0.12) {
         ballState = controlledBall(request, carrier, state, 'shield');
         state = terminalState(request, state, PHASES.SHIELD, carrier.id, 'shield', false);
-      } else if (request.tick - state.touchTick >= CONFIG.minimumSeparatedTicks && separation <= captureRadius) {
+      } else if (request.tick - state.touchTick >= meetingTicks && separation <= captureRadius) {
         ballState = controlledBall(request, carrier, state, 'resecure');
         releasedAction = state.bufferedAction && request.tick <= state.bufferedAction.expiresTick
           ? clone(state.bufferedAction) : null;
@@ -931,6 +983,8 @@
     PHASES,
     SURFACE_PROFILES,
     CONFIG,
+    touchProfile,
+    receivingIntent,
     createCapability,
     createState,
     serializeState,

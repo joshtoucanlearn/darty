@@ -300,6 +300,8 @@
       passing: clamp(finite(source.passing, source.pass || 70), 1, 99),
       shooting: clamp(finite(source.shooting, source.shoot || 65), 1, 99),
       control: clamp(finite(source.control, 70), 1, 99),
+      agility: clamp(finite(source.agility, source.acceleration || 70), 1, 99),
+      committed: Boolean(source.committed),
       defending: clamp(finite(source.defending, source.defend || 65), 1, 99),
       aggression: clamp(finite(source.aggression, 70), 1, 99),
       strength: clamp(finite(source.strength, 70), 1, 99),
@@ -607,6 +609,15 @@
       validateMemoryMaps(source);
       if (source.defense != null) validateDefenseMemory(source.defense);
       if (source.circulation != null) validateCirculationMemory(source.circulation);
+      if (source.dribble != null) {
+        if (!isRecord(source.dribble)) throw new TypeError('memory.dribble must be an object');
+        for (const key of ['untilTick', 'cooldownUntilTick']) validateMemoryInteger(source.dribble[key], 'dribble.' + key, 0);
+        if (source.dribble.carrierId != null) validateMemoryString(source.dribble.carrierId, 'dribble.carrierId');
+        if (source.dribble.intent != null) {
+          if (!['carry', 'take-on', 'protect'].includes(source.dribble.intent.type)) throw new TypeError('invalid dribble intent');
+          validateMemoryPoint(source.dribble.intent.target, 'dribble.target');
+        }
+      }
       if (source.combination != null) {
         const c = source.combination;
         if (!isRecord(c)) throw new TypeError('memory.combination must be an object');
@@ -643,6 +654,7 @@
       commitments,
       defense,
       circulation,
+      dribble: source.dribble ? cloneObject(source.dribble) : { carrierId: null, intent: null, untilTick: 0, cooldownUntilTick: 0 },
       combination: source.combination ? cloneObject(source.combination) : { lastOwnerId: null, lastOwnerPoint: null, move: null }
     };
   }
@@ -847,19 +859,26 @@
     const safeRelativeSpeed = Math.abs(relativeClosingSpeed) <= config.defensiveMaximumActionRelativeSpeed;
     const ownGoalX = snapshot.attackingDirection > 0 ? snapshot.pitch.xMin : snapshot.pitch.xMax;
     const carrierOwnGoalDepth = space.xToCanonical(Math.abs(carrier.x - ownGoalX));
+    const ballGap = distance(carrier, snapshot.ball, space);
+    const ballDistance = distance(primary, snapshot.ball, space);
+    // An exposed ball on the far side of the carrier is still screened by
+    // his body. Jockey around it instead of lunging through his legs.
+    if (ballGap > 12 && ballDistance >= contactDistance - 4) return null;
+    // Inside boot reach a defender can poke; otherwise delay until the ball
+    // leaves the carrier's feet. Ratings change timing, never availability.
+    if (ballGap < 18 + primary.defending / 99 * 8 && contactDistance > 30) return null;
     const slideEligible = safeRelativeSpeed &&
       contactDistance >= config.defensiveSlideTackleMinDistance &&
       contactDistance <= config.defensiveSlideTackleMaxDistance &&
       alignment >= config.defensiveSlideMinimumAlignment &&
-      carrierOwnGoalDepth <= config.defensiveSlideDangerDepth &&
-      primary.defending >= 62 && primary.aggression >= 58;
+      carrierOwnGoalDepth <= config.defensiveSlideDangerDepth;
     const shoulderEligible = safeRelativeSpeed && contactDistance <= config.defensiveShoulderMaxDistance &&
       contactDistance >= 4 && alignment >= config.defensiveMinimumActionAlignment * 0.5 && alignment < 0.82 &&
-      primary.strength >= 60 && primary.aggression >= 55;
+      ballGap > 20;
     const tackleEligible = safeRelativeSpeed &&
       contactDistance >= config.defensiveStandTackleMinDistance &&
       contactDistance <= config.defensiveStandTackleMaxDistance &&
-      alignment >= config.defensiveMinimumActionAlignment && primary.defending >= 50;
+      alignment >= config.defensiveMinimumActionAlignment;
     // Sliding is a committed recovery tool, never the default close-range
     // challenge. It is available only beyond standing reach and close enough
     // to the defender's own goal for the recovery risk to have a football
@@ -867,7 +886,7 @@
     // its Godot implementation into the browser simulation.
     const type = slideEligible ? 'slide-tackle' : shoulderEligible ? 'shoulder-challenge' : tackleEligible ? 'stand-tackle' : null;
     if (!type) return null;
-    const nextCooldown = snapshot.tick + config.defensiveActionCooldownTicks;
+    const nextCooldown = snapshot.tick + Math.round(config.defensiveActionCooldownTicks * (1.3 - primary.defending / 198));
     memory.defense.cooldowns[primary.id] = nextCooldown;
     return {
       type,
@@ -969,7 +988,14 @@
       memory.defense.coverPlayerId = cover ? cover.id : null;
     }
     const state = memory.defense.phase;
-    const pressTarget = defensivePressTarget(carrier, snapshot, config);
+    const ballGap = distance(carrier, snapshot.ball, pitchSpace(snapshot.pitch));
+    const exposed = ballGap > 25;
+    const close = distance(primary, carrier, pitchSpace(snapshot.pitch)) < 155;
+    const pressTarget = close && !exposed ? (() => {
+      const space = pitchSpace(snapshot.pitch), ownDir = snapshot.attackingDirection;
+      return boundedDefensivePoint({ x: carrier.x - ownDir * space.xFromCanonical(60),
+        y: carrier.y + carrier.vy * .12 }, snapshot, config);
+    })() : exposed ? boundedDefensivePoint(snapshot.ball, snapshot, config) : defensivePressTarget(carrier, snapshot, config);
     const physicalAction = physicalActionFor(primary, carrier, snapshot, memory, config);
     const intents = [{
       playerId: primary.id,
@@ -977,10 +1003,10 @@
       role: 'primary-challenger',
       targetPlayerId: carrier.id,
       target: pressTarget,
-      movementIntent: 'beeline',
-      accelerate: true,
-      urgency: 'sprint',
-      targetSpeed: rounded(0.82 + primary.pace / 99 * 0.18),
+      movementIntent: close && !exposed ? 'jockey' : 'beeline',
+      accelerate: !close || exposed,
+      urgency: close && !exposed ? 'balanced' : 'sprint',
+      targetSpeed: close && !exposed ? .5 : rounded(0.82 + primary.pace / 99 * 0.18),
       state,
       commitTick: memory.defense.commitTick,
       minUntilTick: memory.defense.minUntilTick,
@@ -1674,9 +1700,96 @@
         (pass.passerId === playerB && pass.receiverId === playerA))).length;
   }
 
+  // One committed exit, chosen from real lanes. No per-frame skill lottery.
+  function dribbleOptions(snapshot, carrier, memory, config) {
+    const space = pitchSpace(snapshot.pitch), dir = snapshot.attackingDirection;
+    const opponents = snapshot.players.filter(p => p.teamId !== carrier.teamId && !p.sentOff && p.available);
+    const near = opponents.map(p => ({ p, d: distance(p, carrier, space) }))
+      .sort((a, b) => a.d - b.d || a.p.id.localeCompare(b.p.id));
+    const nearest = near[0], state = memory.dribble;
+    if (state.carrierId !== carrier.id) {
+      state.carrierId = carrier.id; state.intent = null; state.untilTick = 0;
+    }
+    if (state.intent && snapshot.tick < state.untilTick && distance(carrier, state.intent.target, space) > 30) {
+      const others = opponents.filter(p => p.id !== state.intent.defenderId);
+      if (laneClearance(carrier, state.intent.target, others, space) >= 45) {
+        const elapsed = snapshot.tick - state.intent.startedTick;
+        return { ...cloneObject(state.intent), phase: elapsed < state.intent.feintTicks ? 'feint' : 'burst' };
+      }
+    }
+    state.intent = null;
+    const pointAt = (forward, lateral) => boundedDefensivePoint({
+      x: carrier.x + dir * space.xFromCanonical(forward),
+      y: carrier.y + space.yFromCanonical(lateral)
+    }, snapshot, config);
+    const centre = (snapshot.pitch.yMin + snapshot.pitch.yMax) / 2;
+    const lanes = [0, -.55, .55, -1, 1].map(slope => {
+      const target = pointAt(420 / Math.hypot(1, slope), 420 * slope / Math.hypot(1, slope));
+      const forwardOpponents = opponents.filter(p => dir * space.xToCanonical(p.x - carrier.x) >= -30);
+      const clearance = laneClearance(carrier, target, forwardOpponents, space);
+      const endpoint = laneClearance(target, target, opponents, space);
+      const inward = Math.abs(carrier.y - centre) - Math.abs(target.y - centre);
+      return { target, clearance, score: Math.min(clearance, 220) + Math.min(endpoint, 220) * .25 +
+        space.yToCanonical(inward) * .08 - Math.abs(slope) * 8 };
+    }).sort((a, b) => b.score - a.score);
+    const best = lanes[0];
+    let takeOn = null;
+    if (nearest && nearest.d >= 32 && nearest.d <= 125 && snapshot.tick >= state.cooldownUntilTick &&
+        near.filter(p => p.d < 145).length === 1 && dir * space.xToCanonical(nearest.p.x - carrier.x) > nearest.d * .72) {
+      const defender = nearest.p, velocity = canonicalVelocity(defender, space);
+      const closing = velocity.x * -dir;
+      const side = defender.y >= carrier.y ? -1 : 1;
+      const exits = [side, -side].map(sign => {
+        const target = pointAt(210, sign * 120);
+        const others = opponents.filter(p => p.id !== defender.id);
+        const behind = laneClearance(target, target, opponents, space);
+        const lane = laneClearance(carrier, target, others, space);
+        const offBalance = Math.abs(velocity.y - sign * 90) / 160 + Math.max(0, closing) / 180;
+        const quality = (carrier.control + carrier.agility - defender.defending - defender.pace) / 198;
+        return { target, sign, behind, lane, score: Math.min(behind, 160) * .45 + Math.min(lane, 180) * .3 +
+          offBalance * 24 + quality * 35 };
+      }).filter(e => e.behind > 70 && e.lane > 72).sort((a, b) => b.score - a.score);
+      if (exits.length) {
+        const exit = exits[0], set = Math.hypot(velocity.x, velocity.y) < 75 && !defender.committed;
+        const lateral = Math.abs(space.yToCanonical(defender.y - carrier.y));
+        const skill = !set || nearest.d > 95 ? null : nearest.d < 52 ? 'roulette' : lateral > 30 ? 'bodyFeint' :
+          nearest.d < 80 ? 'stepover' : 'dragBack';
+        const exitDx = dir * space.xToCanonical(exit.target.x - carrier.x), exitDy = space.yToCanonical(exit.target.y - carrier.y), exitLength = Math.hypot(exitDx, exitDy) || 1;
+        let runwayMetres = 0;
+        const cover = opponents.filter(p => p.id !== defender.id);
+        for (let metres = 4; metres <= 44; metres += 2) {
+          const probe = pointAt(exitDx / exitLength * metres * 30.25, exitDy / exitLength * metres * 30.25);
+          if (distance(probe, carrier, space) < metres * 30.25 * .9 || laneClearance(probe, probe, cover, space) < 80) break;
+          runwayMetres = metres;
+        }
+        const quality = (carrier.control + carrier.agility + carrier.pace) / 297;
+        const tiers = [
+          { tier: 'light', score: 1.1 - runwayMetres * .015 },
+          { tier: 'strong', score: .25 + quality * .5 + runwayMetres * .035 },
+          { tier: 'double', score: -.75 + quality * .7 + runwayMetres * .055 + (defender.committed ? .3 : 0) }
+        ].sort((a, b) => b.score - a.score);
+        takeOn = { type: 'take-on', targetPlayerId: null, target: exit.target, confidence: .7,
+          reason: defender.committed || closing > 60 ? 'commitment-exit' : 'isolated-defender-space-behind',
+          defenderId: defender.id, skill, feintTicks: skill ? Math.round(12 - carrier.agility / 99 * 5) : 0,
+          knockOn: defender.committed || closing > 90, knockOnTier: tiers[0].tier, runwayMetres, startedTick: snapshot.tick, phase: skill ? 'feint' : 'burst',
+          score: exit.score };
+      }
+    }
+    return { carry: best && best.clearance >= config.minimumCarryLaneClearance ? {
+      type: 'carry', targetPlayerId: null, target: best.target, confidence: .8, reason: 'open-directional-lane',
+      clearance: best.clearance, score: best.score } : null, takeOn, nearest };
+  }
+
+  function commitDribble(snapshot, memory, intent, ticks) {
+    memory.dribble.intent = cloneObject(intent); memory.dribble.untilTick = snapshot.tick + ticks;
+    if (intent.type === 'take-on') memory.dribble.cooldownUntilTick = snapshot.tick + 210;
+    return intent;
+  }
+
   function carrierIntent(snapshot, runs, memory, config) {
     const carrier = snapshot.players.find(player => player.id === snapshot.carrierId) || null;
     if (!carrier || snapshot.possessionTeamId !== snapshot.teamId) {
+      memory.dribble.intent = null; memory.dribble.carrierId = null;
       return { type: 'wait', targetPlayerId: null, target: null, confidence: 1, reason: 'no-controlled-possession' };
     }
     const pitch = snapshot.pitch;
@@ -1728,6 +1841,8 @@
         }
       };
     }
+    const dribble = dribbleOptions(snapshot, carrier, memory, config);
+    if (dribble.type) return dribble;
     const combination = combinationPass(snapshot, carrier, memory, config);
     if (combination) return combination;
     const passOptions = runs.map(run => {
@@ -1801,13 +1916,19 @@
     if (progressiveRoutineRun) return releaseRun(progressiveRoutineRun);
     const circulationRole = ['centre-back', 'full-back', 'wing-back', 'defensive-midfielder', 'midfielder']
       .includes(carrierFamily);
-    const xInset = space.xFromCanonical(config.pitchInset);
-    const carryTarget = {
-      x: clamp(carrier.x + snapshot.attackingDirection * space.xFromCanonical(config.carryDistance),
-        pitch.xMin + xInset, pitch.xMax - xInset),
-      y: carrier.y + ((pitch.yMin + pitch.yMax) / 2 - carrier.y) * 0.08
-    };
-    const carryClearance = nearestOpponentClearance(carrier, carryTarget, snapshot);
+    const carryTarget = dribble.carry && dribble.carry.target;
+    const carryClearance = dribble.carry ? dribble.carry.clearance : 0;
+    // A linked return remains first choice. Otherwise compare a real 1v1 exit
+    // against the best outlet; control/agility scale its attractiveness.
+    const takeOn = dribble.takeOn;
+    if (takeOn && (!bestSupport || carrierPressure >= 82 && bestSupport.progress < 100 &&
+        takeOn.score + (carrier.control + carrier.agility) * .2 > bestSupport.score)) {
+      return commitDribble(snapshot, memory, takeOn, 90);
+    }
+    if (dribble.carry && dribble.nearest && snapshot.attackingDirection *
+        space.xToCanonical(carrier.x - dribble.nearest.p.x) > 45 && snapshot.attackingDirection * carrier.vx > 0) {
+      return { ...dribble.carry, reason: 'carry-away-from-beaten-defender' };
+    }
     if ((suppressDirectReturn || suppressHistoricalPair) && !alternativeSupport.length &&
         carryClearance >= config.minimumCarryLaneClearance) {
       return {
@@ -1820,7 +1941,8 @@
     // An unpressured attacking carrier should use the space in front of him.
     // Previously every available support pass won first, producing lateral
     // striker ping-pong and preventing the team from ever entering shot range.
-    if (assertiveCarrier && carrierPressure >= 110 && carryClearance >= config.minimumCarryLaneClearance) {
+    const freeProgress = carrierPressure >= 210 && carryClearance >= 120 && bestSupport && bestSupport.progress <= 0;
+    if ((assertiveCarrier || freeProgress) && carrierPressure >= 135 && carryClearance >= config.minimumCarryLaneClearance) {
       return {
         type: 'carry', targetPlayerId: null, target: carryTarget,
         confidence: rounded(clamp(0.45 + carrier.control / 185 + carryClearance / 1200, 0, 0.97)),
@@ -1856,6 +1978,14 @@
         confidence: rounded(clamp(0.4 + carrier.control / 190 + carryClearance / 1100, 0, 0.96)),
         reason: 'carrier-forward-lane-open'
       };
+    }
+    if (dribble.nearest && dribble.nearest.d < 85) {
+      const defender = dribble.nearest.p, dx = space.xToCanonical(carrier.x - defender.x),
+        dy = space.yToCanonical(carrier.y - defender.y), length = Math.hypot(dx, dy) || 1;
+      return { type: 'protect', targetPlayerId: null,
+        target: boundedDefensivePoint({ x: carrier.x + space.xFromCanonical(dx / length * 65),
+          y: carrier.y + space.yFromCanonical(dy / length * 65) }, snapshot, config),
+        confidence: .75, reason: 'pressure-no-safe-outlet', defenderId: defender.id };
     }
     const reacting = Object.values(memory.observations).some(observation =>
       observation.eligibleTick > snapshot.tick && observation.expiresTick >= snapshot.tick);

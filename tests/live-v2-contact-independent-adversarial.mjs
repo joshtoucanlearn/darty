@@ -13,7 +13,7 @@ const Ball = require('../match-engine/ball-engine-v2.js');
 const Composer = require('../match-engine/live-v2-contact-authority-composer.js');
 
 const HASHES = Object.freeze({
-  'live-v2-contact-authority-composer.js': '15f87890f25012412dff34d1d8f0dcdf44694d14d107b859f260cde3c4e6c10b',
+  'live-v2-contact-authority-composer.js': '4fbf59d30cfc21f97c29655312e491ab1a1bfce8576572e19bf49727673cf83d',
   'first-touch-v2.js': 'f548c5c33c0d82ce044ebb083ec6deac0deb212f8287608f77e490794894152c',
   'first-touch-authority-adapter-v2.js': '2c6bf8b63e327c653556d73ec4c820b742038e63fb1f46217ef912eccec432f2',
   'aerial-contact-v2.js': '54bf086bef9e0f149f9ed2445454da510fca5908e79aa77d95ba5f70d5e8b1ba',

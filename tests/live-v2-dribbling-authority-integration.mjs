@@ -573,3 +573,82 @@ test('a sustained carry has readable physical touch cadence instead of a seven-f
   assert.ok(intervals.every(interval => interval <= Dribbling.CONFIG.maximumTouchCadenceTicks + 2), intervals.join(','));
   assert.ok(!intervals.includes(7), 'the playtest seven-frame loop must not return');
 });
+
+test('a CPU directional reception exits the old rendezvous and can be physically gathered', () => {
+  const { live } = attachment('cpu-v-cpu');
+  let snapshot = initialSnapshot('cpu-v-cpu');
+  const receiver = snapshot.players.find(p => p.id === 'you-CAM');
+  Object.assign(receiver, { x: 50, y: 0, vx: 2 / 60, vy: 0, fx: 1, fy: 0 });
+  for (const p of snapshot.players.filter(p => p.teamId === 'opp')) Object.assign(p, { x: 88, y: 25, vx: 0, vy: 0 });
+  Object.assign(snapshot.ball, { ownerId: null, targetId: receiver.id, x: 50.3, y: 0, z: 0,
+    vx: 1 / 60, vy: 0, zv: 0, lastKickerId: 'you-CM', lastKickerTeamId: 'you', flightType: 'ground-pass' });
+  snapshot.contact.intendedReceiverId = receiver.id;
+  let directional = false, gathered = false;
+  for (let tick = 1; tick <= 120; tick++) {
+    const frame = runTick(live, snapshot);
+    const contact = frame.hostProjection.contact;
+    if (contact && contact.contactType === 'first-touch') {
+      assert.equal(contact.receivingIntent.type, 'directional-touch');
+      assert.equal(frame.hostProjection.logicalBallOwnerId, null, 'a directional touch grants no invisible possession');
+      assert.equal(live.exportState().domain.possession.teamId, 'you');
+      assert.equal(live.exportState().domain.possession.ownerId, null);
+      assert.ok(live.exportState().domain.possession.pendingTouch);
+      directional = true;
+    }
+    if (directional && frame.hostProjection.logicalBallOwnerId === receiver.id) { gathered = true; break; }
+    snapshot = advanceSnapshot(snapshot, frame.hostProjection, tick + 1);
+  }
+  assert.equal(directional, true);
+  assert.equal(gathered, true, 'the receiver must chase and gather rather than repeat active directional touches');
+});
+
+test('an interceptor resolves its own trap rather than inheriting the intended directional touch', () => {
+  const { live } = attachment('cpu-v-cpu');
+  const snapshot = initialSnapshot('cpu-v-cpu');
+  const receiver = snapshot.players.find(p => p.id === 'you-CAM');
+  const interceptor = snapshot.players.find(p => p.id === 'opp-CAM');
+  for (const p of snapshot.players) Object.assign(p, { x: p.teamId === 'you' ? 20 : 85, y: 20, vx: 0, vy: 0 });
+  Object.assign(receiver, { x: 55, y: 0 });
+  Object.assign(interceptor, { x: 50, y: 0, fx: 1, fy: 0 });
+  Object.assign(snapshot.ball, { ownerId: null, targetId: receiver.id, x: 50.3, y: 0, z: 0,
+    vx: 1 / 60, vy: 0, zv: 0, lastKickerId: 'you-CM', lastKickerTeamId: 'you', flightType: 'ground-pass' });
+  snapshot.contact.intendedReceiverId = receiver.id;
+  const frame = runTick(live, snapshot), contact = frame.hostProjection.contact;
+  assert.equal(contact.presentation.playerId, interceptor.id);
+  assert.equal(contact.receivingIntent.type, 'trap');
+});
+
+test('accepted human cushion and explicit directional receiving intents pass through exactly, including sprint', () => {
+  for (const intent of [
+    {type:'cushion',direction:{x:0,y:1},touchDistanceM:.46,active:false},
+    {type:'directional-touch',direction:{x:1,y:0},touchDistanceM:2.1,active:true}
+  ]) {
+    let cpuChoices=0;
+    const {live}=attachment('single-player',{dependencies:{...dependencies,dribbling:{...Dribbling,
+      receivingIntent(){cpuChoices++;throw new Error('human intent must not enter CPU calibration');}}}});
+    const snapshot=initialSnapshot('single-player'),receiver=snapshot.players.find(p=>p.id==='you-CAM');
+    receiver.control.sprint=true;Object.assign(receiver,{x:50,y:0,vx:0,vy:0,fx:1,fy:0});
+    for(const p of snapshot.players.filter(p=>p.teamId==='opp'))Object.assign(p,{x:90,y:25,vx:0,vy:0});
+    Object.assign(snapshot.ball,{ownerId:null,targetId:receiver.id,x:50.3,y:0,z:0,vx:1/60,vy:0,zv:0});
+    snapshot.contact.intendedReceiverId=receiver.id;snapshot.contact.firstTouchIntent=intent;
+    const frame=runTick(live,snapshot);
+    assert.equal(cpuChoices,0);assert.deepEqual(frame.hostProjection.contact.receivingIntent,intent);
+  }
+});
+
+test('another player performing a protected move cannot clear the carrier dribble authority', () => {
+  const {live}=attachment('cpu-v-cpu'),snapshot=initialSnapshot('cpu-v-cpu');
+  snapshot.contact.gate.specialActionAuthority=true;
+  snapshot.dribbling.specialActionPlayerIds=['opp-CAM'];
+  const frame=runTick(live,snapshot);
+  assert.equal(frame.hostProjection.logicalBallOwnerId,'you-CAM');
+  assert.equal(frame.hostProjection.dribbling.authorityHandoff,null);
+});
+
+test('the carrier own protected move retains its established explicit handoff', () => {
+  const {live}=attachment('cpu-v-cpu'),snapshot=initialSnapshot('cpu-v-cpu');
+  snapshot.contact.gate.specialActionAuthority=true;
+  snapshot.dribbling.specialActionPlayerIds=['you-CAM'];
+  const frame=runTick(live,snapshot);
+  assert.equal(frame.hostProjection.dribbling.authorityHandoff?.reason,'protected-skill-handoff');
+});

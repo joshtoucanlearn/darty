@@ -611,6 +611,11 @@
         const roster = rosterById[player.id];
         return player.teamId !== candidate.player.teamId && roster && !roster.sentOff && roster.available && roster.contactEligible;
       }).map(player => player.id).sort();
+      const receivingIntent = candidate.intended && request.firstTouchIntent &&
+        (!continuation || request.firstTouchIntent.source !== 'cpu-v2') ? request.firstTouchIntent : {
+        type: candidate.intended ? 'cushion' : 'trap', direction: candidate.player.facing,
+        touchDistanceM: candidate.intended ? 0.4 : 0.2, active: false
+      };
       const result = FirstTouchAuthority.resolve({
         schema: FirstTouchAuthority.REQUEST_SCHEMA,
         workflow: FIRST_TOUCH_WORKFLOW,
@@ -643,12 +648,7 @@
         // receiver. If an opponent or another teammate reaches the physical
         // ball first, resolve their own neutral contact rather than letting a
         // human stick vector steer somebody else's interception.
-        intent: candidate.intended && request.firstTouchIntent || {
-          type: candidate.intended ? 'cushion' : 'trap',
-          direction: candidate.player.facing,
-          touchDistanceM: candidate.intended ? 0.4 : 0.2,
-          active: false
-        },
+        intent: receivingIntent,
         timingOffsetSeconds: 0,
         technique: null,
         // The outer contact ledger also contains passive MR body identities.
@@ -696,7 +696,7 @@
       return deepFreeze({
         schema: RESULT_SCHEMA, version: VERSION, authority: AUTHORITY, workflow: request.workflow, online: false,
         tick: request.tick, epoch: request.epoch, status: 'contact', ownedContact: true, contactType,
-        ownerCandidateId, ballState,
+        ownerCandidateId, ballState, receivingIntent: clone(receivingIntent),
         consumedFirstTouchIds: appendRecentFirstTouchId(request.consumedFirstTouchIds, handoff.handoffId),
         consumedFirstTouchThroughTick: request.tick,
         consumedAerialIds: request.consumedAerialIds,

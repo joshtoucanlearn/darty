@@ -15,7 +15,7 @@ const require = createRequire(import.meta.url);
 const { createClock } = require('../match-engine/darty-video-capture.js');
 const read = filename => fs.readFileSync(path.join(root, filename), 'utf8');
 const html = read('match-engine/match.html');
-const sourceHashes = Object.fromEntries(['match-engine/match.html', 'match-engine/live-v2-authority-adapter.js', 'tools/headless-cpu-match.mjs', 'tools/cohesion-metrics.mjs', 'match-engine/formation-behaviour-v2.js', 'match-engine/cpu-intelligence-v2.js']
+const sourceHashes = Object.fromEntries(['match-engine/match.html', 'match-engine/live-v2-authority-adapter.js', 'tools/headless-cpu-match.mjs', 'tools/cohesion-metrics.mjs', 'tools/combination-metrics.mjs', 'match-engine/dribbling-state-v2.js', 'match-engine/first-touch-v2.js', 'match-engine/live-v2-contact-authority-composer.js', 'match-engine/formation-behaviour-v2.js', 'match-engine/cpu-intelligence-v2.js']
   .map(filename => [filename, createHash('sha256').update(read(filename)).digest('hex')]));
 const noop = () => {};
 
@@ -160,7 +160,7 @@ export function createHeadlessMatch(inputUrl, { seed, minutes, keeperTrace = fal
     const observedLogEvent=logEvent;
     logEvent=function(...args){observedLogEvent(...args);const event=report.events[report.events.length-1];
       if(event){const actor=args[2],target=event.targetId&&[...you,...opp].find(p=>p.id===event.targetId),progress=attackDirection(event.team)===1?(ball.x-M)/(W-2*M):1-(ball.x-M)/(W-2*M);
-        __actions.event({...event,actorId:actor&&actor.id,time:performance.now(),progress,inBox:progress>=1-16.5/105&&Math.abs(ball.y*68/H-34)<=20.16,
+        __actions.event({...event,cpu:true,defenderId:event.defenderId||(event.type==='ai-skill-selection'&&actor?teamList(other(actor.team)).filter(p=>!p.isGK&&!p.sentOff).sort((a,b)=>D(a,actor)-D(b,actor))[0]?.id:null),actorId:actor&&actor.id,time:performance.now(),progress,inBox:progress>=1-16.5/105&&Math.abs(ball.y*68/H-34)<=20.16,
           distanceMetres:target?Math.hypot((Number(event.intendedX||target.x)-ball.x)*105/(W-2*M),(Number(event.intendedY||target.y)-ball.y)*68/H):null});}
       if(event&&(event.type==='pass'||event.type==='pass-resolved'))__cohesion.event({...event,
         progress:attackDirection(event.team)===1?(ball.x-M)/(W-2*M):1-(ball.x-M)/(W-2*M)});};
@@ -172,6 +172,7 @@ export function createHeadlessMatch(inputUrl, { seed, minutes, keeperTrace = fal
         const owner=logicalLivePossessionOwner();
         __actions.possession(owner&&{id:owner.id,team:owner.team,time:performance.now(),y:owner.y*68/H,
           progress:attackDirection(owner.team)===1?(owner.x-M)/(W-2*M):1-(owner.x-M)/(W-2*M),
+          defenders:Object.fromEntries(teamList(other(owner.team)).filter(p=>!p.sentOff).map(p=>[p.id,attackDirection(owner.team)*(p.x-owner.x)*105/(W-2*M)])),
           defenderBehind:teamList(other(owner.team)).some(p=>!p.sentOff&&D(p,owner)<180&&attackDirection(owner.team)*(owner.x-p.x)>45)},live);
         if(live)__cohesion.possession({owner:owner&&{family:positionFamily(owner)},loose:!owner&&!ball.target});
         else __cohesion.possession({owner:null,loose:false});

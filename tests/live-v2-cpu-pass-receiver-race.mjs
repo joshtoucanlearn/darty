@@ -644,6 +644,9 @@ test('an intended receiver may cushion a physically intersecting MR pass before 
     JSON.stringify(passRace));
   if (releaseIntent.type === 'pass' && releaseIntent.targetPlayerId === RECEIVER_ID) {
     let flightSnapshot = launchSnapshotFromAcceptedPass(fixture, releaseFrame);
+    // Exercise the explicit cushion contract. Automatic directional receiving
+    // has separate race/continuation tests and deliberately grants no owner.
+    flightSnapshot.contact.firstTouchIntent = { type: 'cushion', direction: { x: 1, y: 0 }, touchDistanceM: .3, active: false };
     // The race accepted a lead pass. Put the named receiver directly on the
     // early physical path after release so this fixture distinguishes real
     // contact authority from the later authored endpoint window.

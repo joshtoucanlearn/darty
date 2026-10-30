@@ -470,7 +470,14 @@
         directionalKnockOnIntent.maximumTravelDistance < directionalKnockOnIntent.distance)) {
       throw new TypeError('live directional knock-on contract is invalid');
     }
+    const specialActionPlayerIds = dribblingSource.specialActionPlayerIds == null ? null :
+      Array.isArray(dribblingSource.specialActionPlayerIds) ? [...new Set(dribblingSource.specialActionPlayerIds.map(String))] : null;
+    if (dribblingSource.specialActionPlayerIds != null && !Array.isArray(dribblingSource.specialActionPlayerIds) ||
+        specialActionPlayerIds && specialActionPlayerIds.some(id => !ids.has(id))) {
+      throw new TypeError('live dribbling special-action actors must be known player ids');
+    }
     const dribbling = {
+      specialActionPlayerIds,
       surface: String(dribblingSource.surface || 'dry'),
       actionIntent: dribblingSource.actionIntent && typeof dribblingSource.actionIntent === 'object'
         ? clone(dribblingSource.actionIntent) : null,
@@ -762,6 +769,20 @@
     function derivePossession(snapshot) {
       const owner = snapshot.ball.ownerId && snapshot.players.find(player => player.id === snapshot.ball.ownerId);
       if (owner) return { teamId: owner.teamId, ownerId: owner.id, inFlight: false, intendedReceiverId: null, intendedTarget: null, intendedTargetWindowMetres: null, arrivalWindowEntered: false, releaseTick: null, reactionStimulus: null, offsideCandidate: null };
+      const pendingTouch = domain.possession.pendingTouch;
+      if (pendingTouch) {
+        const last = snapshot.players.find(p => p.id === snapshot.ball.lastKickerId);
+        if (snapshot.tick <= pendingTouch.untilTick && (!last || last.teamId === domain.possession.teamId)) {
+          // Expected team continuity is not ownership: both teams still race
+          // for the free ball, while the combination keeps its short memory.
+          return { ...clone(domain.possession), ownerId: null, inFlight: true,
+            intendedReceiverId: pendingTouch.targetId, intendedTarget: null,
+            arrivalWindowEntered: true, reactionStimulus: null, deliberatePass: false };
+        }
+        return { teamId: null, ownerId: null, inFlight: false, intendedReceiverId: null, intendedTarget: null,
+          intendedTargetWindowMetres: null, arrivalWindowEntered: false, releaseTick: null,
+          reactionStimulus: null, offsideCandidate: null };
+      }
       // A grounded authored service whose contact window has elapsed is a
       // genuinely loose ball even while it is still rolling. Do not retain the
       // old receiver merely because MR still reports non-zero velocity.
@@ -892,6 +913,7 @@
           id: player.id, teamId: player.teamId, x: metric.x, y: metric.y, vx: velocity.x, vy: velocity.y,
           role: player.role, position: player.position, formationAnchor: target ? target.target : metric,
           pace: finite(attrs.pace, 70), acceleration: finite(attrs.accel, attrs.pace || 70), awareness: finite(attrs.awareness, 70),
+          agility: finite(attrs.agility, attrs.accel || 70), committed: player.tackleActive || player.shoulderActive || Boolean(domain.world && domain.world.players.find(p => p.id === player.id)?.action),
           passing: finite(attrs.pass, 70), shooting: finite(attrs.shoot, 65), control: finite(attrs.control, 70),
           defending: finite(attrs.defend, 55), aggression: finite(attrs.aggression, 65), strength: finite(attrs.strength, 70),
           balance: finite(attrs.balance, 70), fx: player.fx, fy: player.fy,
@@ -985,7 +1007,7 @@
         if (intent && intent.type === 'pass' && intent.targetPlayerId && intent.target) {
           reception[String(intent.targetPlayerId)] = intent.target;
         }
-        if (intent && intent.type === 'carry' && intent.target) carrier[teamId] = intent.target;
+        if (intent && ['carry', 'take-on', 'protect'].includes(intent.type) && intent.target) carrier[teamId] = intent.target;
         for (const intent of decisions[teamId].defensiveIntents || []) {
           if (!intent || !intent.playerId || !intent.target) continue;
           defensive[String(intent.playerId)] = clone(intent);
@@ -1291,6 +1313,7 @@
         } else {
           const metric = metricPoint(livePlayer, snapshot), runTarget = maps.run[livePlayer.id];
           const carrierTarget = snapshot.ball.ownerId === livePlayer.id ? maps.carrier[livePlayer.teamId] : null;
+          const carrierIntent = carrierTarget && decisions[livePlayer.teamId].carrierIntent;
           const defensiveTarget = defensiveIntent && defensiveIntent.target || null;
           const target = recoveryIntent && recoveryIntent.target || defensiveTarget || receptionTarget || runTarget || carrierTarget || maps.support[livePlayer.id] || maps.shape[livePlayer.id];
           cpuMovementRoute = recoveryIntent ? 'recovery' : defensiveIntent ? 'defensive' :
@@ -1304,6 +1327,27 @@
                 ? clamp(distance / 1.35, 0.58, 0.96)
                 : clamp(distance / 4.2, 0.52, 1);
               mode = distance > (leaseRecoveryActive ? 0.58 : 2.2) ? 'sprint' : 'run';
+              const carry = decisions[livePlayer.teamId].carrierIntent;
+              if (leaseRecoveryActive && carry && (carry.type === 'carry' || carry.type === 'take-on' && carry.phase === 'burst')) {
+                // Match the human sprint request through a physical touch;
+                // do not brake the CPU while its own ball is running ahead.
+                mode = 'sprint'; intensity = Math.max(intensity, .9);
+              }
+              const pending = possession.pendingTouch;
+              if (!leaseRecoveryActive && pending && pending.targetId === livePlayer.id) {
+                // Follow the exit ball at its pace. Full-speed pursuit of a
+                // short receiving touch made the player run past his next boot meeting.
+                const physical = metricBall(snapshot.ball, snapshot), towardBall = {
+                  x: physical.position.x - statePlayer.position.x, y: physical.position.y - statePlayer.position.y
+                }, gap = vectorLength(towardBall), correction = clamp((gap - .5) * 4, -2, 4), toBall = unit(towardBall, statePlayer.facing);
+                const requested = { x: physical.velocity.x + toBall.x * correction,
+                  y: physical.velocity.y + toBall.y * correction };
+                const requestedPace = vectorLength(requested), pace = clamp(finite(livePlayer.attrs.pace, 70), 1, 99);
+                const runCapacity = 4.6 + (6.25 - 4.6) * (pace - 1) / 98;
+                const sprintCapacity = 6.35 + (9.15 - 6.35) * (pace - 1) / 98;
+                desired = unit(requested, toBall); mode = requestedPace > runCapacity ? 'sprint' : 'run';
+                intensity = clamp(requestedPace / (mode === 'sprint' ? sprintCapacity : runCapacity), .08, 1);
+              }
             } else if (defensiveIntent && !defensiveIntent.connectedLine) {
               intensity = clamp(finite(defensiveIntent.targetSpeed, defensiveIntent.type === 'press' ? .88 : .62), .18, 1);
               mode = defensiveIntent.accelerate || defensiveIntent.urgency === 'sprint' ? 'sprint' : intensity > .42 ? 'run' : 'walk';
@@ -1366,6 +1410,11 @@
                 ? clamp(distance / 5, 0.58, 1)
                 : clamp(distance / (runTarget ? 7 : 5), runTarget ? 0.74 : 0, 1);
               mode = runTarget || carrierSprint || (!carrierTarget && distance > 7) ? 'sprint' : intensity > 0.2 ? 'run' : 'walk';
+              if (carrierIntent && carrierIntent.type === 'protect') { mode = 'shield'; intensity = .45; }
+              if (carrierIntent && carrierIntent.type === 'take-on') {
+                mode = carrierIntent.phase === 'feint' ? 'run' : 'sprint';
+                intensity = carrierIntent.phase === 'feint' ? .26 : 1;
+              }
               if (!runTarget && !carrierTarget && distance < .35) { intensity = 0; mode = 'idle'; }
             }
           }
@@ -1403,6 +1452,8 @@
         }
         projection.push({ teamId, playerId: owner.id, type: intent.type, targetPlayerId: targetId || null,
           target: intent.target ? livePoint(intent.target, snapshot) : null, confidence: finite(intent.confidence, 0), reason: String(intent.reason || 'cpu-v2'),
+          dribbleId: [resetEpoch, owner.id, intent.type, intent.startedTick || 0].join(':'),
+          maneuver: ['carry', 'take-on', 'protect'].includes(intent.type) ? clone(intent) : null,
           shotProfile: intent.shotProfile ? clone(intent.shotProfile) : null,
           supportKind: intent.supportKind == null ? null : String(intent.supportKind),
           supportMetrics: intent.supportMetrics ? clone(intent.supportMetrics) : null,
@@ -2286,6 +2337,8 @@
           ? { ...clone(hostAction), actorId: carrierId }
           : cpuDribblingAction(snapshot, intelligence, carrierId);
       }
+      const cpuIntent = !human && carrierId && intelligence.projection.find(p => p.playerId === carrierId);
+      const maneuver = cpuIntent && cpuIntent.maneuver;
       const result = dependencies.dribbling.resolve({
         schema: dependencies.dribbling.REQUEST_SCHEMA,
         workflow: capability.workflow,
@@ -2323,11 +2376,16 @@
             : movementCarrier && (movementSpeed > 0.05 ? movementCarrier.velocity : movementCarrier.facing),
           intensity: humanControl ? humanControl.strength : clamp(movementSpeed / 7.2, 0, 1),
           sprint: humanControl ? humanControl.sprint : Boolean(movementCarrier && movementCarrier.locomotionState === 'sprint'),
-          shield: Boolean(humanControl && humanControl.shield)
+          shield: Boolean(humanControl ? humanControl.shield : maneuver && maneuver.type === 'protect')
         },
         surface: snapshot.dribbling.surface,
         actionIntent,
-        gate: snapshot.contact.gate
+        gate: { ...snapshot.contact.gate,
+          // A protected animation belongs to its actor. A distant skill or
+          // slide must not release another player's controlled ball/lease.
+          specialActionAuthority: snapshot.dribbling.specialActionPlayerIds === null
+            ? snapshot.contact.gate.specialActionAuthority
+            : snapshot.dribbling.specialActionPlayerIds.includes(carrierId) }
       }, dribblingCapability);
       if (!result || result.schema !== dependencies.dribbling.RESULT_SCHEMA || result.version !== dependencies.dribbling.VERSION ||
           result.tick !== snapshot.tick || result.epoch !== resetEpoch || result.workflow !== capability.workflow || result.online !== false ||
@@ -2404,7 +2462,30 @@
         // Ball V2 sees the post-Movement owner. A loose ball claimed by a
         // tackle can therefore never be integrated again in the same tick.
         const plannedBall = ballPlan(ballSnapshot);
-        const contact = activeLeaseAtStart ? null : contactPlan(ballSnapshot, movement.state, plannedBall, possession);
+        const receiverId = possession.intendedReceiverId || snapshot.contact.intendedReceiverId;
+        const receiver = receiverId && movement.state.players.find(p => p.id === receiverId);
+        if (receiver && !snapshot.ball.ownerId && !snapshot.dribbling.directionalKnockOnIntent) {
+          const human = snapshot.humanPlayerIds.has(receiverId);
+          const profile = snapshot.players.find(p => p.id === receiverId);
+          const control = profile.control;
+          if (!human && !snapshot.contact.firstTouchIntent) {
+            const team = snapshot.teams.find(t => t.id === profile.teamId);
+            const combination = cpu.memories[profile.teamId].combination.move;
+            const returner = !human && combination && combination.linkId === receiverId
+              ? movement.state.players.find(p => p.id === combination.originId) : null;
+            const offsideX = (team.offsideLine - snapshot.pitch.xMin) / snapshot.units.xPerMetre;
+            const combinationTarget = returner && (team.attackingDirection * (returner.position.x - offsideX) <= -.3 ||
+              team.attackingDirection * (returner.position.x - receiver.position.x) <= 0) ? returner : null;
+            snapshot.contact.firstTouchIntent = { ...dependencies.dribbling.receivingIntent({ player: {
+              ...receiver, attributes: { control: profile.attrs.control, agility: profile.attrs.agility } },
+              opponents: movement.state.players.filter(p => p.teamId !== receiver.teamId),
+              attackingDirection: team.attackingDirection, bounds: METRIC_PITCH,
+              direction: human ? { x: control.x, y: control.y } : null, sprint: Boolean(human && control.sprint), combinationTarget,
+              combination: Boolean(!human && combination && combination.linkId === receiverId) }), source: 'cpu-v2' };
+          }
+        }
+        const contactResult = activeLeaseAtStart ? null : contactPlan(ballSnapshot, movement.state, plannedBall, possession);
+        const contact = contactResult;
         let stagedWorld = movement.state;
         let stagedBallState = plannedBall.stagedState;
         let stagedBallProjection = plannedBall.stagedProjection;
@@ -2461,9 +2542,21 @@
               arrivalWindowEntered: false, releaseTick: null, reactionStimulus: null, offsideCandidate: null
             };
           }
-          const directionalTouchPlayerId = contact.ownedContact && snapshot.contact.firstTouchIntent &&
-            snapshot.contact.firstTouchIntent.type === 'directional-touch' && contact.presentation
+          const activeReceivingTouch = contact.ownedContact && contact.contactType === 'first-touch' &&
+            contact.receivingIntent && ['directional-touch', 'layoff'].includes(contact.receivingIntent.type) && contactActorId === receiverId;
+          const humanDirectionalTouch = snapshot.humanPlayerIds.has(contactActorId) && contact.ownedContact &&
+            snapshot.contact.firstTouchIntent && snapshot.contact.firstTouchIntent.type === 'directional-touch' && contact.presentation;
+          const directionalTouchPlayerId = (humanDirectionalTouch || activeReceivingTouch) && contact.presentation
             ? String(contact.presentation.playerId || '') : '';
+          if (activeReceivingTouch && !contactOwner && contactActor && !snapshot.humanPlayerIds.has(contactActor.id)) {
+            // The authored pass has reached a boot. Chase the real exit ball;
+            // its former rendezvous must no longer pin the receiver in place.
+            const targetId = contact.receivingIntent.targetPlayerId || contactActor.id;
+            postMovementPossession = { teamId: contactActor.teamId, ownerId: null, inFlight: true,
+              intendedReceiverId: targetId, intendedTarget: null, intendedTargetWindowMetres: null,
+              arrivalWindowEntered: true, releaseTick: null, reactionStimulus: null, offsideCandidate: null,
+              deliberatePass: false, pendingTouch: { actorId: contactActor.id, targetId, untilTick: snapshot.tick + 90 } };
+          }
           if (contactOwner || directionalTouchPlayerId) {
             const activeOwnerId = contactOwner ? contactOwner.id : stagedWorld.ballOwnerId;
             stagedWorld = dependencies.movement.createWorldState({
@@ -2507,7 +2600,7 @@
             releaseTick: null, reactionStimulus: null,
             offsideCandidate: null
           };
-        } else if ((!possession.inFlight && !possession.offsideCandidate && !possession.reactionStimulus) || activeLeaseAtStart) {
+        } else if (!postMovementPossession.pendingTouch && ((!possession.inFlight && !possession.offsideCandidate && !possession.reactionStimulus) || activeLeaseAtStart)) {
           postMovementPossession = {
             teamId: null,
             ownerId: null,

@@ -412,7 +412,7 @@ test('formation envelope is applied before an aggressive event target can become
   assert.ok(bid.target.x <= players[1].formationAnchor.x + 520);
 });
 
-test('carrier planner exposes deterministic shot, pass, carry and wait intents', () => {
+test('carrier planner exposes deterministic shot, pass and open-direction carry intents', () => {
   const shotPlayers = [
     player('carrier', 'home', 2850, 1070, { shooting: 95, control: 92 }),
     player('away-a', 'away', 2500, 300),
@@ -436,11 +436,11 @@ test('carrier planner exposes deterministic shot, pass, carry and wait intents',
   const waitPlayers = [
     player('carrier', 'home', 1100, 1070, { control: 70 }),
     player('away-blocker-a', 'away', 1210, 1070),
-    player('away-blocker-b', 'away', 1270, 1070)
+    player('away-blocker-b', 'away', 1240, 1070)
   ];
   const wait = Intelligence.decide(snapshot({ tick: 82, players: waitPlayers, ball: { x: 1100, y: 1070 } }));
-  assert.equal(wait.carrierIntent.type, 'wait');
-  assert.equal(wait.carrierIntent.reason, 'no-safe-progressive-action');
+  assert.equal(wait.carrierIntent.type, 'carry');
+  assert.ok(Math.abs(wait.carrierIntent.target.y - 1070) > 50, 'a blocked straight lane still permits a diagonal carry');
 });
 
 test('carrier planner retains short support circulation when no penetrating run is committed', () => {
@@ -812,7 +812,7 @@ test('DEFENSIVE LOOP: commitment persists under a nearer alternative and is inpu
 });
 
 test('DEFENSIVE LOOP: stand tackle and shoulder actions require safe windows and obey simulation-tick cooldown', () => {
-  const close = defensiveSnapshot(200);
+  const close = defensiveSnapshot(200); close.ball.x -= 35;
   const presser = close.players.find(entry => entry.id === 'home-presser');
   presser.x = 1445;
   let decision = Intelligence.decide(close, null, { minimumReactionTicks: 0, maximumReactionTicks: 0 });
@@ -826,7 +826,7 @@ test('DEFENSIVE LOOP: stand tackle and shoulder actions require safe windows and
     Intelligence.DEFAULT_CONFIG.defensiveMaximumActionRelativeSpeed);
   const cooldownUntil = press.physicalAction.cooldownUntilTick;
 
-  const cooldownFrame = defensiveSnapshot(201);
+  const cooldownFrame = defensiveSnapshot(201); cooldownFrame.ball.x -= 35;
   cooldownFrame.players.find(entry => entry.id === 'home-presser').x = 1445;
   decision = Intelligence.decide(cooldownFrame, decision.memory, {
     minimumReactionTicks: 0, maximumReactionTicks: 0
@@ -834,7 +834,7 @@ test('DEFENSIVE LOOP: stand tackle and shoulder actions require safe windows and
   press = decision.defensiveIntents.find(intent => intent.type === 'press');
   assert.equal(press.physicalAction, null, 'the same challenge cannot be emitted every render tick');
 
-  const recovered = defensiveSnapshot(cooldownUntil);
+  const recovered = defensiveSnapshot(cooldownUntil); recovered.ball.x -= 35;
   recovered.players.find(entry => entry.id === 'home-presser').x = 1445;
   decision = Intelligence.decide(recovered, decision.memory, {
     minimumReactionTicks: 0, maximumReactionTicks: 0
@@ -842,7 +842,7 @@ test('DEFENSIVE LOOP: stand tackle and shoulder actions require safe windows and
   press = decision.defensiveIntents.find(intent => intent.type === 'press');
   assert.equal(press.physicalAction.type, 'stand-tackle');
 
-  const sideOn = defensiveSnapshot(300);
+  const sideOn = defensiveSnapshot(300); sideOn.ball.x -= 35;
   const sideOnPresser = sideOn.players.find(entry => entry.id === 'home-presser');
   sideOnPresser.x = 1460;
   sideOnPresser.fx = 0.65;
@@ -875,7 +875,7 @@ test('DEFENSIVE LOOP: a CPU defender can commit the slide input only in a goal-s
   presser.x = 700;
   presser.fx = 1;
   carrier.x = 800;
-  danger.ball = { x: carrier.x, y: carrier.y };
+  danger.ball = { x: carrier.x - 35, y: carrier.y };
   let decision = Intelligence.decide(danger, null, { minimumReactionTicks: 0, maximumReactionTicks: 0 });
   let press = decision.defensiveIntents.find(intent => intent.type === 'press');
   assert.equal(press.physicalAction.type, 'slide-tackle');
