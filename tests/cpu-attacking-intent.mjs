@@ -14,7 +14,14 @@ test('a moving, goal-facing, onside runner behind a high line gets first service
  for(const dir of [1,-1])for(const rating of [1,50,99]){
   const s=fixture(dir,rating),i=CPU.decide(s,null,{maximumCommittedRuns:0}).carrierIntent;
   assert.equal(i.type,'pass');assert.equal(i.targetPlayerId,'runner');assert.equal(i.supportKind,'in-behind');
-  assert.ok(dir*(i.target.x-s.offsideLine)>2);assert.equal(i.flightType,'long-pass');
+  assert.ok(dir*(i.target.x-s.offsideLine)>2);assert.equal(i.flightType,'ground-pass','an open high-line lane is served on the grass');
+ }
+});
+test('a screened high-line lane uses the existing lofted pass instead of forcing a ground release',()=>{
+ for(const dir of [1,-1]){
+  const s=fixture(dir),carrier=s.players[0];s.players.push({...s.players[3],id:'lane-screen',teamId:'opp',x:dir>0?40:65,y:2.2,position:'CM'});
+  const i=CPU.decide(s,null,{maximumCommittedRuns:0}).carrierIntent;
+  assert.equal(i.supportKind,'in-behind');assert.equal(i.flightType,'long-pass');
  }
 });
 test('a stationary, wrong-facing or offside forward cannot masquerade as a ready runner behind a high line',()=>{

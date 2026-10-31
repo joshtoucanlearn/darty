@@ -243,8 +243,8 @@
   function normalizeReactionContext(value, tick, roster) {
     if (value == null) return null;
     const source = plainObject(value, 'reactionContext');
-    if (source.active !== true || source.stimulus !== 'deliberate-pass-release') {
-      throw new Error('reactionContext must describe one active deliberate pass release');
+    if (source.active !== true || !['deliberate-pass-release','deliberate-kick-release'].includes(source.stimulus)) {
+      throw new Error('reactionContext must describe one active deliberate kick release');
     }
     const releaseTick = integer(source.releaseTick, 1, tick, 'reactionContext.releaseTick');
     const sourcePlayerId = stableId(source.sourcePlayerId, 'reactionContext.sourcePlayerId');
@@ -255,7 +255,7 @@
     const previous = plainObject(source.previousBallPosition, 'reactionContext.previousBallPosition');
     return {
       active: true,
-      stimulus: 'deliberate-pass-release',
+      stimulus: source.stimulus,elapsedBeforeEpochTicks:source.stimulus==='deliberate-kick-release'?integer(source.elapsedBeforeEpochTicks||0,0,MAX_TICK,'reactionContext.elapsedBeforeEpochTicks'):0,
       releaseTick,
       sourcePlayerId,
       sourceTeamId,
@@ -392,7 +392,7 @@
     const baseDelay = REACTION_DELAY_MIN_TICKS + Math.round((99 - rating) / REACTION_DELAY_RATING_DIVISOR);
     const anticipation = candidate.intended ? INTENDED_RECEIVER_ANTICIPATION_TICKS : 0;
     const delayTicks = Math.max(0, baseDelay - anticipation);
-    const ageTicks = request.tick - request.reactionContext.releaseTick;
+    const ageTicks = request.tick - request.reactionContext.releaseTick+(request.reactionContext.elapsedBeforeEpochTicks||0);
     return {
       active: true,
       rating,
@@ -404,23 +404,53 @@
     };
   }
 
+  const PASSIVE_LOW_POSE={},PASSIVE_LOW_FOOT={},PASSIVE_DEFAULT_RIG=Movement.createContactRig(),
+    PASSIVE_BODY_QUERY={previousBallPosition:null,tick:0,fixedTickSeconds:FIXED_TICK_SECONDS,
+      body:{id:'physical-low-body',position:{x:0,y:0,z:0},velocity:{x:0,y:0,z:0},radius:.10,heightM:.30}};
   function passiveBodyProbe(request, candidate) {
     if (!request.reactionContext || !candidate.roster.bodyContactEligible) return null;
-    const ageTicks = request.tick - request.reactionContext.releaseTick;
+    const ageTicks = request.tick - request.reactionContext.releaseTick+(request.reactionContext.elapsedBeforeEpochTicks||0);
     if (candidate.player.id === request.reactionContext.sourcePlayerId &&
         ageTicks < SOURCE_RELEASE_BODY_PROTECTION_TICKS) return null;
-    const result = Ball.resolvePassiveBodyDeflection(request.ballState, {
-      previousBallPosition: request.reactionContext.previousBallPosition,
-      body: {
-        id: candidate.player.id,
-        position: { x: candidate.player.position.x, y: candidate.player.position.y, z: 0 },
-        velocity: { x: candidate.player.velocity.x, y: candidate.player.velocity.y, z: 0 },
-        radius: candidate.player.radius,
-        heightM: candidate.roster.heightM
-      },
-      tick: request.tick,
-      fixedTickSeconds: FIXED_TICK_SECONDS
-    });
+    // Reject disjoint swept bounds before the frozen Ball query clones its
+    // state/configuration. These bounds contain the entire moving capsule,
+    // including the ball radius; only definite misses take this fast path.
+    const current=request.ballState.position,previous=request.reactionContext.previousBallPosition,
+      body=candidate.player.position,velocity=candidate.player.velocity,
+      radius=(candidate.player.action?.type==='slide-tackle'?1.3:candidate.player.radius)+request.ballState.radius,
+      previousX=body.x-velocity.x*FIXED_TICK_SECONDS,previousY=body.y-velocity.y*FIXED_TICK_SECONDS;
+    if(Math.max(previous.x,current.x)<Math.min(previousX,body.x)-radius||
+      Math.min(previous.x,current.x)>Math.max(previousX,body.x)+radius||
+      Math.max(previous.y,current.y)<Math.min(previousY,body.y)-radius||
+      Math.min(previous.y,current.y)>Math.max(previousY,body.y)+radius||
+      Math.min(previous.z,current.z)>(candidate.player.action?.type==='slide-tackle'?.75:candidate.roster.heightM)+request.ballState.radius||
+      Math.max(previous.z,current.z)<-request.ballState.radius)return null;
+    const slide=candidate.player.action?.type==='slide-tackle';
+    if(slide){
+      const player=candidate.player,rig=player.contactRig||PASSIVE_DEFAULT_RIG,pose=PASSIVE_LOW_POSE,foot=PASSIVE_LOW_FOOT,
+        progress=Movement.contactProgress(player.action,request.tick);
+      Movement.fillChallengePose('slide-tackle',progress,1,pose);Movement.groundChallengePose(rig,pose,progress,foot);
+      Movement.fillChallengeFoot(rig,pose,1,true,player.facing.x,player.facing.y,foot);
+      const toeX=player.position.x+foot.x,toeY=player.position.y+foot.y,
+        rearX=player.position.x-player.facing.x*.75,rearY=player.position.y-player.facing.y*.75;
+      let earliest=null;
+      for(let segment=0;segment<6;segment++){
+        const t=segment/5,body=PASSIVE_BODY_QUERY.body;
+        body.id=player.id;body.position.x=rearX+(toeX-rearX)*t;body.position.y=rearY+(toeY-rearY)*t;body.position.z=0;
+        body.velocity.x=player.velocity.x;body.velocity.y=player.velocity.y;body.velocity.z=0;
+        body.radius=segment<3?.16:.10;body.heightM=segment<3?.65:.30;
+        PASSIVE_BODY_QUERY.previousBallPosition=request.reactionContext.previousBallPosition;PASSIVE_BODY_QUERY.tick=request.tick;
+        const probe=Ball.resolvePassiveBodyDeflection(request.ballState,PASSIVE_BODY_QUERY);
+        if(probe.hit&&(!earliest||probe.timeFraction<earliest.timeFraction))earliest=probe;
+      }
+      return earliest;
+    }
+    const uprightBody=PASSIVE_BODY_QUERY.body;
+    uprightBody.id=candidate.player.id;uprightBody.position.x=candidate.player.position.x;uprightBody.position.y=candidate.player.position.y;uprightBody.position.z=0;
+    uprightBody.velocity.x=candidate.player.velocity.x;uprightBody.velocity.y=candidate.player.velocity.y;uprightBody.velocity.z=0;
+    uprightBody.radius=candidate.player.contactRig?.bodyRadiusM??candidate.player.radius;uprightBody.heightM=candidate.roster.heightM;
+    PASSIVE_BODY_QUERY.previousBallPosition=request.reactionContext.previousBallPosition;PASSIVE_BODY_QUERY.tick=request.tick;
+    const result=Ball.resolvePassiveBodyDeflection(request.ballState,PASSIVE_BODY_QUERY);
     return result.hit ? result : null;
   }
 
@@ -444,7 +474,12 @@
       reactionDelayTicks: reaction.delayTicks,
       releaseAgeTicks: reaction.ageTicks
     };
-    const ballState = Ball.createBallState({ ...probe.state, metadata }, {
+    // A body has physically disturbed the sphere. MR's passive query retains
+    // the input's settled flag; keeping it would skip the next integration,
+    // including ground support after a low capsule normal moves the sphere.
+    // Release that stale constraint and let MR resolve the actual position.
+    const ballState = Ball.createBallState({ ...probe.state, metadata, settled:false,settleTime:0,
+      regime:probe.state.regime===Ball.REGIMES.SETTLED?Ball.REGIMES.ROLL:probe.state.regime }, {
       radius: probe.state.radius,
       mass: probe.state.mass
     });
@@ -797,7 +832,10 @@
         eligibleFromTick: intent.commandTick + profile.windupTicks - profile.viableWindowTicks
       }, 'aerial-attempt');
     }
-    const result = Aerial.resolveContact(normalized, capability);
+    // resolveContact normalizes its raw request itself. Passing the already
+    // normalized shape loses `technique` (renamed `requestedTechnique`) and
+    // silently turns an explicit volley into an automatic header.
+    const result = Aerial.resolveContact(aerialRequest, capability);
     if (!result || result.schema !== Aerial.RESULT_SCHEMA || result.version !== Aerial.VERSION ||
         result.requestId !== normalized.id || result.contactTick !== request.tick || result.shadowOnly !== true) {
       throw new Error('Aerial Contact V2 result contract failed');

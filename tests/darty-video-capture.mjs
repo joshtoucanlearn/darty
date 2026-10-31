@@ -50,7 +50,7 @@ test('production host: same seed gives identical first 300 frames and 300 live f
   assert.equal(JSON.stringify(a.dartyCapture.events()),JSON.stringify(b.dartyCapture.events()));
   // Reach ordinary on-pitch CPU play, then compare a meaningful ten seconds.
   a.dartyCapture.step(185);b.dartyCapture.step(185);
-  const before=a.FLLiveV2.status().gameplay.committedTicks;
+  const before=a.FLLiveV2.status().gameplay.committedTicks,ballBefore={x:a.FLMatch.getState().ball.x,y:a.FLMatch.getState().ball.y};
   assert.ok(before>0,'real V2 authority has committed live play');
   a.dartyCapture.step(300);for(let i=0;i<300;i++)b.dartyCapture.step();
   assert.equal(a.FLLiveV2.status().gameplay.committedTicks-before,600);
@@ -60,8 +60,11 @@ test('production host: same seed gives identical first 300 frames and 300 live f
   // A genuine carry/cross/shot sequence is active football too. Requiring
   // three passes here tied capture determinism to the old circulation tempo.
   assert.ok(a.dartyCapture.events().some(e=>e.type==='pass'));
-  assert.ok(a.dartyCapture.events().some(e=>['shot','save','goal'].includes(e.type)),
-    'the live sequence reaches an attacking outcome');
+  assert.equal(a.FLMatch.getState().ball.y,b.FLMatch.getState().ball.y);
+  assert.notDeepEqual({x:a.FLMatch.getState().ball.x,y:a.FLMatch.getState().ball.y},ballBefore,
+    'the identical live sequence advances the physical ball');
+  // An ordinary ten-second spell can be build-up. The explicit physical
+  // attempt below verifies shot/goal capture without demanding an early shot.
   assert.throws(()=>a.dartyCapture.step(.5),/integer/);
   const detached=a.dartyCapture.events();detached[0].camera.mode='changed';
   assert.notEqual(a.dartyCapture.events()[0].camera.mode,'changed');

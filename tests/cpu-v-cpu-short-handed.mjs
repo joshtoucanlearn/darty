@@ -14,10 +14,11 @@ const fixture = JSON.parse(readFileSync(new URL('./fixtures/corner-loose-ball-se
 const source = readFileSync(new URL('../match-engine/match.html', import.meta.url), 'utf8');
 
 test('an outfield dismissal leaves live CPU gameplay eligible without clearing the card', () => {
-  const start = source.indexOf('function liveV2CanAdvance()');
+  const start = source.indexOf('function liveV2MinimumRoster()');
   const end = source.indexOf('\n  // D3:', start);
-  const run = new Function(`
-    const you=[{sentOff:true}],opp=[],ball={owner:null};
+  const run = new Function('minimumRosterStatus',`
+    const you=Array.from({length:10},(_,i)=>({sentOff:i===0})),opp=Array.from({length:10},()=>({sentOff:false})),ball={owner:null};
+    const ykeep={sentOff:false},okeep={sentOff:false},liveV2ControlApi={minimumRosterStatus};
     const LAB_HOST_AUTHORITY=false,LIVE_V2_PREFLIGHT={workflow:'cpu-v-cpu',eligible:true};
     const liveV2Authority={},started=true,matchPhase='play',AUTO=true,clockRunning=true;
     const liveV2StrictStopped=false,paused=false,matchOver=false,twoPlayerEnabled=false,FREE_KICK_PRACTICE=false,
@@ -27,7 +28,7 @@ test('an outfield dismissal leaves live CPU gameplay eligible without clearing t
     const inReset=()=>false;
     ${source.slice(start, end)}
     return ()=>({eligible:liveV2CanAdvance(),sentOff:you[0].sentOff});
-  `)();
+  `)(require('../match-engine/live-v2-match-control-composition.js').minimumRosterStatus);
   assert.deepEqual(run(), { eligible: true, sentOff: true });
 });
 

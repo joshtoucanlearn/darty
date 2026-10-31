@@ -470,7 +470,7 @@
     state.totalGameplaySeconds += seconds;
   }
 
-  function advanceLiveGameplayInPlace(state, gameplayBudget) {
+  function advanceLiveGameplayInPlace(state, gameplayBudget, periodEndBlocked) {
     let remainingBudget = gameplayBudget;
     const periodState = state.periodState;
     const epsilon = 1e-10;
@@ -497,8 +497,18 @@
     if (activePeriod(state.period)
       && state.periodState.addedTime.sealedSeconds != null
       && state.periodState.gameplaySeconds + epsilon >= currentPeriodTarget(state)) {
-      state.periodState.gameplaySeconds = currentPeriodTarget(state);
-      completePeriodInPlace(state);
+      if (periodEndBlocked) {
+        periodState.completionPending = true;
+        // Continue real live football while the already-started action ends.
+        // Never rewind or freeze the simulation clock used by contact locks.
+        if (remainingBudget > epsilon) {
+          periodState.addedTime.postSealSeconds += remainingBudget;
+          addGameplayInPlace(state, remainingBudget);
+        }
+      } else {
+        state.periodState.gameplaySeconds = currentPeriodTarget(state);
+        completePeriodInPlace(state);
+      }
     }
   }
 
@@ -523,9 +533,12 @@
     }
   }
 
-  function advance(state, tickCount) {
+  function advance(state, tickCount, options) {
     assertState(state);
     if (!Number.isInteger(tickCount) || tickCount < 0) throw new Error('tickCount must be a non-negative integer');
+    const periodEndBlocked = options && options.periodEndBlocked === true;
+    if (options && options.periodEndBlocked != null && typeof options.periodEndBlocked !== 'boolean')
+      throw new TypeError('periodEndBlocked must be a boolean');
     const next = clone(state);
     const dt = next.config.fixedTickSeconds;
     for (let index = 0; index < tickCount; index += 1) {
@@ -543,17 +556,42 @@
         continue;
       }
 
+      if (next.periodState.completionPending && !periodEndBlocked) {
+        completePeriodInPlace(next);
+        next.presentationElapsedSeconds += dt;
+        continue;
+      }
       if (next.phase === 'live') {
         next.periodState.liveRealSeconds += dt;
         next.totalLiveRealSeconds += dt;
-        advanceLiveGameplayInPlace(next, dt * next.config.acceleration);
+        advanceLiveGameplayInPlace(next, dt * next.config.acceleration, periodEndBlocked);
       } else if (stoppedPhase(next.phase)) {
         next.periodState.stoppedRealSeconds += dt;
         next.totalStoppedRealSeconds += dt;
-        accrueStoppageInPlace(next, dt);
+        if (next.periodState.completionPending) {
+          // The period is already due. Finishing a referee/replay scene earns
+          // no fresh playing budget, but its real elapsed time remains recorded.
+          if (!next.activeStoppage) startStoppageInPlace(next, { reason: next.phase });
+          next.activeStoppage.realSeconds += dt;
+        } else accrueStoppageInPlace(next, dt);
       }
     }
     return next;
+  }
+
+  // An illegal roster is a distinct terminal result, never a played90minutes.
+  function abandonMatch(state, meta) {
+    assertState(state);const source=meta||{};assertTransitionTick(state,source);
+    if(state.period==='full-time')throw new Error('the match is already terminal');
+    if(state.phase==='paused')throw new Error('resume before abandoning the match');
+    if(typeof source.teamId!=='string'||!source.teamId||!Number.isInteger(source.remainingPlayers)||
+        source.remainingPlayers<0||source.remainingPlayers>=7)throw new TypeError('abandonment requires a named team with fewer than seven players');
+    const next=clone(state),period=next.period;
+    closeStoppageInPlace(next,'match-abandoned');
+    next.abandonment={teamId:source.teamId,remainingPlayers:source.remainingPlayers,minimumPlayers:7,
+      reason:'insufficient-players',period,tick:next.tick,gameplaySeconds:next.totalGameplaySeconds};
+    next.period='full-time';next.phase='presentation';next.resumePhase=null;
+    recordInPlace(next,'match-abandoned',next.abandonment);return next;
   }
 
   function startSecondHalf(state, meta) {
@@ -615,7 +653,7 @@
   function displayClock(state) {
     const halfBase = state.config.baseHalfGameplaySeconds;
     const periodSeconds = state.periodState.gameplaySeconds;
-    const displaySeconds = state.period === 'second-half' || state.period === 'full-time'
+    const displaySeconds = state.period === 'second-half' || state.period === 'full-time'&&(!state.abandonment||state.periodState.id==='second-half')
       ? halfBase + periodSeconds
       : periodSeconds;
     const safeSeconds = Math.max(0, displaySeconds);
@@ -645,6 +683,7 @@
       tick: state.tick,
       period: state.period,
       phase: state.phase,
+      ...(state.abandonment?{abandonment:clone(state.abandonment)}:{}),
       display: displayClock(state),
       clocks: {
         gameplaySeconds: rounded(state.totalGameplaySeconds),
@@ -669,7 +708,8 @@
         addedTimeSealed: added.sealedSeconds != null,
         halfTime: state.period === 'half-time',
         canStartSecondHalf: state.period === 'half-time' && state.phase !== 'paused',
-        fullTime: state.period === 'full-time'
+        fullTime: state.period === 'full-time'&&!state.abandonment,
+        ...(state.abandonment?{abandoned:true}:{})
       },
       telemetry: {
         schema: TELEMETRY_SCHEMA,
@@ -705,6 +745,7 @@
     resume,
     declareAddedTime,
     startSecondHalf,
+    abandonMatch,
     transition,
     advance,
     step(state) {

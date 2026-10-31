@@ -232,7 +232,7 @@ test('the live snapshot excludes a recent kicker and propagates that eligibility
 
   const normalize = sourceBetween(adapterSource, 'function normalizeSnapshot', 'function livePoint');
   assert.match(normalize, /contactEligible:\s*player\.contactEligible\s*!==\s*false/);
-  assert.match(adapterSource, /contactEligible:\s*!player\.sentOff\s*&&\s*!player\.isGK\s*&&\s*player\.contactEligible/);
+  assert.match(adapterSource, /contactEligible:[^\n]*!player\.sentOff\s*&&\s*!player\.isGK\s*&&\s*player\.contactEligible/);
   assert.match(snapshot, /shield:!!player\.shielding/, 'L2 shielding must cross the live V2 snapshot boundary');
   assert.match(snapshot, /type:'cushion'[\s\S]*touchDistanceM:\.18\+input\.strength\*\.28[\s\S]*active:false/, 'ordinary receiver input must author a directional cushion without forcing an ownerless knock-on');
   assert.match(matchSource, /function performDirectionalKnockOn[\s\S]*flightType='directional-knock-on'/, 'the explicit L1 plus right-stick knock-on workflow must remain available');
@@ -383,10 +383,15 @@ test('each CPU team chases a moving loose ball at its own interception point', (
   assert.ok(behind && ahead, JSON.stringify(frame.hostProjection.recoveryAssignments));
   assert.ok(behind.target.x > ahead.target.x + 1,
     `collectors shared a naive chase point: ${JSON.stringify(frame.hostProjection.recoveryAssignments)}`);
-  for (const player of [chasingFromBehind, meetingFromAhead]) {
-    const movement = frame.hostProjection.movement.find(row => row.id === player.id);
-    assert.equal(movement.locomotionState, 'sprint', JSON.stringify(movement));
-  }
+  const chaser=frame.hostProjection.movement.find(row=>row.id===chasingFromBehind.id),
+    collector=frame.hostProjection.movement.find(row=>row.id===meetingFromAhead.id);
+  assert.equal(chaser.locomotionState,'sprint',JSON.stringify({chaser,behind}));
+  // The closer player has a full second's head start and a2m incoming
+  // meeting. This is an uncontested interception, so he can plant for it;
+  // loose-ball-race-v2 separately requires both actual contenders to sprint.
+  assert.ok(behind.distanceMetres>9&&ahead.distanceMetres<=2.2&&behind.etaSeconds-ahead.etaSeconds>=.99);
+  assert.equal(collector.locomotionState,'run');assert.ok(collector.vx<0);
+  assert.equal(frame.hostProjection.logicalBallOwnerId,null);
 });
 
 test('goalkeeper possession resolves the owning team to buildup and the opponent to defend', () => {

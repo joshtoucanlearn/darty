@@ -13,12 +13,12 @@ const Ball = require('../match-engine/ball-engine-v2.js');
 const Composer = require('../match-engine/live-v2-contact-authority-composer.js');
 
 const HASHES = Object.freeze({
-  'live-v2-contact-authority-composer.js': 'f2cac84c8c0affd27b16875177912f2a2ac35e8df55477a1c5f620179a7fed24',
+  'live-v2-contact-authority-composer.js': '1f395433fbd46e05f1e96dbc707e7a3d412a7d5de8eb2f5b288a6fad7d361389',
   'first-touch-v2.js': 'f548c5c33c0d82ce044ebb083ec6deac0deb212f8287608f77e490794894152c',
   'first-touch-authority-adapter-v2.js': '2c6bf8b63e327c653556d73ec4c820b742038e63fb1f46217ef912eccec432f2',
   'aerial-contact-v2.js': '54bf086bef9e0f149f9ed2445454da510fca5908e79aa77d95ba5f70d5e8b1ba',
   'ball-engine-v2.js': 'e2b6776a12ebcf8353e322c181e2f38dbb18c1c41d10c1cebf134418a296a819',
-  'movement-engine-v2.js': 'e51f06f224514a715464a048c02a8103e39e76433ed5228c52ac155151f9fc91'
+  'movement-engine-v2.js': '4f9affedcdc406bb9513ecad23c2a864a6246a9560d9dbb645f27e8168fb472e'
 });
 
 function sha(file) {
@@ -152,6 +152,26 @@ function aerialFixture(overrides = {}) {
     }
   });
 }
+
+test('a real body impact releases a settled ball constraint before the next strict First Touch handoff',()=>{
+ const receiver=movementPlayer('receiver','you',52.5,0,{velocity:{x:6,y:0}});receiver.radius=.4;
+ const request=fixture({receiver,ballPosition:{x:52.91,y:0,z:.11},ballVelocity:{x:0,y:0,z:0},
+   intendedReceiverId:null,receiverRoster:{contactEligible:false,bodyContactEligible:true}});
+ request.ballState=Ball.createBallState({...request.ballState,settled:true,settleTime:1,regime:Ball.REGIMES.SETTLED});
+ request.reactionContext={active:true,stimulus:'deliberate-pass-release',releaseTick:request.tick-1,
+   sourcePlayerId:'defender',sourceTeamId:'opp',previousBallPosition:{...request.ballState.position}};
+ const result=Composer.compose(request,capability());
+ assert.equal(result.contactType,'involuntary-deflection');
+ assert.ok(result.ballState.position.z<result.ballState.radius,'the actual low capsule normal nudges the sphere below its old support');
+ assert.equal(result.ballState.settled,false,'a struck ball must not retain the pre-impact settled constraint');
+ const next=Ball.step(result.ballState,Ball.createSimulationContext({seed:173,outerTick:request.tick}),1/60);
+ assert.ok(next.state.position.z>=next.state.radius-1e-6);
+ const resumed={...request,tick:request.tick+1,ballState:next.state,reactionContext:null,
+  movementWorld:Movement.createWorldState({...request.movementWorld,tick:request.tick+1}),
+  roster:request.roster.map(p=>({...p,contactEligible:true})),intendedReceiverId:'receiver'};
+ const control=Composer.compose(resumed,capability());
+ assert.equal(control.ownedContact,true);assert.equal(control.presentation.playerId,'receiver');
+});
 
 test('review is pinned to the declared contact composition and exact lower-engine bytes', () => {
   for (const [file, expected] of Object.entries(HASHES)) assert.equal(sha(file), expected, file);

@@ -212,7 +212,8 @@
       // Live human control may ask for a more responsive interpretation of
       // the same rated turn/deceleration model. The default remains exactly
       // one, so CPU and legacy callers retain their existing arithmetic.
-      responsivenessMultiplier: clamp(finite(source.responsivenessMultiplier, 1), 1, 1.5)
+      responsivenessMultiplier: clamp(finite(source.responsivenessMultiplier, 1), 1, 1.5),
+      ...(source.directionalSteering===true?{directionalSteering:true}:{})
     };
   }
 
@@ -232,6 +233,10 @@
       acknowledged: value.acknowledged !== false,
       resolved: Boolean(value.resolved),
       outcome: value.outcome == null ? null : String(value.outcome),
+      ...(Number.isFinite(value.firstBallContactTick)?{firstBallContactTick:value.firstBallContactTick}:{}),
+      ...(value.bodyContactRecorded?{bodyContactRecorded:true}:{}),
+      ...(value.ballWon?{ballWon:true}:{}),
+      ...(value.closestBall?{closestBall:{...value.closestBall}}:{}),
       visible: value.visible !== false,
       ...(value.racePursuit===true&&type==='shoulder-challenge'?{racePursuit:true}:{})
     };
@@ -261,6 +266,8 @@
       velocity: vector(source.velocity, { x: finite(source.vx, 0), y: finite(source.vy, 0) }),
       facing,
       radius,
+      ...(source.contactRig?.schema==='physical-contact-rig-v2'?{contactRig:source.contactRig}:{}),
+      ...(source.externalMotion?{externalMotion:true}:{}),...(source.bodyLow?{bodyLow:true}:{}),
       mass: clamp(finite(source.mass, derivedMass), 35, 140),
       stamina: clamp(finite(source.staminaLevel, source.stamina == null ? 100 : source.stamina), 0, 100),
       locomotionState: String(source.locomotionState || 'idle'),
@@ -269,9 +276,11 @@
       control: createControl(source.control),
       action: createAction(source.action),
       hasBall: Boolean(source.hasBall),
+      skillProtection: source.skillProtection&&typeof source.skillProtection.defenderId==='string'?{defenderId:source.skillProtection.defenderId,multiplier:clamp(finite(source.skillProtection.multiplier,1),0,1)}:null,
       touchBurstUntilTick: Number.isInteger(source.touchBurstUntilTick) ? source.touchBurstUntilTick : -1,
       touchBurstAccelerationMultiplier: clamp(finite(source.touchBurstAccelerationMultiplier, 1), 1, 1.08),
       lastCommandAck: source.lastCommandAck ? cloneObject(source.lastCommandAck) : null,
+      ...(source.lastBodyContactTick!==undefined?{lastBodyContactTick:finite(source.lastBodyContactTick,-100),lastBodyContactPeerId:String(source.lastBodyContactPeerId||'')}:{}),
       safetyCorrections: Math.max(0, Math.trunc(finite(source.safetyCorrections, 0)))
     };
   }
@@ -362,6 +371,8 @@
       intensity: clamp(finite(source.intensity, type === 'move' ? 1 : 0), 0, 1),
       mode: CONTEXT_MODES.has(requestedMode) ? requestedMode : 'run',
       responsivenessMultiplier: clamp(finite(source.responsivenessMultiplier, 1), 1, 1.5),
+      ...(source.directionalSteering===true?{directionalSteering:true}:{}),
+      ...(source.cancelAction===true?{cancelAction:true}:{}),
       durationTicks: Math.max(1, Math.trunc(finite(source.durationTicks, 1))),
       targetId: source.targetId == null ? null : String(source.targetId),
       ...(source.racePursuit===true&&type==='shoulder-challenge'?{racePursuit:true}:{})
@@ -412,16 +423,18 @@
         facing: command.facing,
         intensity: command.intensity,
         mode: command.mode,
-        responsivenessMultiplier: command.responsivenessMultiplier
+        responsivenessMultiplier: command.responsivenessMultiplier,
+        directionalSteering: command.directionalSteering
       });
       return;
     }
     if (command.type === 'stop') {
+      if(command.cancelAction){player.action=null;player.visibleAction=false;}
       player.control = createControl({ commandId: command.id, startTick: tick, untilTick: tick, mode: 'idle' });
       return;
     }
     if(command.racePursuit)player.control=createControl({commandId:command.id,startTick:tick,untilTick:tick+command.durationTicks-1,
-      move:command.move,facing:command.facing,intensity:1,mode:'sprint'});
+      move:command.move,facing:command.facing,intensity:1,mode:'sprint',directionalSteering:command.directionalSteering});
     const tackle = command.type === 'stand-tackle', slide = command.type === 'slide-tackle';
     const windupTicks = slide ? config.slideWindupTicks : tackle ? config.tackleWindupTicks : config.shoulderWindupTicks;
     const contactTicks = slide ? config.slideContactTicks : tackle ? config.tackleContactTicks : config.shoulderContactTicks;
@@ -509,6 +522,7 @@
   }
 
   function integratePlayer(player, tick, config) {
+    if(player.externalMotion)return;
     const dt = config.fixedTickSeconds;
     const action = player.action;
     const phase = actionPhase(action, tick);
@@ -546,9 +560,13 @@
     // through speed inertia and then made velocity chase that rotating body,
     // effectively applying turn delay twice. Keep the body turn readable,
     // but resolve the requested velocity against the stick direction itself.
-    // CPU/default callers remain on the original facing-led path below.
-    const humanDirectionalSteering = !liveAction && inputMagnitude > 1e-9 && response > 1 &&
-      (directionAlignment < 0.995 || facingAlignment < 0.995);
+    // Urgent pursuit uses this same direction-based momentum resolution at
+    // neutral responsiveness. It must brake/pivot towards the interception,
+    // rather than chase a rotating body away from a ball it has overshot.
+    const humanDirectionalSteering = (!liveAction||liveAction.racePursuit) && inputMagnitude > 1e-9 &&
+      (response > 1||control.directionalSteering===true) &&
+      (directionAlignment < 0.995 || facingAlignment < 0.995 ||
+        control.facing && dot(control.facing,desiredDirection)<0.995);
     const turnSeverity = clamp((1 - directionAlignment) / 2, 0, 1);
     const ratedResponse = 1 + (response - 1) * clamp((1 - directionAlignment) / 0.3, 0, 1);
     // With no retained momentum there is nothing physical to preserve: a
@@ -557,7 +575,11 @@
     const maximumTurn = response > 1 && speed <= 0.25
       ? Math.PI
       : limits.turnRate / (1 + speed * config.speedTurnInertia * (humanDirectionalSteering ? 0.25 : 1)) * response * dt;
-    player.facing = rotateToward(player.facing, desiredDirection, maximumTurn);
+    // Facing and travel normally share the same input. A direction-led
+    // receiving step can preserve an explicitly requested goal-facing body
+    // while the same rated momentum model takes the player to the meeting.
+    const facingDirection=humanDirectionalSteering&&control.facing?control.facing:desiredDirection;
+    player.facing = rotateToward(player.facing, facingDirection, maximumTurn);
     const targetSpeed = forcedSpeed == null ? limits.speed * inputMagnitude : forcedSpeed;
     if (humanDirectionalSteering) {
       // Resolve the obsolete sideways/old-direction momentum separately from
@@ -633,6 +655,406 @@
       player.locomotionState = contextualMode;
     }
   }
+
+  // Prepared for step7 only. Do not install until the defending ten completes.
+  // Model coordinates and joint rotations come from the existing player rig.
+  // The renderer and contact geometry consume this one pose; no second reach.
+  function fillChallengePose(type,progress,side,out) {
+    const q=clamp(progress,0,1),lead=side<0?-1:1;
+    out.rootPitch=0;out.rootRoll=0;out.rootLift=0;out.pelvisPivot=false;out.verticalShift=0;out.forwardShift=0;
+    out.leftHip=0;out.rightHip=0;out.leftKnee=-.08;out.rightKnee=-.08;
+    out.leftArm=-.04;out.rightArm=-.04;out.torsoPitch=0;out.headPitch=0;out.leftFoot=0;out.rightFoot=0;
+    if(type==='slide-tackle'){
+      const drop=clamp(q/.24,0,1),skid=clamp((q-.08)/.72,0,1),recover=clamp((q-.76)/.24,0,1),
+        leadingHip=-.18-skid*.26+recover*.38,leadingKnee=-.12-skid*.18,
+        trailingHip=-1.16+recover*.58,
+        // Fold the trailing shin back above the turf; the old negative bend
+        // drove its boot through the grass once the body became horizontal.
+        trailingKnee=-.08+drop*1.68-recover*.7;
+      out.rootPitch=.58+drop*.92-recover*.30;out.rootRoll=-lead*Math.sin(q*Math.PI)*.08;
+      out.rootLift=7-drop*3.4+recover*1.4;out.pelvisPivot=true;
+      out.leftHip=lead>0?trailingHip:leadingHip;out.rightHip=lead>0?leadingHip:trailingHip;
+      out.leftKnee=lead>0?trailingKnee:leadingKnee;out.rightKnee=lead>0?leadingKnee:trailingKnee;
+      out.leftFoot=-out.rootPitch-out.leftHip-out.leftKnee;out.rightFoot=-out.rootPitch-out.rightHip-out.rightKnee;
+      out.leftArm=-.70-skid*.26;out.rightArm=-1.02+skid*.18;
+      out.torsoPitch=-drop*.18;out.headPitch=.16*drop;
+    }else if(type==='stand-tackle'){
+      const jab=Math.sin(q*Math.PI);out.rootPitch=-.18*jab;
+      out.rightHip=.98*jab;out.rightKnee=-.16-.85*jab;out.leftHip=-.20*jab;out.leftKnee=-.08-.65*jab;
+      out.leftFoot=-out.rootPitch-out.leftHip-out.leftKnee;out.rightFoot=-out.rootPitch-out.rightHip-out.rightKnee;
+      out.leftArm=.55*jab;out.rightArm=-.75*jab;
+    }else{
+      const lean=Math.sin(q*Math.PI);out.rootPitch=-.18*lean;out.rootRoll=-.12*lean;
+      out.rightHip=.56*lean;out.leftHip=-.36*lean;out.rightArm=-1.20*lean;
+    }
+    return out;
+  }
+
+  // Exact FK of hip -> knee -> foot -> toe in playerMesh. Scalars and a
+  // caller-owned result avoid new vectors/configuration in near-pair queries.
+  function fillChallengeFoot(rig,pose,side,toe,headingX,headingY,out) {
+    const leg=rig.legLength,hipAngle=side<0?pose.leftHip:pose.rightHip,
+      kneeAngle=side<0?pose.leftKnee:pose.rightKnee,
+      footAngle=side<0?pose.leftFoot:pose.rightFoot,
+      footY=toe===-1?0:-9.90-(leg-1)*10+(toe===true?4.12*Math.sin(footAngle):0),footZ=toe===-1?0:-.76-(toe===true?4.12*Math.cos(footAngle):0),
+      ck=Math.cos(kneeAngle),sk=Math.sin(kneeAngle),
+      ky=-13.82-(leg-1)*5+footY*ck-footZ*sk,kz=footY*sk+footZ*ck,
+      cz=Math.cos(-side*.018),sz=Math.sin(-side*.018),
+      hx=side*2.66*rig.stanceHip-ky*sz,
+      hy=24.55+(leg-1)*17+ky*cz*Math.cos(hipAngle)-kz*Math.sin(hipAngle),
+      hz=ky*cz*Math.sin(hipAngle)+kz*Math.cos(hipAngle),
+      x=hx*rig.scale,y=hy*rig.scale*rig.heightScale,z=hz*rig.scale,
+      cr=Math.cos(pose.rootRoll),sr=Math.sin(pose.rootRoll),
+      rolledX=x*cr-y*sr,rolledY=x*sr+y*cr,
+      cp=Math.cos(pose.rootPitch),sp=Math.sin(pose.rootPitch),
+      pitchedY=rolledY*cp-z*sp,pitchedZ=rolledY*sp+z*cp,
+      // The player looks down local -Z. Express the exact rig point in the
+      // same heading used by Movement, preserving finite zero components.
+      worldX=-headingY*rolledX-headingX*pitchedZ,
+      worldY=headingX*rolledX-headingY*pitchedZ;
+    out.x=(worldX+headingX*(pose.forwardShift||0))/rig.xPerMetre;
+    out.y=(worldY+headingY*(pose.forwardShift||0))/rig.yPerMetre;
+    out.z=(pitchedY+(pose.verticalShift??pose.rootLift))/rig.zPerMetre;
+    return out;
+  }
+
+  // Supply the same rig profile and reusable foot scratch to physics/render.
+  // This is presentation anchoring, not a player/ball teleport.
+  function groundChallengePose(rig,pose,progress,scratch){
+    pose.verticalShift=pose.rootLift;pose.forwardShift=0;
+    if(pose.pelvisPivot)pose.forwardShift=(24.55+(rig.legLength-1)*17)*rig.scale*rig.heightScale*
+      Math.sin(pose.rootPitch)*clamp(progress/.24,0,1);
+    let minimum=Infinity;
+    fillChallengeFoot(rig,pose,-1,false,1,0,scratch);minimum=Math.min(minimum,scratch.z);
+    fillChallengeFoot(rig,pose,-1,true,1,0,scratch);minimum=Math.min(minimum,scratch.z);
+    fillChallengeFoot(rig,pose,1,false,1,0,scratch);minimum=Math.min(minimum,scratch.z);
+    fillChallengeFoot(rig,pose,1,true,1,0,scratch);minimum=Math.min(minimum,scratch.z);
+    pose.verticalShift+=(.08-minimum)*rig.zPerMetre;
+    return pose;
+  }
+  const CONTACT_RIG_SHAPES=Object.freeze([
+    Object.freeze({legLength:1,stanceHip:1,shoulder:1}),Object.freeze({legLength:.98,stanceHip:1.08*1.06,shoulder:1.10}),
+    Object.freeze({legLength:1.04,stanceHip:.94*.93,shoulder:.96}),Object.freeze({legLength:.95,stanceHip:1.10*1.09,shoulder:1.08}),
+    Object.freeze({legLength:1.08,stanceHip:.98*.94,shoulder:.99})]);
+  function createContactRig(input={}){
+    const a=input.appearance||{},index=Math.max(0,Math.trunc(finite(a.bodyIndex,0)))%5,shape=CONTACT_RIG_SHAPES[index],
+      scale=(.948+index*.012+(finite(input.number,1)%3)*.006)*1.06,
+      heightScale=Number.isFinite(a.heightCm)?clamp(a.heightCm/180,.90,1.12):[.95,.97,.985,1,1.02,1.04,1.055][Math.max(0,Math.trunc(finite(a.heightIndex,3)))%7],
+      units=input.units||{},xPerMetre=finite(units.xPerMetre,30.247619047619),yPerMetre=finite(units.yPerMetre,31.5),zPerMetre=finite(units.zPerMetre,31.323529411765);
+    return Object.freeze({schema:'physical-contact-rig-v2',legLength:shape.legLength,stanceHip:shape.stanceHip,
+      scale,heightScale,xPerMetre,yPerMetre,zPerMetre,
+      bodyRadiusM:7.5*shape.shoulder*scale/Math.sqrt(xPerMetre*yPerMetre),heightM:55.5*scale*heightScale/zPerMetre,shoulder:shape.shoulder,armLength:[1,.98,1.04,.95,1.07][index]});
+  }
+  // Shared anatomical reach: real shoulder/elbow/fingertip lengths, no limb
+  // scaling and no movement of the ball. Output is reusable by the renderer.
+  function keeperQuaternionFromTo(ax,ay,az,bx,by,bz,out){
+    const al=Math.hypot(ax,ay,az)||1,bl=Math.hypot(bx,by,bz)||1;
+    ax/=al;ay/=al;az/=al;bx/=bl;by/=bl;bz/=bl;
+    let x=ay*bz-az*by,y=az*bx-ax*bz,z=ax*by-ay*bx,w=1+ax*bx+ay*by+az*bz;
+    if(w<1e-9){x=Math.abs(ax)>.9?-ay:0;y=Math.abs(ax)>.9?ax:-az;z=Math.abs(ax)>.9?0:ay;w=0;}
+    const l=Math.hypot(x,y,z,w)||1;out[0]=x/l;out[1]=y/l;out[2]=z/l;out[3]=w/l;return out;
+  }
+  function keeperRotate(q,x,y,z,out,inverse=false){
+    const sign=inverse?-1:1,qx=q[0]*sign,qy=q[1]*sign,qz=q[2]*sign,qw=q[3],
+      ix=qw*x+qy*z-qz*y,iy=qw*y+qz*x-qx*z,iz=qw*z+qx*y-qy*x,iw=-qx*x-qy*y-qz*z;
+    out[0]=ix*qw-iw*qx-iy*qz+iz*qy;out[1]=iy*qw-iw*qy-iz*qx+ix*qz;out[2]=iz*qw-iw*qz-ix*qy+iy*qx;return out;
+  }
+  function keeperReachPose(rig,target,yaw,progress=1,out={}){
+    if(!out.root){out.root=[0,0,0,1];out.left=[0,0,0,1];out.right=[0,0,0,1];out.leftElbow=[0,0,0,1];out.rightElbow=[0,0,0,1];out.v=[0,0,0];out.q=[0,0,0,1];out.hand=[0,0,0];}
+    const blend=clamp(progress,0,1),height=Math.max(0,target.z),rootY=(.28+Math.min(.55,height/rig.zPerMetre*.30))*rig.zPerMetre*blend,
+      cy=Math.cos(yaw/2),sy=Math.sin(yaw/2),q=out.q;
+    keeperQuaternionFromTo(0,1,0,target.x,height-rootY,target.y,q);
+    // slerp upright -> full extension, then compose the actual facing yaw.
+    const angle=Math.acos(clamp(q[3],-1,1)),sn=Math.sin(angle),factor=sn>1e-8?Math.sin(angle*blend)/sn:blend,
+      x=q[0]*factor,y=q[1]*factor,z=q[2]*factor,w=Math.cos(angle*blend),r=out.root;
+    r[0]=x*cy-z*sy;r[1]=w*sy+y*cy;r[2]=z*cy+x*sy;r[3]=w*cy-y*sy;
+    out.rootY=rootY;
+    keeperRotate(r,target.x,height-rootY,target.y,out.v,true);
+    const tx=out.v[0]/rig.scale,ty=out.v[1]/(rig.scale*rig.heightScale),tz=out.v[2]/rig.scale,
+      arm=rig.armLength||1,upper=13.05+(arm-1)*4.4,lowerY=-10.05-(arm-1)*4,lowerZ=-.10,
+      lower=Math.hypot(lowerY,lowerZ),shoulderY=40.50+(rig.legLength-1)*17;
+    out.gapMetres=Infinity;
+    for(let side=-1;side<=1;side+=2){
+      const shoulderX=side*5.72*(rig.shoulder||1),dx=tx-shoulderX,dy=ty-shoulderY,dz=tz-.10,
+        distance=Math.hypot(dx,dy,dz)||1,length=clamp(distance,Math.abs(upper-lower)+.001,upper+lower-.001),
+        nx=dx/distance,ny=dy/distance,nz=dz/distance,
+        // Elbows bend behind the reach, in the real joint's flexion plane.
+        dot=nz,px=-nx*dot,py=-ny*dot,pz=1-nz*dot,pl=Math.hypot(px,py,pz)||1,
+        a=clamp((upper*upper-lower*lower+length*length)/(2*Math.max(.01,length)),-upper,upper),
+        h=Math.sqrt(Math.max(0,upper*upper-a*a)),ex=nx*a+px/pl*h,ey=ny*a+py/pl*h,ez=nz*a+pz/pl*h,
+        qUpper=side<0?out.left:out.right,qElbow=side<0?out.leftElbow:out.rightElbow;
+      keeperQuaternionFromTo(0,-1,0,ex,ey,ez,qUpper);
+      keeperRotate(qUpper,nx*length-ex,ny*length-ey,nz*length-ez,out.v,true);
+      keeperQuaternionFromTo(0,lowerY,lowerZ,out.v[0],out.v[1],out.v[2],qElbow);
+      // Actual endpoint through the same root and anisotropic mesh scale.
+      keeperRotate(r,(shoulderX+nx*length)*rig.scale,(shoulderY+ny*length)*rig.scale*rig.heightScale,(.10+nz*length)*rig.scale,out.hand);
+      const gap=Math.hypot((out.hand[0]-target.x)/rig.xPerMetre,(out.hand[1]+rootY-height)/rig.zPerMetre,(out.hand[2]-target.y)/rig.yPerMetre);
+      if(gap<out.gapMetres){out.gapMetres=gap;out.contactSide=side;}
+    }
+    return out;
+  }
+
+  function physicalChallengeDecision(input){
+    // An action keeps its first-contact verdict throughout recovery. Ordinary
+    // running contact has no challenge action and cannot enter discipline.
+    if(!input.bodyContact||input.incidental||input.ballFirst)return {clean:true,chance:0,forced:false};
+    const speed=Math.max(0,finite(input.speed,0)),behind=!!input.fromBehind,won=!!input.won,
+      base=input.offBall?1:input.slide?(won?(behind?.50:.10):.62):input.shoulder?(won?(behind?.30:.05):(behind?.32:.08)):(won?(behind?.40:.15):.38),
+      chance=clamp(base*(1+Math.max(0,speed-3)*.08)/Math.max(.01,finite(input.officialTolerance,1)),0,.9);
+    return {clean:false,chance,forced:!!input.offBall||!input.shoulder};
+  }
+  function contactFallPlan(input){
+    if(input.simulation)return {action:'handsRaised',duration:34,...input};
+    if(input.persistentPull||/pull/.test(input.reason||''))return {action:'stumble',duration:30,...input};
+    let action='stumble';const shoulder=/shoulder/.test(input.reason||''),impact=input;
+    if(shoulder&&impact.intensity<.40)action='shoulderHit';
+    else if(shoulder&&impact.intensity<.61)action='fallKnees';
+    else if(impact.intensity<.30&&!input.slide)action='stumble';
+    else if(input.slide&&impact.intensity>=.74&&impact.entrySpeed>=4.6)action='fallTumble';
+    else if(input.slide&&impact.intensity>=.62)action='fallSlide';
+    else if(Math.abs(impact.sideDot)>.54&&impact.intensity>=.44)action='fallTwist';
+    else if(impact.forwardDot>.34)action='fallForward';else if(impact.forwardDot<-.28)action='fallBack';else action='fallSide';
+    const durations={stumble:30,shoulderHit:24,fallKnees:44,fallForward:46,fallSide:50,fallTwist:64,fallBack:48,fallSlide:58,fallTumble:68,tackleFall:40};
+    return {...input,action,duration:durations[action]||40};
+  }
+  function contactProgress(action,tick){return action?clamp((tick-action.startedTick)/Math.max(1,action.recoveryEndTick-action.startedTick),0,1):0;}
+  function sweptSphereTime(ax,ay,az,adx,ady,adz,bx,by,bz,bdx,bdy,bdz,radius){
+    const x=ax-bx,y=ay-by,z=az-bz,dx=adx-bdx,dy=ady-bdy,dz=adz-bdz,
+      c=x*x+y*y+z*z-radius*radius;if(c<=0)return 0;
+    const aa=dx*dx+dy*dy+dz*dz;if(aa<1e-14)return Infinity;
+    const b=x*dx+y*dy+z*dz;if(b>=0)return Infinity;
+    const disc=b*b-aa*c;if(disc<0)return Infinity;
+    const t=(-b-Math.sqrt(disc))/aa;return t>=0&&t<=1?t:Infinity;
+  }
+  function physicalContactScratch(){return {poseA:{},poseB:{},foot:{},
+    a:new Float64Array(14*3),b:new Float64Array(14*3),bestBall:Infinity,bestBody:Infinity};}
+  const CHALLENGE_FOOT_CACHE=new WeakMap();
+  function physicalFeet(player,start,tick,scratch){
+    const action=player.action,rig=player.contactRig||DEFAULT_CONTACT_RIG;
+    let cache=CHALLENGE_FOOT_CACHE.get(rig);
+    if(!cache){cache=new Map();CHALLENGE_FOOT_CACHE.set(rig,cache);}
+    for(let frame=0;frame<2;frame++){
+      const now=frame?tick:tick-1,progress=contactProgress(action,now),root=frame?player.position:start,
+        fx=frame?player.facing.x:finite(start.fx,player.facing.x),fy=frame?player.facing.y:finite(start.fy,player.facing.y),
+        out=frame?scratch.a:scratch.b,key=action?action.type+':'+(action.recoveryEndTick-action.startedTick)+':'+(now-action.startedTick):'idle';
+      let local=cache.get(key);
+      if(!local){
+        local=new Float64Array(42);const pose=scratch.poseA;
+        fillChallengePose(action?.type||'idle',progress,1,pose);
+        if(!action){pose.rootPitch=pose.rootRoll=pose.rootLift=0;pose.leftHip=pose.rightHip=0;pose.leftKnee=pose.rightKnee=-.08;pose.leftFoot=pose.rightFoot=0;}
+        groundChallengePose(rig,pose,progress,scratch.foot);
+        for(let sideIndex=0;sideIndex<2;sideIndex++)for(let endpoint=0;endpoint<3;endpoint++){
+          const side=sideIndex?1:-1,index=(sideIndex*3+endpoint)*3;
+          fillChallengeFoot(rig,pose,side,endpoint===2,1,0,scratch.foot);
+          local[index]=scratch.foot.x;local[index+1]=scratch.foot.y;local[index+2]=scratch.foot.z;
+          if(endpoint===1){fillChallengeFoot(rig,pose,side,true,1,0,scratch.foot);
+            local[index]=(local[index]+scratch.foot.x)*.5;local[index+1]=(local[index+1]+scratch.foot.y)*.5;local[index+2]=(local[index+2]+scratch.foot.z)*.5;}
+        }
+        for(let sideIndex=0;sideIndex<2;sideIndex++){
+          fillChallengeFoot(rig,pose,sideIndex?1:-1,-1,1,0,scratch.foot);const ankle=sideIndex*9;
+          for(let sample=0;sample<4;sample++){const t=(sample+1)/4,index=(6+sideIndex*4+sample)*3;
+            local[index]=local[ankle]+(scratch.foot.x-local[ankle])*t;local[index+1]=local[ankle+1]+(scratch.foot.y-local[ankle+1])*t;local[index+2]=local[ankle+2]+(scratch.foot.z-local[ankle+2])*t;}
+        }
+        if(cache.size>=256)cache.clear();cache.set(key,local);
+      }
+      // Rotate the same rig-local points, preserving anisotropic world scales.
+      for(let i=0;i<42;i+=3){const x=local[i]*rig.xPerMetre,y=local[i+1]*rig.yPerMetre;
+        out[i]=root.x+(fx*x-fy*y)/rig.xPerMetre;out[i+1]=root.y+(fy*x+fx*y)/rig.yPerMetre;out[i+2]=local[i+2];}
+    }
+  }
+  function physicalActionGeometry(actor,target,starts,tick,ball,config,scratch){
+    const start=starts[actor.id],other=starts[target.id],dt=config.fixedTickSeconds,
+      ax=actor.position.x-start.x,ay=actor.position.y-start.y,
+      bx=target.position.x-other.x,by=target.position.y-other.y,
+      radius=target.contactRig?.bodyRadiusM??Math.min(.26,target.radius),
+      dx=actor.position.x-target.position.x,dy=actor.position.y-target.position.y;
+    if(dx*dx+dy*dy>25)return null;
+    physicalFeet(actor,start,tick,scratch);let ballTime=Infinity,bodyTime=Infinity,ballIndex=0,bodyIndex=0,legX=0,legY=0,legZ=0;
+    const p=scratch.a,prev=scratch.b;
+    // Real boot spheres sweep against the real ball and the two lower legs.
+    // Nearby leg samples form a short capsule; no player-radius reach is added.
+    for(let index=0;index<42;index+=3){
+      const px=prev[index],py=prev[index+1],pz=prev[index+2],vx=p[index]-px,vy=p[index+1]-py,vz=p[index+2]-pz,
+        t=index<18&&actionPhase(actor.action,tick)==='contact'?sweptSphereTime(px,py,pz,vx,vy,vz,ball.position.x,ball.position.y,ball.position.z,
+          ball.velocity.x*dt,ball.velocity.y*dt,ball.velocity.z*dt,.055+ball.radius):Infinity;
+      if(index<18&&actionPhase(actor.action,tick)==='contact'){
+        const rx=px-ball.position.x,ry=py-ball.position.y,rz=pz-ball.position.z,
+          dx=vx-ball.velocity.x*dt,dy=vy-ball.velocity.y*dt,dz=vz-ball.velocity.z*dt,
+          den=dx*dx+dy*dy+dz*dz,u=den>1e-12?clamp(-(rx*dx+ry*dy+rz*dz)/den,0,1):0,
+          clearance=Math.hypot(rx+dx*u,ry+dy*u,rz+dz*u)-.055-ball.radius,gap=Math.max(0,clearance);
+        if(!actor.action.closestBall||clearance<(actor.action.closestBall.clearanceMetres??actor.action.closestBall.gapMetres))actor.action.closestBall={gapMetres:gap,clearanceMetres:clearance,tick:tick-1+u,
+          ballCarrierGapMetres:Math.hypot(target.position.x-ball.position.x,target.position.y-ball.position.y)};
+      }
+      if(t<ballTime){ballTime=t;ballIndex=index;}
+      if(Math.max(px,p[index])<Math.min(other.x,target.position.x)-.24||Math.min(px,p[index])>Math.max(other.x,target.position.x)+.24||
+          Math.max(py,p[index+1])<Math.min(other.y,target.position.y)-.24||Math.min(py,p[index+1])>Math.max(other.y,target.position.y)+.24||
+          Math.min(pz,p[index+2])>(target.bodyLow?.4:.75)+.11||Math.max(pz,p[index+2])<-.01)continue;
+      for(let side=-1;side<=1;side+=2)for(let z=.10;z<=(target.bodyLow?.4:.75);z+=.10){
+        const lateral=side*2.66*(target.contactRig?.stanceHip||1)*(target.contactRig?.scale||1)/(target.contactRig?.xPerMetre||30.25),
+          tx=other.x-finite(other.fy,target.facing.y)*lateral,ty=other.y+finite(other.fx,target.facing.x)*lateral,
+          hit=sweptSphereTime(px,py,pz,vx,vy,vz,tx,ty,z,bx,by,0,(index<18?.055:.05)+.055);
+        if(hit<bodyTime){bodyTime=hit;bodyIndex=index;legX=tx+bx*hit;legY=ty+by*hit;legZ=z;}
+      }
+    }
+    // Torso/shoulder contact is a separate real body sweep. Sliding bodies
+    // also occupy a low capsule behind the hips, never an upright cylinder.
+    const actorRadius=actor.contactRig?.bodyRadiusM??Math.min(.26,actor.radius),slide=actor.action.type==='slide-tackle',
+      count=!slide&&target.bodyLow?0:slide?3:1;
+    for(let body=0;body<count;body++){
+      const behind=slide?-body*.3:0,offsetX=actor.facing.x*behind,offsetY=actor.facing.y*behind,
+        height=slide?.35:1.05,hit=sweptSphereTime(start.x+offsetX,start.y+offsetY,height,ax,ay,0,
+          other.x,other.y,height,bx,by,0,actorRadius+radius);
+      if(hit<bodyTime){bodyTime=hit;bodyIndex=-1;legX=other.x+bx*hit;legY=other.y+by*hit;legZ=height;}
+    }
+    if(!Number.isFinite(ballTime)&&!Number.isFinite(bodyTime))return null;
+    const bodyFirst=bodyTime<=ballTime,part=bodyFirst?bodyIndex:ballIndex,time=bodyFirst?bodyTime:ballTime,
+      contactX=part<0?start.x+ax*time:prev[part]+(p[part]-prev[part])*time,
+      contactY=part<0?start.y+ay*time:prev[part+1]+(p[part+1]-prev[part+1])*time,
+      contactZ=part<0?legZ:prev[part+2]+(p[part+2]-prev[part+2])*time,
+      targetX=bodyFirst?legX:ball.position.x+ball.velocity.x*dt*time,
+      targetY=bodyFirst?legY:ball.position.y+ball.velocity.y*dt*time,
+      targetZ=bodyFirst?legZ:ball.position.z+ball.velocity.z*dt*time,
+      nx=targetX-contactX,ny=targetY-contactY,nz=targetZ-contactZ,length=Math.hypot(nx,ny,nz)||1,
+      combined=bodyFirst?(part<0?actorRadius+radius:(part<18?.055:.05)+.055):.055+ball.radius,
+      relativeX=(ax-bx)/dt,relativeY=(ay-by)/dt;
+    const bodyX=bodyIndex<0?start.x+ax*bodyTime:prev[bodyIndex]+(p[bodyIndex]-prev[bodyIndex])*bodyTime,
+      bodyY=bodyIndex<0?start.y+ay*bodyTime:prev[bodyIndex+1]+(p[bodyIndex+1]-prev[bodyIndex+1])*bodyTime,
+      bodyZ=bodyIndex<0?legZ:prev[bodyIndex+2]+(p[bodyIndex+2]-prev[bodyIndex+2])*bodyTime,
+      bodyNx=legX-bodyX,bodyNy=legY-bodyY,bodyNz=legZ-bodyZ,bodyLength=Math.hypot(bodyNx,bodyNy,bodyNz)||1,
+      bodyCombined=bodyIndex<0?actorRadius+radius:(bodyIndex<18?.055:.05)+.055,
+      bodyGeometry=Number.isFinite(bodyTime)?{point:{x:(bodyX+legX)*.5,y:(bodyY+legY)*.5,z:(bodyZ+legZ)*.5},
+        normal:{x:bodyNx/bodyLength,y:bodyNy/bodyLength,z:bodyNz/bodyLength},
+        contactPart:bodyIndex<0?'body-to-body':bodyIndex<18?'boot-to-leg':'shin-to-leg',
+        visibleGapMetres:Math.max(0,bodyLength-bodyCombined),
+        approachSpeedMps:Math.max(0,(relativeX*bodyNx+relativeY*bodyNy)/Math.max(1e-9,Math.hypot(bodyNx,bodyNy)))}:null;
+    return {ballContact:Number.isFinite(ballTime)&&ballTime<bodyTime-1e-7,bodyContact:Number.isFinite(bodyTime),ballFirst:ballTime<bodyTime-1e-7,bodyGeometry,
+      ballContactTime:Number.isFinite(ballTime)?ballTime:null,bodyContactTime:Number.isFinite(bodyTime)?bodyTime:null,
+      timeFraction:time,point:{x:contactX+nx*.5,y:contactY+ny*.5,z:contactZ+nz*.5},
+      normal:{x:nx/length,y:ny/length,z:nz/length},contactPart:bodyFirst?(part<0?'body-to-body':part<18?'boot-to-leg':'shin-to-leg'):'boot-to-ball',
+      visibleGapMetres:Math.max(0,length-combined),approachSpeedMps:Math.max(0,(relativeX*nx+relativeY*ny)/Math.max(1e-9,Math.hypot(nx,ny))),
+      ballPoint:Number.isFinite(ballTime)?{x:ball.position.x+ball.velocity.x*dt*ballTime,y:ball.position.y+ball.velocity.y*dt*ballTime,z:ball.position.z+ball.velocity.z*dt*ballTime}:null};
+  }
+  function resolvePhysicalActionContacts(world,starts,tick,config,telemetry,ball,scratch){
+    for(const actor of world.players){
+      const action=actor.action,phase=actionPhase(action,tick);
+      if(action&&tick===action.contactEndTick)telemetry.actions.push({type:'challenge-closest-approach',commandId:action.commandId,
+        playerId:actor.id,tick,closestBall:action.closestBall?{...action.closestBall}:null});
+      if(!action||action.bodyContactRecorded||phase==='windup'||phase==='complete')continue;
+      const target=targetForAction(actor,world.players);if(!target)continue;
+      const geometry=physicalActionGeometry(actor,target,starts,tick,ball,config,scratch);
+      if(!geometry)continue;
+      const slide=action.type==='slide-tackle',shoulder=action.type==='shoulder-challenge',
+        toTarget=normalize({x:target.position.x-actor.position.x,y:target.position.y-actor.position.y},action.direction),
+        alignment=dot(action.direction,toTarget),aa=actor.attributes,ta=target.attributes,
+        shielding=target.contextMode==='shield'||target.locomotionState==='shield',
+        skill=target.skillProtection?.defenderId===actor.id?target.skillProtection.multiplier:1;
+      let actorScore,targetScore;
+      if(slide){actorScore=(aa.defending*.34+aa.aggression*.24+aa.strength*.16+aa.acceleration*.1+alignment*14)*skill;
+        targetScore=ta.control*.34+ta.balance*.34+ta.strength*.16+(shielding?18:0);
+      }else if(!shoulder){actorScore=(aa.defending*.38+aa.strength*.24+aa.aggression*.17+aa.acceleration*.08+alignment*12)*skill;
+        targetScore=ta.control*.32+ta.balance*.3+ta.strength*.22+(shielding?16:0);
+      }else{actorScore=aa.strength*.40+aa.balance*.32+aa.pace*.16+magnitude(actor.velocity)*1.4;
+        targetScore=ta.strength*.40+ta.balance*.32+ta.pace*.16+magnitude(target.velocity)*1.4+(shielding?18:0);}
+      const previousBall=Number.isFinite(action.firstBallContactTick)?action.firstBallContactTick:null,
+        firstBall=previousBall??(geometry.ballContact?tick-1+geometry.ballContactTime:null),
+        bodyAt=geometry.bodyContact?tick-1+geometry.bodyContactTime:null,
+        ballFirst=firstBall!==null&&(bodyAt===null||firstBall<bodyAt-1e-7),
+        newBall=geometry.ballContact&&previousBall===null,
+        newBody=geometry.bodyContact&&!action.bodyContactRecorded,
+        ballReach=shoulder?Math.hypot(actor.position.x-ball.position.x,actor.position.y-ball.position.y)<=.75&&ball.position.z<.5:ballFirst,
+        // A confirmed boot strike is a physical poke. Ratings/utility may
+        // prevent reaching it, and still decide the following body/control
+        // contest; they cannot leave a struck ball glued to its carrier.
+        won=shoulder?actorScore>=targetScore&&geometry.bodyContact&&ballReach:newBall&&ballFirst,
+        contactType=slide?'slide-contact':shoulder?'shoulder-contact':'tackle-contact';
+      if(!newBall&&!newBody)continue;
+      if(newBall)action.firstBallContactTick=firstBall;
+      if(newBody)action.bodyContactRecorded=true;
+      const winNow=won&&!action.ballWon;
+      if(winNow)action.ballWon=true;
+      const outcome=action.ballWon?'win':newBody?'contact-lost':'ball-contact';
+      const contact={type:contactType,commandId:action.commandId,tick,actorId:actor.id,targetId:target.id,
+        ...geometry,closestBall:action.closestBall?{...action.closestBall}:null,ballFirst,ballContact:geometry.ballContact||previousBall!==null,ballContactTick:firstBall,
+        bodyContactTick:bodyAt,ballWon:winNow&&geometry.ballContact,actorScore:rounded(actorScore),targetScore:rounded(targetScore),
+        skillTackleMultiplier:skill,alignment:rounded(alignment),outcome,
+        ...(action.racePursuit?{racePursuit:true}:{})};
+      delete contact.bodyGeometry;
+      if(newBall)telemetry.contacts.push({...contact,bodyContact:false,bodyContactTime:null,bodyContactTick:null});
+      if(newBody)telemetry.contacts.push({...contact,...geometry.bodyGeometry,bodyContact:true,
+        ballWon:newBall?false:contact.ballWon});
+      if(winNow||newBody&&!action.ballWon){
+        const prefix=slide?'slide':shoulder?'shoulder':'tackle';
+        telemetry.actions.push({type:prefix+(winNow?'-win':'-contact-lost'),commandId:action.commandId,tick,actorId:actor.id,targetId:target.id,outcome});
+      }
+      if(winNow&&geometry.ballContact){
+        world.ballOwnerId=null;for(const player of world.players)player.hasBall=false;
+        telemetry.pokes.push({actorId:actor.id,targetId:target.id,commandId:action.commandId,type:action.type,
+          point:{...ball.position},direction:{...action.direction},timeFraction:geometry.ballContactTime??geometry.timeFraction,
+          bootContact:geometry.ballContact,ballFirst,bodyContact:geometry.bodyContact});
+      }
+      if(newBody){
+        const n=geometry.bodyGeometry?.normal||geometry.normal,ratio=aa.strength/Math.max(1,ta.strength),impulse=config.contactImpulse*(slide?1.32:1)*clamp(ratio,.55,1.65);
+        target.velocity.x+=n.x*impulse;target.velocity.y+=n.y*impulse;
+        actor.velocity.x-=n.x*impulse*.18;actor.velocity.y-=n.y*impulse*.18;
+      }
+      if(newBody||shoulder){action.resolved=true;action.outcome=action.ballWon?'win':'contact-lost';}
+    }
+    for(const actor of world.players){const action=actor.action;
+      if(!action||action.resolved||tick!==action.contactEndTick)continue;
+      action.resolved=true;action.outcome=action.ballWon?'win':'miss';
+      if(!action.ballWon)telemetry.actions.push({type:action.type==='slide-tackle'?'slide-miss':action.type==='stand-tackle'?'tackle-miss':'shoulder-miss',
+        commandId:action.commandId,tick,actorId:actor.id,targetId:action.targetId,outcome:'miss'});
+    }
+  }
+
+  function forecastLocomotion(source,ticks,configOverrides){
+    const config=configWith(configOverrides),p=createPlayerStateWithConfig(source,config),rows=[{position:{...p.position},velocity:{...p.velocity},facing:{...p.facing}}];
+    p.control.startTick=1;p.control.untilTick=ticks;
+    for(let tick=1;tick<=ticks;tick++){
+      if(p.externalMotion){p.position.x+=p.velocity.x*config.fixedTickSeconds;p.position.y+=p.velocity.y*config.fixedTickSeconds;}
+      else integratePlayer(p,tick,config);
+      rows.push({position:{...p.position},velocity:{...p.velocity},facing:{...p.facing}});
+    }
+    return rows;
+  }
+  function forecastPhysicalChallenge(input,configOverrides){
+    const config=configWith(configOverrides),source=input.actor,targetSource=input.target,type=input.type,
+      samples=input.ballSamples||[],windup=type==='slide-tackle'?config.slideWindupTicks:config.tackleWindupTicks,
+      contact=type==='slide-tackle'?config.slideContactTicks:config.tackleContactTicks,horizon=windup+contact,
+      scratch=physicalContactScratch();
+    if(!source||!targetSource||samples.length<=horizon)return null;
+    let best=null;
+    for(const aimTick of [windup+2,horizon-1])for(const offset of [-.12,0,.12]){
+      const meeting=samples[aimTick],dx=meeting.x-source.position.x,dy=meeting.y-source.position.y,d=Math.hypot(dx,dy)||1,
+        aim=normalize({x:dx-dy/d*offset,y:dy+dx/d*offset},source.facing),
+        actor=createPlayerStateWithConfig({...source,externalMotion:false,action:null},config),
+        target=createPlayerStateWithConfig(targetSource,config),telemetry={actions:[],commandAcks:[]};
+      acknowledgeCommand(actor,normalizeCommand({id:'challenge-forecast',playerId:actor.id,tick:1,type,targetId:target.id,direction:aim}),1,config,telemetry);
+      let firstBody=null,firstBall=null;
+      for(let tick=1;tick<=horizon;tick++){
+        const starts={[actor.id]:{...actor.position,fx:actor.facing.x,fy:actor.facing.y},[target.id]:{...target.position,fx:target.facing.x,fy:target.facing.y}};
+        integratePlayer(actor,tick,config);
+        if(input.targetTrajectory?.[tick]){const p=input.targetTrajectory[tick];Object.assign(target.position,p.position);Object.assign(target.facing,p.facing);Object.assign(target.velocity,p.velocity);}
+        else{target.position.x+=target.velocity.x*config.fixedTickSeconds;target.position.y+=target.velocity.y*config.fixedTickSeconds;}
+        const a=samples[tick-1],b=samples[tick],ball={position:a,velocity:{x:(b.x-a.x)/config.fixedTickSeconds,y:(b.y-a.y)/config.fixedTickSeconds,z:(b.z-a.z)/config.fixedTickSeconds},radius:.11},
+          geometry=physicalActionGeometry(actor,target,starts,tick,ball,config,scratch);
+        if(geometry?.bodyContact&&firstBody===null)firstBody=tick-1+geometry.bodyContactTime;
+        if(geometry?.ballContact&&firstBall===null)firstBall=tick-1+geometry.ballContactTime;
+        if(firstBall!==null)break;
+      }
+      const clean=firstBall!==null&&(firstBody===null||firstBall<firstBody),closest=actor.action.closestBall,
+        row={direction:aim,clean,ballTick:firstBall,bodyTick:firstBody,closestGapMetres:closest?.gapMetres??Infinity,
+          contactTick:closest?.tick??null,ballCarrierGapMetres:closest?.ballCarrierGapMetres??null},
+        // The held-input forecast gets less certain as a carrier can turn or
+        // touch again. Prefer an earlier real boot window over a deeper but
+        // later predicted overlap; contact proof itself remains unchanged.
+        rank=(clean?100:0)-(firstBody!==null?10:0)-(closest?.clearanceMetres??row.closestGapMetres)-(firstBall??horizon)*.04;
+      if(!best||rank>best.rank)best={...row,rank};
+    }
+    return best;
+  }
+
+  const DEFAULT_CONTACT_RIG=createContactRig(),PHYSICAL_CONTACT_SCRATCH=physicalContactScratch();
 
   function sweptApproach(aStart, aEnd, aRadius, bStart, bEnd, bRadius, extraReach) {
     const relativeStart = { x: aStart.x - bStart.x, y: aStart.y - bStart.y };
@@ -717,6 +1139,9 @@
           approach.relativeClosingSpeed * 2.4 + alignment * 8;
         targetScore = targetAttrs.strength * 0.38 + targetAttrs.balance * 0.4 + (shielding ? 18 : 0);
       }
+      const protection=target.skillProtection;
+      const skillMultiplier=protection&&protection.defenderId===actor.id?protection.multiplier:1;
+      if(action.type!=='shoulder-challenge')actorScore*=skillMultiplier;
       const won = actorScore >= targetScore;
       action.resolved = true;
       action.outcome = won ? 'win' : 'contact-lost';
@@ -725,7 +1150,7 @@
         type: contactType, commandId: action.commandId, tick, actorId: actor.id, targetId: target.id,
         alignment: rounded(alignment), closestDistance: approach.closestDistance,
         relativeClosingSpeed: approach.relativeClosingSpeed, approachSpeedMps, actorScore: rounded(actorScore),
-        targetScore: rounded(targetScore), outcome: action.outcome,
+        targetScore: rounded(targetScore), skillTackleMultiplier:skillMultiplier, outcome: action.outcome,
         ...(action.racePursuit?{racePursuit:true}:{})
       });
       const outcomeType = slide ? (won ? 'slide-win' : 'slide-contact-lost') : action.type === 'stand-tackle'
@@ -780,8 +1205,9 @@
           const second = result[secondIndex];
           const dx = second.position.x - first.position.x;
           const dy = second.position.y - first.position.y;
+          const requiredDistance = first.bodyLow||second.bodyLow?0:(first.contactRig?.bodyRadiusM??first.radius) + (second.contactRig?.bodyRadiusM??second.radius);
+          if(dx*dx+dy*dy>=requiredDistance*requiredDistance)continue;
           const currentDistance = Math.hypot(dx, dy);
-          const requiredDistance = first.radius + second.radius;
           const overlap = requiredDistance - currentDistance;
           if (overlap <= config.separationSlop) continue;
           const normal = currentDistance > 1e-12
@@ -801,7 +1227,10 @@
           if (!previous || overlap > previous.overlap) {
             contactMap[key] = {
               type: 'player-separation', firstId: first.id, secondId: second.id,
-              overlap: rounded(overlap), normal: { ...normal }
+              overlap: rounded(overlap), normal: { ...normal },
+              ...(first.contactRig&&second.contactRig?{bodyContact:true,geometricBodyContact:true,visibleGapMetres:0,
+                point:{x:(first.position.x+second.position.x)*.5,y:(first.position.y+second.position.y)*.5,z:first.action?.type==='slide-tackle'||second.action?.type==='slide-tackle'?.35:1.05},
+                approachSpeedMps:Math.max(0,(first.velocity.x-second.velocity.x)*normal.x+(first.velocity.y-second.velocity.y)*normal.y)}:{})
             };
           }
         }
@@ -844,7 +1273,7 @@
     player.facing = normalize(player.facing, { x: 1, y: 0 });
   }
 
-  function processTick(world, commands, tick, config, telemetry) {
+  function processTick(world, commands, tick, config, telemetry, physicalBall, physicalScratch) {
     const playersById = Object.fromEntries(world.players.map(player => [player.id, player]));
     for (const command of commands.filter(item => item.tick === tick)) {
       const player = playersById[command.playerId];
@@ -857,17 +1286,36 @@
       }
       acknowledgeCommand(player, command, tick, config, telemetry);
     }
-    const starts = Object.fromEntries(world.players.map(player => [player.id, { ...player.position }]));
+    const starts = Object.fromEntries(world.players.map(player => [player.id, { ...player.position,fx:player.facing.x,fy:player.facing.y }]));
     for (const player of world.players) integratePlayer(player, tick, config);
-    resolveActionContacts(world, starts, tick, config, telemetry);
+    if(physicalBall)resolvePhysicalActionContacts(world,starts,tick,config,telemetry,physicalBall,physicalScratch);
+    else resolveActionContacts(world, starts, tick, config, telemetry);
     const separated = separatePlayersWithConfig(world.players, world.bounds, config);
     world.players = separated.players;
-    for (const contact of separated.contacts) telemetry.contacts.push({ ...contact, tick });
+    for (const contact of separated.contacts){
+      telemetry.contacts.push({ ...contact, tick });
+      if(!physicalBall||!contact.geometricBodyContact||contact.approachSpeedMps<1.2)continue;
+      const first=world.players.find(p=>p.id===contact.firstId),second=world.players.find(p=>p.id===contact.secondId);
+      if(first.teamId===second.teamId)continue;
+      const n=contact.normal,firstToward=first.velocity.x*n.x+first.velocity.y*n.y,secondToward=-second.velocity.x*n.x-second.velocity.y*n.y,
+        actor=firstToward>=secondToward?first:second,target=actor===first?second:first;
+      if(actor.action?.bodyContactRecorded||actor.lastBodyContactPeerId===target.id&&tick-actor.lastBodyContactTick<30)continue;
+      actor.lastBodyContactPeerId=target.id;actor.lastBodyContactTick=tick;target.lastBodyContactPeerId=actor.id;target.lastBodyContactTick=tick;
+      const action=actor.action,firstBall=action?.firstBallContactTick,bodyType=action?.type==='slide-tackle'?'slide-contact':action?.type==='stand-tackle'?'tackle-contact':action?.type==='shoulder-challenge'?'shoulder-contact':'body-contact';
+      if(action){action.bodyContactRecorded=true;action.resolved=true;action.outcome=action.ballWon?'win':'contact-lost';
+        if(!action.ballWon)telemetry.actions.push({type:action.type==='slide-tackle'?'slide-contact-lost':action.type==='stand-tackle'?'tackle-contact-lost':'shoulder-contact-lost',
+          commandId:action.commandId,tick,actorId:actor.id,targetId:target.id,outcome:'contact-lost'});}
+      telemetry.contacts.push({type:bodyType,commandId:action?.commandId||'body:'+actor.id+':'+target.id+':'+tick,tick,actorId:actor.id,targetId:target.id,
+        outcome:action?.ballWon?'win':'body-contact',bodyContact:true,ballWon:false,ballContact:Number.isFinite(firstBall),ballFirst:Number.isFinite(firstBall),
+        ballContactTick:firstBall??null,bodyContactTick:tick,incidental:!action,
+        timeFraction:1,contactPart:'body-to-body',visibleGapMetres:0,
+        point:contact.point,normal:{x:n.x*(actor===first?1:-1),y:n.y*(actor===first?1:-1),z:0},approachSpeedMps:contact.approachSpeedMps});
+    }
     for (const player of world.players) safetyGuard(player, starts[player.id], config, tick, telemetry);
     world.tick = tick;
   }
 
-  function advance(worldState, commandTimeline, ticks, configOverrides) {
+  function advance(worldState, commandTimeline, ticks, configOverrides, physicalBall) {
     const config = configWith(configOverrides);
     const world = createWorldStateWithConfig(worldState, config);
     if (Math.abs(world.fixedTickSeconds - config.fixedTickSeconds) > 1e-12) {
@@ -894,10 +1342,14 @@
       commandAcks: [],
       actions: [],
       contacts: [],
+      ...(physicalBall?{pokes:[]}:{}),
       safety: []
     };
+    const physicalScratch=physicalBall?PHYSICAL_CONTACT_SCRATCH:null;
+    if(physicalBall&&count!==1)throw new RangeError('physical ball observation covers exactly one Movement tick');
+    if(physicalBall&&(!physicalBall.position||!physicalBall.velocity||![physicalBall.position.x,physicalBall.position.y,physicalBall.position.z,physicalBall.velocity.x,physicalBall.velocity.y,physicalBall.velocity.z,physicalBall.radius].every(Number.isFinite)))throw new TypeError('physical ball observation must be finite');
     for (let index = 0; index < count; index += 1) {
-      processTick(world, commands, world.tick + 1, config, telemetry);
+      processTick(world, commands, world.tick + 1, config, telemetry,physicalBall,physicalScratch);
     }
     return { state: world, telemetry };
   }
@@ -1039,6 +1491,7 @@
     isCompleteWorldState,
     sweptApproach,
     separatePlayers,
+    forecastLocomotion,forecastPhysicalChallenge, keeperReachPose, createContactRig, fillChallengePose, groundChallengePose, fillChallengeFoot, contactProgress, physicalChallengeDecision,contactFallPlan,
     advance,
     step(worldState, commandTimeline, configOverrides) {
       return advance(worldState, commandTimeline, 1, configOverrides);

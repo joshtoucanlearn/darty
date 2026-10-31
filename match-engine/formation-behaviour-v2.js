@@ -966,12 +966,7 @@
     // selected rest defence and the normal pitch/offside clamps.
     const carrierProgress = clamp(finite(tactics.carrierProgress, NaN), 0, 1);
     const supportFloors = philosophy && phaseMapValue(philosophy.carrierSupportFloors, phase);
-    if (supportFloors && Number.isFinite(carrierProgress)) {
-      activeGeometry.forEach(row => {
-        if (restDefenceIds.includes(row.formationSlot.id) || !Object.prototype.hasOwnProperty.call(supportFloors, row.formationSlot.id)) return;
-        row.progress = clamp(Math.max(row.progress, carrierProgress + supportFloors[row.formationSlot.id]), 0.025, 0.95);
-      });
-    }
+
 
     // The phase/philosophy still owns the roles and relative lanes. Translate
     // their block with play rather than leaving the rest defence at fixed
@@ -1000,8 +995,43 @@
         row.progress = clamp(lineProgress + (defending && defender ? 0 : relative * blockDepth), .025, .95);
         row.lateral = .5 + (row.lateral - .5) * lateralScale + shift;
       });
+      let pivot=null;
+      const buildUpWeight=defending?0:clamp((.45-ballProgress)/.17,0,1);
+      if(!defending){
+        // In possession the defensive line supplies outlets around the box,
+        // not four players retreating onto the keeper after his release.
+        // Floors stay level as the ball advances until normal cohesion catches
+        // them, avoiding a backwards target jump at the end of build-up.
+        for(const row of activeOutfield){
+          const family=row.formationSlot.roleFamily,side=row.formationSlot.side==='left'?-1:row.formationSlot.side==='right'?1:0;
+          if(family==='centre-back'){
+            row.progress=Math.max(row.progress,.16+Math.min(ballProgress,.36)*.12);
+            row.lateral+=(.5+side*.18-row.lateral)*buildUpWeight;
+          }else if(family==='full-back'||family==='wing-back'){
+            row.progress=Math.max(row.progress,.25+Math.min(ballProgress,.5)*.18);
+            row.lateral+=(.5+side*.40-row.lateral)*buildUpWeight;
+          }else if((family==='midfielder'&&/^(CM|DM|CDM)$/.test(row.formationSlot.position))&&
+              (!pivot||row.progress+Math.abs(row.lateral-ballLateral)*.10<
+                pivot.progress+Math.abs(pivot.lateral-ballLateral)*.10))pivot=row;
+        }
+        if(pivot&&buildUpWeight>0){
+          const depth=.23+Math.min(ballProgress,.36)*.12;
+          pivot.progress+=(Math.min(pivot.progress,depth)-pivot.progress)*buildUpWeight;
+          pivot.lateral+=(clamp(pivot.lateral,.43,.57)-pivot.lateral)*buildUpWeight;
+        }
+      }
       cohesion = { lineProgress: rounded(lineProgress), ballProgress: rounded(ballProgress),
-        lateralShift: rounded(shift), defending, anticipationSeconds: ball.free ? .8 : 0 };
+        lateralShift: rounded(shift), defending, anticipationSeconds: ball.free ? .8 : 0,
+        buildUpWeight:rounded(buildUpWeight),pivotSlotId:pivot&&pivot.formationSlot.id||null };
+    }
+
+    // These are authored carrier-relative minimums. Applying them before
+    // cohesion normalized them away and pulled the outlet behind the ball.
+    if (supportFloors && Number.isFinite(carrierProgress)) {
+      activeGeometry.forEach(row => {
+        if (restDefenceIds.includes(row.formationSlot.id) || !Object.prototype.hasOwnProperty.call(supportFloors, row.formationSlot.id)) return;
+        row.progress = clamp(Math.max(row.progress, carrierProgress + supportFloors[row.formationSlot.id]), 0.025, 0.95);
+      });
     }
 
     const xLow = pitch.xMin + Math.min(config.pitchMargin, (pitch.xMax - pitch.xMin) * 0.2);

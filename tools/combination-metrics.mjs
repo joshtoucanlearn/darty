@@ -1,7 +1,8 @@
 // Observational action ledger: actual releases and physical outcomes only.
 export function createCombinationMetrics() {
   const counts = {"oneTwos": 0, "thirdManCombinations": 0, "switches": 0, "switchesCompleted": 0, "crosses": 0, "crossesCompleted": 0, "boxEntries": 0, "headers": 0, "volleys": 0, "shotsFromCrosses": 0, "takeOns": 0, "takeOnsWon": 0, "progressiveCarries": 0, "dispossessions": 0, "finalThirdEntries": 0, "boxSlotRuns": 0, "tacklesWon": 0, "skillsUsed": 0, "knockOns": 0, "knockOnsWon": 0, "directionalFirstTouches": 0, "directionalKept": 0, "directionalLost": 0, "directionalToCarry": 0, "directionalToPass": 0, "directionalToShot": 0, "nextActionWithinOneSecond": 0, "knockOnNextActionWithinOneSecond": 0, "firstTimeLayoffs": 0, "openPlayCrosses": 0, "openPlayCrossesCompleted": 0, "earlyCrosses": 0, "bylineCrosses": 0, "cutBacks": 0, "aerialContacts": 0, "aerialDuelsContested": 0, "aerialWinsYou": 0, "aerialWinsOpp": 0, "attackingAerialWins": 0, "defendingAerialWins": 0, "chestControls": 0, "aerialSecondBallsYou": 0, "aerialSecondBallsOpp": 0};
-  const skills = {}, carryDirections = {}, receiving = {};
+  const crossOrigins = [], skills = {}, skillsBySituation = {}, carryDirections = {}, receiving = {}, passRaceChecks = {},carrierChoices={};
+  Object.assign(counts,{nonThrowPasses:0,nonThrowCompleted:0,throwIns:0,namedThrowIns:0,throwInsCompleted:0,namedThrowInsCompleted:0,outOfPlayRestarts:0,bylineDeliveries:0,bylineCutBacks:0});
   let touch = null, knockOn = null;
   const byLength = {}, byThird = {}, byDecision = {}, passDiagnostics = [], decisions = {}, history = [];
   const aerial = { challengerFrames: 0, reachableFrames: 0, coverFrames: 0, flights: {}, contacts: [] };
@@ -13,9 +14,11 @@ export function createCombinationMetrics() {
     if (!pending) return;
     if (event.completed) bucket(byDecision, pending.reason || 'unlabelled-pass').completed++;
     passDiagnostics.push({ reason: pending.reason || 'unlabelled-pass', length: pending.length,
-      third: pending.third, distanceMetres: pending.distanceMetres, completed: !!event.completed, terminalReason: event.reason || null,
+      third: pending.third, flightType:pending.flightType, namedReceiver:pending.named, distanceMetres: pending.distanceMetres, completed: !!event.completed, terminalReason: event.reason || null,
       risk: pending.risk || null, race: pending.race || null });
     if (event.completed) {
+      if(pending.throwIn){counts.throwInsCompleted++;if(pending.named)counts.namedThrowInsCompleted++;}
+      else counts.nonThrowCompleted++;
       for (const map of [bucket(byLength, pending.length), bucket(byThird, pending.third)]) map.completed++;
       if (pending.switch) counts.switchesCompleted++;
       if (pending.openPlay) counts.openPlayCrossesCompleted++;
@@ -38,6 +41,7 @@ export function createCombinationMetrics() {
   }
   return {
     event(e) {
+      if(e.type==='ai-skill-selection'){const key=(e.skill||'unknown')+':'+(e.context||'unknown');skillsBySituation[key]=(skillsBySituation[key]||0)+1;}
       if (e.type === 'skill') { counts.skillsUsed++; skills[e.skill || 'unknown'] = (skills[e.skill || 'unknown'] || 0) + 1; }
       if (e.type === 'tackle' || /^v2-(tackle|slide|shoulder)-contact$/.test(e.type) && e.ballWon) counts.tacklesWon++;
       if (e.type === 'reception' || e.type === 'heavy-touch') {
@@ -67,7 +71,9 @@ export function createCombinationMetrics() {
         pending = { actorId: e.actorId, team: e.team, receiver: e.targetId, progress: e.progress, inBox: e.inBox,
           time: e.time, distanceMetres: d, length: !Number.isFinite(d) ? 'unknown-length' : d < 10 ? 'short-under-10m' : d <= 25 ? 'medium-10-25m' : 'long-over-25m',
           third: e.progress < 1 / 3 ? 'defensive' : e.progress < 2 / 3 ? 'middle' : 'attacking',
-          cross: /cross|corner/.test(e.flightType || ''), switch: false };
+          cross: /cross|corner/.test(e.flightType || ''), switch: false,
+          flightType:e.flightType,throwIn:e.flightType==='throw-in',named:!!e.targetId };
+        if(pending.throwIn){counts.throwIns++;if(pending.named)counts.namedThrowIns++;}else counts.nonThrowPasses++;
         for (const map of [bucket(byLength, pending.length), bucket(byThird, pending.third)]) map.attempted++;
         bucket(byDecision, 'unlabelled-pass').attempted++;
         if (pending.cross) { counts.crosses++; lastCross = { team: e.team, time: e.time }; }
@@ -99,6 +105,9 @@ export function createCombinationMetrics() {
       else if (e.type === 'v2-box-slot-run') counts.boxSlotRuns++;
       else if (e.type === 'v2-cross') {
         counts.openPlayCrosses++; if (pending) pending.openPlay = true;
+        const depth=Number.isFinite(e.progress)?(1-e.progress)*105:null;
+        crossOrigins.push({kind:e.kind,depthMetres:depth});
+        if(depth!==null&&depth>=0&&depth<=1.5+1e-6){counts.bylineDeliveries++;if(e.kind==='cut-back')counts.bylineCutBacks++;}
         counts[e.kind === 'early' ? 'earlyCrosses' : e.kind === 'byline' ? 'bylineCrosses' : 'cutBacks']++;
       }
       else if (e.type === 'v2-aerial-contact' && e.outcome !== 'miss' && e.outcome !== 'missed') {
@@ -106,7 +115,9 @@ export function createCombinationMetrics() {
       } else if (e.type === 'header') counts.headers++;
       else if (e.type === 'volley') counts.volleys++;
       else if (e.type === 'shot' && (e.fromCross || crossReceipt && crossReceipt.actorId === e.actorId && crossReceipt.team === e.team && e.time - crossReceipt.time <= 5000)) counts.shotsFromCrosses++;
-      else if (e.type === 'ai-take-on-attempt' || e.type === 'ai-skill-selection' && e.defenderId || e.type === 'skill-utility' && e.engaged && e.cpu) {
+      else if ((e.type === 'ai-take-on-attempt' || e.type === 'ai-skill-selection' && e.defenderId && e.skill!=='knock-on' ||
+          e.type === 'skill-utility' && e.cpu && e.engaged) &&
+          !/^fake-?shot$/i.test(e.skill||'')) {
         // The retained host executor can emit both selection and attempt for
         // one action. Count the contact episode once; wins are observed below.
         if (!takeOn || takeOn.actorId !== e.actorId || e.time !== takeOn.time) {
@@ -117,6 +128,7 @@ export function createCombinationMetrics() {
       if (e.type === 'shot' && e.shotType === 'header' || e.type === 'headed-pass' || e.type === 'clearance' && e.method === 'header') counts.headers++;
       if (e.type === 'shot' && e.shotType === 'volley') counts.volleys++;
       if (['restart', 'half-time', 'full-time', 'goal'].includes(e.type)) {
+        if(e.type==='restart'&&['THROW-IN','CORNER','GOAL KICK'].includes(e.kind))counts.outOfPlayRestarts++;
         if (touch && !touch.kept) counts.directionalLost++; touch = null; knockOn = null; history.length = 0; carry = null; previousOwner = null; takeOn = null; pendingSecondBall = null; }
     },
     possession(owner, live) {
@@ -159,6 +171,13 @@ export function createCombinationMetrics() {
       carry.previousProgress = owner.progress; carry.previousBox = inBox(owner);
     },
     frame(cpu, projection) {
+      for(const team of Object.values(cpu)){
+        const chosen=team.carrierIntent;if(chosen){const key=chosen.type+':'+chosen.reason;carrierChoices[key]=(carrierChoices[key]||0)+1;}
+        const r=team.telemetry?.passReceiverRace;if(!r)continue;
+        const source=team.telemetry?.carrier?.reason||'unknown',distance=r.distanceMetres<=12?'under12':r.distanceMetres<=25?'12to25':'over25';
+        const key=[r.held?'held':r.ownThird?'own-third':'other',distance,source,r.accepted?'accepted':r.reason].join(':');
+        passRaceChecks[key]=(passRaceChecks[key]||0)+1;
+      }
       aerialRows = (projection?.recoveryAssignments || []).filter(r => r.authority === 'v2-high-ball-contest');
       for (const row of aerialRows) {
         aerial.challengerFrames++; if (row.reachable) aerial.reachableFrames++;
@@ -174,6 +193,6 @@ export function createCombinationMetrics() {
     },
     takeOnDefenderId: () => takeOn && takeOn.defenderId,
     snapshot: () => ({ counts: { ...counts }, byLength, byThird, byDecision, passDiagnostics,
-      decisions, aerial, skills, carryDirections, receiving })
+      decisions, aerial, skills, skillsBySituation, crossOrigins, carryDirections, receiving, passRaceChecks,carrierChoices })
   };
 }

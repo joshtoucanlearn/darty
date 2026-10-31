@@ -67,7 +67,7 @@
   const SET_PIECE_ACTIONS = Object.freeze([
     'stage', 'arm', 'launch', 'contact', 'resolve', 'reset', 'repeat', 'menu', 'shortcut'
   ]);
-  const PERIOD_ACTIONS = Object.freeze(['start-second-half']);
+  const PERIOD_ACTIONS = Object.freeze(['start-second-half','abandon-match']);
 
   function assertDependencies() {
     if (!Clock || Clock.VERSION !== '2.0.0-dormant' ||
@@ -381,6 +381,7 @@
     const tick = integer(source.tick, 1, MAX_TICK, 'tick input.tick');
     const hostPhase = String(source.hostPhase || '');
     mapHostPhase(hostPhase);
+    if(source.periodEndBlocked!=null&&typeof source.periodEndBlocked!=='boolean')throw new TypeError('periodEndBlocked must be a boolean');
     const reason = source.reason == null ? hostPhase : String(source.reason);
     if (!reason || reason.length > 160) throw new TypeError('tick input.reason must be 1..160 characters');
     const restartIncident = source.restartIncident == null ? null :
@@ -414,7 +415,10 @@
       const eventId = stableId(periodEvent.eventId, 'periodEvent.eventId');
       const action = String(periodEvent.action || '');
       if (!PERIOD_ACTIONS.includes(action)) throw new RangeError('periodEvent.action is unsupported');
-      normalizedPeriod = { eventId, action, ledgerId: eventLedgerId('period', eventId) };
+      if(action==='abandon-match'&&(typeof periodEvent.teamId!=='string'||!periodEvent.teamId||
+          !Number.isInteger(periodEvent.remainingPlayers)||periodEvent.remainingPlayers<0||periodEvent.remainingPlayers>=7))
+        throw new TypeError('abandon-match requires a team with fewer than seven players');
+      normalizedPeriod = { eventId, action,...(action==='abandon-match'?{teamId:periodEvent.teamId,remainingPlayers:periodEvent.remainingPlayers}:{}), ledgerId: eventLedgerId('period', eventId) };
     }
     return {
       schema: TICK_INPUT_SCHEMA,
@@ -426,6 +430,7 @@
       engineVersion: LIVE_ENGINE_VERSION,
       hostPhase,
       reason,
+      periodEndBlocked: source.periodEndBlocked === true,
       eligibleForAddedTime: source.eligibleForAddedTime !== false,
       addedTimeWeight: source.addedTimeWeight == null ? null : finite(source.addedTimeWeight, 'addedTimeWeight'),
       restartIncident: normalizedRestart,
@@ -438,6 +443,10 @@
     const desired = mapHostPhase(input.hostPhase);
     let next = clockState;
     if (input.periodEvent && !periodAlreadyProcessed) {
+      if(input.periodEvent.action==='abandon-match'){
+        if(input.periodEndBlocked||input.hostPhase==='paused')throw new Error('abandonment must wait for the pending referee action');
+        return Clock.advance(Clock.abandonMatch(next,input.periodEvent),1);
+      }
       if (input.periodEvent.action !== 'start-second-half' || next.period !== 'half-time' ||
           !['kickoff', 'dead-ball'].includes(input.hostPhase)) {
         throw new Error('start-second-half requires half-time and a kickoff/dead-ball host phase');
@@ -465,7 +474,7 @@
         throw new Error('half-time/full-time clock accepts presentation host phase only');
       }
     }
-    return Clock.advance(next, 1);
+    return Clock.advance(next, 1, { periodEndBlocked: input.periodEndBlocked });
   }
 
   function cameraRestartKind(scenarioKind) {
@@ -988,7 +997,26 @@
     });
   }
 
+  function minimumRosterStatus(teams){
+    if(!teams||typeof teams!=='object')throw new TypeError('team player counts are required');
+    let insufficient=null;
+    for(const teamId of Object.keys(teams)){
+      const count=teams[teamId];if(!Number.isInteger(count)||count<0||count>11)throw new TypeError('team counts must be integers0..11 including the goalkeeper');
+      if(count<7&&!insufficient)insufficient={teamId,remainingPlayers:count,minimumPlayers:7};
+    }
+    return insufficient;
+  }
+  function periodEndProtection(facts={}){
+ if(facts.sceneActive||facts.decisionPending||facts.activeDive||facts.penaltyPending||facts.physicalActionPending)return true;
+ const b=facts.ball;
+ if(!b||b.owned||!b.shotOrRebound||![b.x,b.y,b.vx,b.vy,b.direction].every(Number.isFinite)||
+     ![-1,1].includes(b.direction)||b.direction*b.vx<=0)return false;
+ const seconds=((b.direction>0?105:0)-b.x)/b.vx;
+ return seconds>=0&&seconds<=4&&Math.abs(b.y+b.vy*seconds)<=3.66+1.25;
+}
+
   return Object.freeze({
+    periodEndProtection,minimumRosterStatus,
     VERSION,
     CAPABILITY_SCHEMA,
     RUNTIME_SCHEMA,

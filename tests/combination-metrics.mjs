@@ -82,3 +82,49 @@ test('aerial duels count real contested winners and the following second-ball re
   c=m.snapshot().counts;assert.equal(c.chestControls,1);assert.equal(c.aerialDuelsContested,2);
   assert.equal(c.aerialWinsYou,1);assert.equal(c.aerialContacts,3);assert.equal(c.aerialSecondBallsYou,0,'a controlled chest is the duel contact, not a second ball');
 });
+
+test('fake shots are separate from dribble take-ons while utility and selection deduplicate the same physical move',()=>{
+ const m=createCombinationMetrics();
+ for(const type of ['ai-skill-selection','ai-take-on-attempt','skill-utility'])m.event({type,skill:'fake-shot',cpu:true,engaged:true,actorId:'a',defenderId:'d',time:0,progress:.5});
+ assert.equal(m.snapshot().counts.takeOns,0);
+ for(const type of ['ai-skill-selection','ai-take-on-attempt','skill-utility'])m.event({type,skill:'roulette',cpu:true,engaged:true,actorId:'a',defenderId:'d',time:10,progress:.5});
+ assert.equal(m.snapshot().counts.takeOns,1);
+});
+test('throw releases and completions are separated from open-play passes with named receiver attribution',()=>{
+ const m=createCombinationMetrics();
+ const pass=(flightType,targetId,time,completed)=>{
+  m.event({type:'pass',actorId:'a',team:'you',targetId,flightType,time,progress:.5,distanceMetres:8});
+  m.event({type:'pass-resolved',completed,time:time+100,receiverId:targetId,progress:.55});
+ };
+ pass('ground-pass','b',0,true);pass('throw-in','b',1000,true);pass('throw-in',null,2000,false);
+ const c=m.snapshot().counts;assert.equal(c.nonThrowPasses,1);assert.equal(c.nonThrowCompleted,1);
+ assert.equal(c.throwIns,2);assert.equal(c.namedThrowIns,1);assert.equal(c.throwInsCompleted,1);assert.equal(c.namedThrowInsCompleted,1);
+});
+
+
+test('ordinary knock-on choice telemetry never creates another dribble duel',()=>{
+ const m=createCombinationMetrics();
+ m.event({type:'ai-skill-selection',skill:'knock-on',context:'open-space',defenderId:'nearest-but-distant',actorId:'runner',team:'you',time:0,progress:.4});
+ assert.equal(m.snapshot().counts.takeOns,0);
+ m.event({type:'ai-take-on-attempt',skill:'cut-burst',defenderId:'challenger',actorId:'runner',team:'you',time:100,progress:.4});
+ m.event({type:'ai-skill-selection',skill:'knock-on',context:'committed-challenge',defenderId:'challenger',actorId:'runner',team:'you',time:100,progress:.4});
+ assert.equal(m.snapshot().counts.takeOns,1,'the actual contested take-on intent remains a duel');
+ assert.equal(m.snapshot().skillsBySituation['knock-on:open-space'],1);
+});
+
+
+test('byline origins are measured from the real release, independently of old crossing labels',()=>{
+ const m=createCombinationMetrics();
+ m.event({type:'v2-cross',kind:'byline',progress:1-6/105});
+ m.event({type:'v2-cross',kind:'cut-back',progress:1-1.3/105});
+ assert.equal(m.snapshot().counts.bylineDeliveries,1);assert.equal(m.snapshot().counts.bylineCutBacks,1);
+ assert.ok(Math.abs(m.snapshot().crossOrigins[1].depthMetres-1.3)<1e-6);
+});
+
+
+test('carrier choice frame counts are distinct from actual released pass decisions',()=>{
+ const m=createCombinationMetrics();
+ for(let i=0;i<3;i++)m.frame({you:{carrierIntent:{type:'carry',reason:'wide-carrier-drive-for-byline'}}},{});
+ assert.equal(m.snapshot().carrierChoices['carry:wide-carrier-drive-for-byline'],3);
+ assert.deepEqual(m.snapshot().decisions,{});
+});

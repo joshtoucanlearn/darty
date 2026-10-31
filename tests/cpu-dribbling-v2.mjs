@@ -30,6 +30,21 @@ test('a committing defender invites a physical knock-on instead of a feint',()=>
  const s=state([[52.5,34]]);s.players.at(-1).committed=true;
  const i=CPU.decide(s).carrierIntent;assert.equal(i.type,'take-on');assert.equal(i.knockOn,true);assert.equal(i.skill,null);
 });
+test('CPU skill choices exclude roulette and step-over at every rating and use a continuously rated recovery cadence',()=>{
+ let previous=Infinity;
+ for(const rating of [1,2,20,50,98,99]){
+  const s=state([[52.6,34]]);Object.assign(s.players[0],{control:rating,agility:rating,awareness:rating});
+  const choice=CPU.decide(s);
+  assert.equal(choice.carrierIntent.type,'take-on');
+  assert.ok(!['roulette','stepover','step-over'].includes(choice.carrierIntent.skill));
+  const recovery=choice.memory.dribble.cooldownUntilTick-s.tick;
+  assert.ok(recovery<=previous);previous=recovery;
+  for(const state of [{lowChallenge:true,committed:true},{isGK:true},{vx:3},{vx:-4,committed:true}]){
+   const changed=structuredClone(s);Object.assign(changed.players.at(-1),state);
+   assert.ok(!['roulette','stepover','step-over'].includes(CPU.decide(changed).carrierIntent.skill));
+  }
+ }
+});
 test('a trapped carrier turns away and shields, then releases when an outlet opens',()=>{
  const s=state([[51,34],[51,32],[51,36],[53,30],[53,38],[55,34]]);
  const a=CPU.decide(s);assert.equal(a.carrierIntent.type,'protect');assert.ok(a.carrierIntent.target.x<50);
@@ -84,8 +99,15 @@ test('a defender jockeys secured control, then challenges an exposed ball even w
   const held=CPU.decide(s,null,config).defensiveIntents.find(p=>p.type==='press');
   assert.equal(held.movementIntent,'jockey');assert.equal(held.physicalAction,null);
   s.ball.x=50.7;
-  const exposed=CPU.decide(s,null,config).defensiveIntents.find(p=>p.type==='press');
-  assert.equal(exposed.physicalAction.type,'stand-tackle');
+  // A rating changes how often the defender commits; it cannot promise an
+  // input on one particular cadence. Every profile must still choose the
+  // reachable exposed-ball poke across real decision windows.
+  let pokes=0;
+  for(let tick=1;tick<1200;tick+=12){
+   const exposed=CPU.decide({...s,tick},null,config).defensiveIntents.find(p=>p.type==='press');
+   if(exposed.physicalAction?.type==='stand-tackle')pokes++;
+  }
+  assert.ok(pokes>0,'rating '+rating+' can choose the exposed-ball standing tackle');
  }
 });
 
@@ -121,4 +143,17 @@ test('a planned combination cushions for its release and a lateral opponent need
  const player={position:{x:50,y:0},velocity:{x:0,y:0},attributes:{control:80,agility:80}};
  assert.equal(Dribble.receivingIntent({player,combination:true,opponents:[]}).type,'cushion');
  const s=state([[51,37]]);assert.notEqual(CPU.decide(s).carrierIntent.type,'take-on');
+});
+
+test('a wide skill has actual grass for its exit and completes the real feint before a fresh byline carry',()=>{
+ for(const y of [4.5,63.5]){
+  const s=state([[94.6,y]]);Object.assign(s.players[0],{x:92,y,position:'RW'});s.ball={x:92,y};
+  const first=CPU.decide(s);assert.equal(first.carrierIntent.type,'take-on',JSON.stringify(first.carrierIntent));
+  assert.ok(first.carrierIntent.skill);assert.ok(first.carrierIntent.target.y>=1.25&&first.carrierIntent.target.y<=66.75);
+  s.tick=2;s.players.at(-1).x=97;
+  const next=CPU.decide(s,first.memory);
+  assert.equal(next.carrierIntent.skill,first.carrierIntent.skill);
+  assert.equal(next.carrierIntent.startedTick,first.carrierIntent.startedTick);
+  assert.equal(next.carrierIntent.phase,'feint');assert.deepEqual(next.carrierIntent.target,first.carrierIntent.target);
+ }
 });

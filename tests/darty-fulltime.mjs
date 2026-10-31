@@ -40,7 +40,7 @@ test('endMatch presents report numbers, short names and recorded scorers, and fo
     ] },
     document: { getElementById: get, createElement: element },
     ftime: get('ftime'), ftScore: get('ftScore'), ftMsg: get('ftMsg'), ftStats: get('ftStats'), ftBtn: get('ftBtn'),
-    homeDisplayName: 'HME', awayDisplayName: 'AWY', youScore: 2, oppScore: 1,
+    homeDisplayName: 'HME', awayDisplayName: 'AWY', youScore: 2, oppScore: 1, matchAbandoned: null,
     you: [], opp: [], ykeep: { stats: {}, stamina: 100 }, okeep: { stats: {}, stamina: 100 },
     finishMatchAudio: noop, clearMatchPresentationUI: noop, clamp: value => value,
     logEvent(type) { context.report.events.push({ type }); }, playtestSummary: () => ({}),

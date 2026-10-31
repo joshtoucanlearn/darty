@@ -817,7 +817,7 @@ test('DEFENSIVE LOOP: commitment persists under a nearer alternative and is inpu
   assert.ok(ordered.telemetry.transitions.some(event => event.type === 'defense-persisted'));
 });
 
-test('DEFENSIVE LOOP: stand tackle and shoulder actions require safe windows and obey simulation-tick cooldown', () => {
+test('DEFENSIVE LOOP: rated standing and shoulder opportunities obey facing and simulation-tick cooldown', () => {
   const close = defensiveSnapshot(200); close.ball.x -= 35;
   const presser = close.players.find(entry => entry.id === 'home-presser');
   presser.x = 1445;
@@ -846,16 +846,21 @@ test('DEFENSIVE LOOP: stand tackle and shoulder actions require safe windows and
     minimumReactionTicks: 0, maximumReactionTicks: 0
   });
   press = decision.defensiveIntents.find(intent => intent.type === 'press');
-  assert.equal(press.physicalAction.type, 'stand-tackle');
+  const renewed = Array.from({length:32},(_,i)=>Intelligence.decide({...recovered,tick:cooldownUntil+1+i*12},decision.memory,
+    {minimumReactionTicks:0,maximumReactionTicks:0}).defensiveIntents.find(intent=>intent.type==='press')?.physicalAction)
+    .find(action=>action?.type==='stand-tackle');
+  assert.ok(renewed,'after recovery a new real standing opportunity remains available');
 
   const sideOn = defensiveSnapshot(300); sideOn.ball.x -= 35;
   const sideOnPresser = sideOn.players.find(entry => entry.id === 'home-presser');
-  sideOnPresser.x = 1460;
+  sideOnPresser.x = 1488;
+  sideOnPresser.y += 25;
   sideOnPresser.fx = 0.65;
-  sideOnPresser.fy = 0.76;
-  decision = Intelligence.decide(sideOn, null, { minimumReactionTicks: 0, maximumReactionTicks: 0 });
-  press = decision.defensiveIntents.find(intent => intent.type === 'press');
-  assert.equal(press.physicalAction.type, 'shoulder-challenge');
+  sideOnPresser.fy = -0.76;
+  const shoulder = Array.from({length:32},(_,i)=>Intelligence.decide({...sideOn,tick:300+i*12},null,
+    {minimumReactionTicks:0,maximumReactionTicks:0}).defensiveIntents.find(intent=>intent.type==='press')?.physicalAction)
+    .find(action=>action?.type==='shoulder-challenge');
+  assert.ok(shoulder,'a real alongside shoulder opportunity is selected across the contextual windows');
 
   const wrongWay = defensiveSnapshot(400);
   const wrongWayPresser = wrongWay.players.find(entry => entry.id === 'home-presser');
@@ -871,10 +876,14 @@ test('DEFENSIVE LOOP: stand tackle and shoulder actions require safe windows and
   unsafePresser.vx = 300;
   decision = Intelligence.decide(unsafeSpeed, null, { minimumReactionTicks: 0, maximumReactionTicks: 0 });
   press = decision.defensiveIntents.find(intent => intent.type === 'press');
-  assert.equal(press.physicalAction, null, 'an unsafe relative-speed collision cannot show a challenge');
+  const fastActions = Array.from({length:32},(_,i)=>Intelligence.decide({...unsafeSpeed,tick:500+i*12},null,
+    {minimumReactionTicks:0,maximumReactionTicks:0}).defensiveIntents.find(intent=>intent.type==='press')?.physicalAction)
+    .filter(Boolean);
+  assert.ok(fastActions.length,'closing speed changes the risk rather than banning the input');
+  assert.ok(fastActions.every(action=>action.relativeClosingSpeed>100&&action.risk>0));
 });
 
-test('DEFENSIVE LOOP: a CPU defender can commit the slide input only in a goal-side recovery window', () => {
+test('DEFENSIVE LOOP: a reachable recovery slide is available while a static unexposed midfield ball is jockeyed', () => {
   const danger = defensiveSnapshot(550);
   const presser = danger.players.find(entry => entry.id === 'home-presser');
   const carrier = danger.players.find(entry => entry.id === 'away-carrier');
@@ -884,9 +893,13 @@ test('DEFENSIVE LOOP: a CPU defender can commit the slide input only in a goal-s
   danger.ball = { x: carrier.x - 35, y: carrier.y };
   let decision = Intelligence.decide(danger, null, { minimumReactionTicks: 0, maximumReactionTicks: 0 });
   let press = decision.defensiveIntents.find(intent => intent.type === 'press');
-  assert.equal(press.physicalAction.type, 'slide-tackle');
-  assert.ok(press.physicalAction.distance > Intelligence.DEFAULT_CONFIG.defensiveStandTackleMaxDistance);
-  assert.ok(press.physicalAction.ownGoalDepth <= Intelligence.DEFAULT_CONFIG.defensiveSlideDangerDepth);
+  const recoveryActions=Array.from({length:48},(_,i)=>Intelligence.decide({...danger,tick:550+i*12},null,
+    {minimumReactionTicks:0,maximumReactionTicks:0}).defensiveIntents.find(intent=>intent.type==='press')?.physicalAction);
+  const slide=recoveryActions.find(action=>action?.type==='slide-tackle');
+  assert.ok(slide,'a real recovery slide remains available');
+  assert.ok(recoveryActions.some(action=>action===null),'continuing the approach is an option even when a slide is reachable');
+  assert.ok(slide.distance > Intelligence.DEFAULT_CONFIG.defensiveStandTackleMaxDistance);
+  assert.ok(slide.ownGoalDepth <= Intelligence.DEFAULT_CONFIG.defensiveSlideDangerDepth);
 
   const midfield = defensiveSnapshot(551);
   midfield.players.find(entry => entry.id === 'home-presser').x = 1400;
@@ -1017,4 +1030,67 @@ test('DEFENSIVE LOOP: canonical and metric pitches select the same roles and pro
     assert.ok(Math.abs(metricTarget.x - (canonicalTarget.x - 84) / 3176 * 105) < 0.002);
     assert.ok(Math.abs(metricTarget.y - (canonicalTarget.y - 6) / 2130 * 68) < 0.002);
   }
+});
+
+test('a moving coordinated runner receives a stride rendezvous before his distant run endpoint',()=>{
+ const players=[player('carrier','home',1500,1070,{role:'central-midfielder',position:'CM',passing:92,awareness:92,control:90}),
+  player('support','home',1280,1240,{role:'defensive-midfielder',position:'CDM',passing:90,awareness:91,control:89,vx:0,vy:0}),
+  player('runner','home',1750,680,{role:'winger',position:'LW',pace:92,acceleration:94,vx:140,vy:0}),
+  player('away-pressure','away',1370,1450),player('away-cover','away',2900,1900)];
+ const decision=Intelligence.decide(snapshot({tick:84,players,ball:{x:1500,y:1070},offsideLine:2800}));
+ const run=decision.runs.find(r=>r.playerId==='runner'),intent=decision.carrierIntent;
+ assert.ok(run);assert.equal(intent.type,'pass');assert.equal(intent.targetPlayerId,'runner');
+ assert.ok(intent.target.x>1750,'the pass leads his current forward motion');
+ assert.ok(intent.target.x<(run.continuationTarget||run.target).x,'the pass does not require the whole run to finish first');
+});
+
+test('an onside forward moving between a normal back line is offered a ground through ball',()=>{
+ for(const direction of[1,-1]){
+  const x=v=>direction===1?v:105-v;
+  const players=[player('carrier','home',x(59),34,{passing:90}),
+   player('forward','home',x(76),34,{position:'ST',role:'striker',vx:direction*6,vy:0,fx:direction,fy:0,pace:88}),
+   player('rest-a','home',x(35),20,{position:'CB',role:'centre-back'}),
+   player('rest-b','home',x(35),48,{position:'CB',role:'centre-back'}),
+   player('defender-a','away',x(80),25,{position:'CB',role:'centre-back'}),
+   player('defender-b','away',x(80),43,{position:'CB',role:'centre-back'}),
+   player('keeper','away',x(103),34,{position:'GK',role:'goalkeeper',isGK:true})];
+  const s=snapshot({pitch:{xMin:0,xMax:105,yMin:0,yMax:68},attackingDirection:direction,
+   offsideLine:x(80),players,ball:{x:x(59),y:34}}),d=Intelligence.decide(s);
+  assert.equal(d.carrierIntent.reason,'ground-through-ball-in-behind',JSON.stringify(d.carrierIntent));
+  assert.equal(d.carrierIntent.flightType,'ground-pass');assert.equal(d.carrierIntent.targetPlayerId,'forward');
+  assert.ok(direction*(d.carrierIntent.target.x-x(80))>0,'the ball is into space behind a currently onside runner');
+ }
+});
+
+test('an open high-line outlet remains a ground through ball beyond twenty-four metres, with loft for a covered lane',()=>{
+ for(const direction of[1,-1])for(const covered of[false,true]){
+  const x=v=>direction===1?v:105-v;
+  const players=[player('carrier','home',x(35),34,{passing:90}),
+   player('forward','home',x(56),34,{position:'ST',role:'striker',vx:direction*6,vy:0,fx:direction,fy:0,pace:88}),
+   player('rest-a','home',x(15),20,{position:'CB',role:'centre-back'}),
+   player('rest-b','home',x(15),48,{position:'CB',role:'centre-back'}),
+   player('defender-a','away',x(60),23,{position:'CB',role:'centre-back'}),
+   player('defender-b','away',x(60),45,{position:'CB',role:'centre-back'}),
+   player('keeper','away',x(103),34,{position:'GK',role:'goalkeeper',isGK:true})];
+  if(covered)players.push(player('lane-defender','away',x(49),34,{position:'CM',role:'midfielder'}));
+  const d=Intelligence.decide(snapshot({pitch:{xMin:0,xMax:105,yMin:0,yMax:68},attackingDirection:direction,
+   offsideLine:x(60),players,ball:{x:x(35),y:34}})),intent=d.carrierIntent;
+  assert.equal(intent.type,'pass',JSON.stringify(intent));assert.equal(intent.targetPlayerId,'forward');
+  assert.equal(intent.flightType,covered?'long-pass':'ground-pass',JSON.stringify(intent));
+  assert.ok(Math.hypot(intent.target.x-x(35),intent.target.y-34)>24);
+ }
+});
+
+test('circulation memory records the actual MR fallback flight instead of its rejected proposed receiver',()=>{
+ const memory=Intelligence.createMemory();Object.assign(memory,{teamId:'home',lastTick:99});
+ Object.assign(memory.circulation,{pendingPasserId:'carrier',pendingReceiverId:'runner',pendingIssuedTick:99});
+ const players=[player('carrier','home',1040,1070,{position:'LB',role:'full-back'}),
+  player('actual-outlet','home',1260,1070,{position:'CB',role:'centre-back'}),player('runner','home',1510,720),
+  player('away','away',2520,1780)];
+ const flight=Intelligence.decide({...snapshot({tick:100,players,carrierId:null}),inFlight:true,sourcePlayerId:'carrier',intendedReceiverId:'actual-outlet'},memory);
+ assert.equal(flight.memory.circulation.pendingReceiverId,'actual-outlet');
+ const received=Intelligence.decide(snapshot({tick:101,players,carrierId:'actual-outlet'}),flight.memory);
+ assert.equal(received.memory.circulation.lastCompletedPasserId,'carrier');
+ assert.equal(received.memory.circulation.lastCompletedReceiverId,'actual-outlet');
+ assert.deepEqual(received.memory.circulation.recentPasses,[{passerId:'carrier',receiverId:'actual-outlet',tick:101}]);
 });

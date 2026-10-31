@@ -653,13 +653,13 @@ test('a finalized reaction-stimulus transaction rolls back to the exact prior do
   assert.equal(status.possession.offsideCandidate, null);
 });
 
-test('V2 involuntary body authority suppresses only the overlapping legacy outfield ball block', () => {
+test('live V2 owns outfield blocking while the legacy block remains gated', () => {
   assert.match(composerSource, /contactType:\s*'involuntary-deflection'/);
   assert.match(composerSource, /outfieldBallBlock:\s*true/);
   assert.match(adapterSource, /live contact composer result contract failed/);
   assert.match(matchSource,
-    /liveV2SuppressLegacyBallBlock=suppress\.outfieldBallBlock===true/,
-    'the host must consume the composer suppression bit');
+    /liveV2SuppressLegacyBallBlock=true/,
+    'the retired host block stays suppressed throughout live V2');
   assert.match(matchSource,
     /resolveSetPieceWallBlock\(\);if\(!liveV2TickApplied\|\|!liveV2SuppressLegacyBallBlock\)resolveBallBlock\(\);/,
     'strict V2 must not run Build 173 outfield ball blocking after MR already authored the contact');

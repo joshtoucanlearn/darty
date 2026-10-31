@@ -1,11 +1,11 @@
 import {createHeadlessMatch} from '../../tools/headless-cpu-match.mjs';
-export function attackingHost(seed=91){
- const payload={mode:'quickPlay',matchType:'spectator',practiceMode:null,online:null,
+export function attackingHost(seed=91,{humanInput=false,actions=true}={}){
+ const payload={mode:'quickPlay',matchType:humanInput?'single-player':'spectator',practiceMode:null,online:null,
   engine:{requested:'fl-v2',effective:'fl-v2',version:'1.0.0-offline-live-authority-playtest',fallbackReason:null},
   simulationSeed:seed,homeTeam:{id:'fixture-home',name:'Home'},awayTeam:{id:'fixture-away',name:'Away'},
-  controllers:{player1Team:null,player2Team:null,aiTeam:'both'}};
- const url='http://darty.local/match.html?quickPlay=1&engine=fl-v2&candidate=5#flMatch='+Buffer.from(JSON.stringify(payload)).toString('base64url');
- return createHeadlessMatch(url,{seed,minutes:6,scripted:true});
+  controllers:humanInput?{player1Team:'home',player2Team:null,aiTeam:'away'}:{player1Team:null,player2Team:null,aiTeam:'both'}};
+ const url='http://darty.local/match.html?quickPlay=1&engine=fl-v2&candidate=5'+(actions?'':'&actions=0')+'#flMatch='+Buffer.from(JSON.stringify(payload)).toString('base64url');
+ return createHeadlessMatch(url,{seed,minutes:6,scripted:true,humanInput});
 }
 export const liveScene=`
  if(!started)focusGame(CONFIG.difficulty);matchPhase='play';paused=false;matchOver=false;resetUntil=0;resetPause=0;kickoffHeld=false;clearRestartState();

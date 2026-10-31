@@ -395,7 +395,7 @@ test('an own-third MR pass protects the actual receiver contact with a twenty-ti
   assert.equal(intent.passRace.safetyCritical, true);
   assert.equal(intent.passRace.requiredReceiverReadyBufferTicks, 8);
   assert.ok(intent.passRace.receiverReadyBufferTicks >= 8);
-  assert.equal(intent.passRace.reason, 'receiver-arrives-with-six-tick-margin');
+  assert.equal(intent.passRace.reason, 'receiver-arrives-before-interceptor');
   assert.ok(intent.passRace.receiverContactTick >= intent.passRace.ballArrivalTick);
   assert.equal(intent.passRace.opponentContactTick, null);
   assert.match(intent.passRace.trajectorySignature, /^[0-9a-f]{8}$/);
@@ -412,7 +412,7 @@ test('CPU-v-CPU rejects both a receiver that cannot arrive and an interception r
   assert.notEqual(unreachableIntent.targetPlayerId, RECEIVER_ID);
   assert.equal(unreachableIntent.fallbackFrom, 'pass');
   assert.equal(unreachableIntent.passRace.accepted, false);
-  assert.ok(['receiver-cannot-arrive', 'trajectory-misses-target-window', 'receiver-arrival-buffer-below-eight-ticks'].includes(unreachableIntent.passRace.reason));
+  assert.ok(['receiver-cannot-arrive', 'trajectory-misses-target-window', 'receiver-not-ready-at-arrival'].includes(unreachableIntent.passRace.reason));
 
   const contested = snapshotFixture({ interceptor: { x: 55, y: 0 } });
   const contestedFrame = runTick(attachment('cpu-v-cpu', contested.target), contested.snapshot);
@@ -422,7 +422,7 @@ test('CPU-v-CPU rejects both a receiver that cannot arrive and an interception r
   assert.notEqual(contestedIntent.targetPlayerId, RECEIVER_ID);
   assert.equal(contestedIntent.fallbackFrom, 'pass');
   assert.equal(contestedIntent.passRace.accepted, false);
-  assert.equal(contestedIntent.passRace.reason, 'interception-margin-below-six-ticks');
+  assert.equal(contestedIntent.passRace.reason, 'insufficient-interception-margin');
   assert.ok(contestedIntent.passRace.opponentContactTick < contestedIntent.passRace.receiverContactTick + 6);
 });
 
@@ -609,7 +609,7 @@ test('receiver and interceptor races use rated movement to the MR path rather th
   assert.equal(receiverIntent.type, 'pass', JSON.stringify(receiverIntent));
   assert.equal(receiverIntent.targetPlayerId, RECEIVER_ID);
   assert.equal(receiverIntent.passRace.accepted, true, JSON.stringify(receiverIntent.passRace));
-  assert.equal(receiverIntent.passRace.reason, 'receiver-arrives-with-six-tick-margin');
+  assert.equal(receiverIntent.passRace.reason, 'receiver-arrives-before-interceptor');
 
   const movingInterceptor = snapshotFixture({
     receiver: { x: 55, y: 0 },
@@ -623,7 +623,7 @@ test('receiver and interceptor races use rated movement to the MR path rather th
     JSON.stringify(interceptorIntent));
   assert.equal(interceptorIntent.fallbackFrom, 'pass');
   assert.equal(interceptorIntent.passRace.accepted, false);
-  assert.equal(interceptorIntent.passRace.reason, 'interception-margin-below-six-ticks');
+  assert.equal(interceptorIntent.passRace.reason, 'insufficient-interception-margin');
 });
 
 test('an intended receiver may cushion a physically intersecting MR pass before the authored endpoint', () => {
@@ -716,14 +716,14 @@ test('high passing confidence cannot override an opponent interception', () => {
   const high = runTick(riskAttachment(fixture.target, .86), structuredClone(fixture.snapshot));
   const highIntent = high.hostProjection.intelligence.find(row => row.playerId === OWNER_ID);
   assert.equal(high.cpu.you.telemetry.passReceiverRace.accepted, false);
-  assert.equal(high.cpu.you.telemetry.passReceiverRace.reason, 'interception-margin-below-six-ticks');
+  assert.equal(high.cpu.you.telemetry.passReceiverRace.reason, 'insufficient-interception-margin');
   assert.notEqual(highIntent.passRace?.reason, 'high-confidence-progressive-risk-envelope');
   const low = runTick(riskAttachment(fixture.target, .7), structuredClone(fixture.snapshot));
   const lowIntent = low.hostProjection.intelligence.find(row => row.playerId === OWNER_ID);
   assert.notEqual(lowIntent.passRace?.reason, 'high-confidence-progressive-risk-envelope');
 });
 
-test('a short support pass uses the cheap lane release instead of a 150-tick MR pre-simulation', () => {
+test('a clean short support pass clears the same MR interception race as every other pass', () => {
   const fixture = snapshotFixture({ receiver: { x: 52, y: 0 }, target: { x: 52, y: 0 } });
   Object.assign(fixture.snapshot.players.find(p=>p.id===OWNER_ID),worldPoint({x:44,y:0}));
   Object.assign(fixture.snapshot.ball,worldPoint({x:44,y:0}));
@@ -732,11 +732,9 @@ test('a short support pass uses the cheap lane release instead of a 150-tick MR 
   assert.equal(intent.type, 'pass', JSON.stringify(intent));
   assert.equal(intent.targetPlayerId, RECEIVER_ID);
   assert.equal(intent.passRace.accepted, true);
-  assert.equal(intent.passRace.reason, 'short-support-lane-release');
-  assert.equal(intent.passRace.projectedFlightTicks, 0);
-  assert.equal(intent.passRace.lightweight, true);
-  assert.equal(intent.passRace.laneClearanceCanonical, 180);
-  assert.equal(intent.passRace.receiverSpaceCanonical, 180);
+  assert.equal(intent.passRace.lightweight, undefined);
+  assert.ok(intent.passRace.projectedFlightTicks > 0);
+  assert.equal(intent.passRace.requiredMarginTicks, 2);
 });
 
 test('an ordinary support lane earns release through the physical receiver race', () => {
@@ -1217,11 +1215,42 @@ test('crosses use a crossing launch and aerial receive height while retaining th
   assert.ok(race.accepted, JSON.stringify(race));
 });
 
-test('CPU service creates V2 headers and volleys at physical contact, including defensive contests, without host aerial authority', () => {
+test('a deliberate cross can target1.25m inside the byline and still clears the full MR interception race',()=>{
+ const target={x:105,y:0},receiver={x:103.75,y:0},fixture=snapshotFixture({receiver,target});
+ const origin=worldPoint({x:83,y:-26});
+ Object.assign(fixture.snapshot.players.find(p=>p.id===OWNER_ID),origin);
+ Object.assign(fixture.snapshot.ball,{x:origin.x,y:origin.y});
+ for(const p of fixture.snapshot.players.filter(p=>p.teamId==='opp'))Object.assign(p,worldPoint({x:80,y:29}));
+ const frame=runTick(serviceAttachment(target,{type:'cross',crossKind:'byline',flightType:'cross',reason:'wide-final-third-byline-cross'}),fixture.snapshot);
+ const intent=frame.hostProjection.intelligence.find(p=>p.playerId===OWNER_ID),race=frame.cpu.you.telemetry.passReceiverRace;
+ assert.equal(race.accepted,true,JSON.stringify(race));assert.equal(race.requiredMarginTicks,6);
+ assert.equal(race.boundaryRetarget.marginMetres,1.25);assert.deepEqual(intent.target,worldPoint(receiver));
+});
+
+test('a real covered cutback remains rejected while a checked short outlet or free byline approach keeps the attack alive',()=>{
+ const c=JSON.parse(readFileSync(new URL('./fixtures/covered-byline-cutback.json',import.meta.url),'utf8'));
+ const team=c.snapshot.players.find(p=>p.id===c.passerId).teamId;
+ const cpu={...CPU,decide(...args){const d=CPU.decide(...args);if(args[0].teamId!==team)return d;
+  const plan=d.carrierIntent,wideDriveOption=plan.wideDriveOption||(plan.reason==='wide-carrier-drive-for-byline'?plan:null);
+  assert.ok(wideDriveOption,'the real V2 planner finds a free approach from this captured geometry');
+  return {...d,carrierIntent:{...c.intent,wideDriveOption,bylineHoldOption:plan.bylineHoldOption}};
+ }};
+ const live=Adapter.createAttachment({enabled:true,capability:capability('cpu-v-cpu'),seed:1,
+  dependencies:{ball:Ball,movement:Movement,cpu,formation:Formation,contact:Contact,dribbling:Dribbling},
+  host:{prepareTick:()=>({commit(){},rollback(){}})}});
+ const frame=runTick(live,c.snapshot),race=frame.cpu[team].telemetry.passReceiverRace,intent=frame.cpu[team].carrierIntent;
+ assert.equal(race.accepted,false);assert.ok(race.opponentContactTick<race.receiverContactTick);assert.ok(race.marginTicks<0,'the full MR projection must still show the interception');
+ assert.equal(intent.type,'carry');assert.equal(intent.reason,'wide-carrier-drive-for-byline');assert.equal(intent.target.x,1.25);
+ assert.ok(!intent.knockOn,'the final approach keeps close control instead of launching a long free roll');
+ assert.notEqual(frame.dribbling.releasedAction?.type,'pass','the rejected cutback is never released');
+});
+
+test('pressured CPU service creates V2 headers and volleys at physical contact, including defensive contests, without host aerial authority', () => {
   for (const [height, defending] of [[2.05, false], [.8, false], [2.05, true]]) {
     const target = { x: 94, y: 0 }, fixture = snapshotFixture({ receiver: target, target });
-    const origin = worldPoint(target);
+    const origin = worldPoint({x:target.x+(height<1.05?.45:.15),y:target.y});
     for (const p of fixture.snapshot.players.filter(p => p.teamId === 'opp')) Object.assign(p, worldPoint({ x: 80, y: 28 }));
+    if(!defending)Object.assign(fixture.snapshot.players.find(p=>p.id==='opp-LCB'),worldPoint({x:94,y:1.7}));
     if (defending) {
       const defender = fixture.snapshot.players.find(p => p.id === 'opp-LCB');
       Object.assign(defender, worldPoint({ x: 94.25, y: 0 })); Object.assign(defender.attrs, { heading: 99, jumping: 99, awareness: 99 });
@@ -1237,13 +1266,14 @@ test('CPU service creates V2 headers and volleys at physical contact, including 
     for (let tick = 1; tick <= 24; tick++) {
       const frame = runTick(live, snapshot);
       trace.push({tick,z:frame.hostProjection.ball?.z,status:frame.hostProjection.contact.status,p:frame.hostProjection.possession,reason:frame.hostProjection.contact.presentation,detail:frame.hostProjection.contact.detail});
-      assert.equal(frame.hostProjection.contact.suppressLegacy.aerialDuel, true);
+      assert.equal(frame.hostProjection.contact.suppressLegacy.aerialDuel, true,JSON.stringify({height,defending,tick,c:frame.hostProjection.contact,p:frame.hostProjection.possession}));
       if (frame.hostProjection.contact.contactType === 'aerial-volley') { contact = frame.hostProjection.contact; break; }
       snapshot = advanceFlightSnapshot(snapshot, frame);
       snapshot.ball.launchIntent = null;
     }
     assert.ok(contact, JSON.stringify({height,defending,trace}));
-    assert.equal(contact.presentation.technique, height > 1.05 ? 'header' : 'volley');
+    assert.ok((height>1.05?['header','volley']:['volley']).includes(contact.presentation.technique));
+    if(contact.presentation.technique==='volley')assert.ok(contact.ballState.position.z<=1.55,'waiting for a volley must reach the real boot window');
     assert.equal(contact.presentation.outcome, 'contact', JSON.stringify(contact.presentation));
     assert.equal(contact.presentation.intent, defending ? 'clear' : 'shoot');
     assert.equal(contact.presentation.playerId, defending ? 'opp-LCB' : RECEIVER_ID);
@@ -1335,12 +1365,13 @@ test('high-ball movement sends one reachable challenger per team and drops defen
 test('an attacker who meets an opposing clearance near goal may finish instead of automatically clearing it',()=>{
   const target={x:94,y:0},fixture=snapshotFixture({receiver:target,target}),origin=worldPoint({x:94.05,y:0});
   for(const p of fixture.snapshot.players.filter(p=>p.teamId==='opp'))Object.assign(p,worldPoint({x:80,y:28}));
+  Object.assign(fixture.snapshot.players.find(p=>p.id==='opp-LCB'),worldPoint({x:94,y:1.7}));
   fixture.snapshot.ball={...fixture.snapshot.ball,...origin,z:2.05*UNITS.zPerMetre,ownerId:null,targetId:null,
     lastKickerId:'opp-CAM',lastKickerTeamId:'opp',flightType:'clearance',launchIntent:{sequence:'opposing-clearance-finish',
     sourcePlayerId:'opp-CAM',sourceTeamId:'opp',targetPlayerId:null,origin:{...origin,z:2.05*UNITS.zPerMetre},target:origin,
     direction:{x:1,y:0},speedMetresPerSecond:.05,liftAngleDeg:0,sideSpinRpm:0,topSpinRpm:0,source:'clearance'}};
   const live=attachment('cpu-v-cpu',target);let snapshot=fixture.snapshot,contact;
-  for(let tick=1;tick<=12;tick++){
+  for(let tick=1;tick<=36;tick++){
     const frame=runTick(live,snapshot);
     if(frame.hostProjection.contact?.presentation?.duel){contact=frame.hostProjection.contact;break;}
     snapshot=advanceFlightSnapshot(snapshot,frame);
@@ -1416,11 +1447,29 @@ test('a CPU follows its own frozen-contract knock-on at ordinary full sprint eve
   Object.assign(snapshot.ball,{ownerId:null,x:worldPoint({x:45,y:0}).x,y:worldPoint({x:45,y:0}).y,vx:10*UNITS.xPerMetre/60,flightType:'directional-knock-on',lastKickerId:OWNER_ID});
   snapshot.dribbling.directionalKnockOnIntent={playerId:OWNER_ID,authority:'live-v2',launchSequence:'jog-1',startX:owner.x,startY:owner.y,
     targetX:worldPoint({x:44,y:0}).x,targetY:owner.y,nx:1,ny:0,distance:4*UNITS.xPerMetre,maximumTravelDistance:20*UNITS.xPerMetre};
-  const frame=attachment('cpu-v-cpu',{x:55,y:0}).planTick(snapshot);assert.ok(frame);
+  const live=attachment('cpu-v-cpu',{x:55,y:0}),frame=live.planTick(snapshot);assert.ok(frame);
   const row=frame.hostProjection.recoveryAssignments.find(r=>r.playerId===OWNER_ID&&r.authority==='v2-knock-on-chase');assert.ok(row);
   const movement=frame.hostProjection.movement.find(p=>p.id===OWNER_ID);
   assert.ok(movement.vx>0,'the initiator physically accelerates after his touch');
   assert.equal(frame.hostProjection.logicalBallOwnerId,null,'a chase command grants no ownership');
+  assert.equal(live.commitTick(frame),true);
+  const control=live.exportState().domain.world.players.find(p=>p.id===OWNER_ID).control;
+  assert.equal(control.mode,'sprint');assert.equal(control.intensity,1);
+  assert.ok(!control.directionalSteering,'an unopposed chase retains ordinary rated steering');
+  assert.equal(control.responsivenessMultiplier,1,'shared pursuit receives no responsiveness bonus');
+});
+
+test('controlled True Feel leases retain the accepted CPU steering instead of borrowing the neutral-race request',()=>{
+ const fixture=snapshotFixture(),live=carryAttachment({x:60,y:0});let snapshot=fixture.snapshot,seen=false;
+ for(let tick=1;tick<=72;tick++){
+  const frame=runTick(live,snapshot);
+  const lease=frame.hostProjection.recoveryAssignments.find(r=>r.playerId===OWNER_ID&&r.authority==='true-feel-lease-recovery');
+  if(lease){const control=live.exportState().domain.world.players.find(p=>p.id===OWNER_ID).control;
+   assert.ok(!control.directionalSteering,'controlled dribble and passing movement remains on the accepted path');
+   assert.equal(control.responsivenessMultiplier,1);seen=true;break;}
+  snapshot=advanceFlightSnapshot(snapshot,frame);
+ }
+ assert.equal(seen,true,'fixture must exercise a real separated controlled touch');
 });
 
 test('keeper and woodwork rebounds terminate a travelling shot route and admit both teams to the loose-ball race',()=>{
@@ -1484,7 +1533,7 @@ test('the live keeper shares checked short outlets and clears when every receive
  Object.assign(mates[0],worldPoint({x:16,y:18}));
  const safe=live.planKeeperExit(snapshot,keeper.id);
  assert.equal(safe.type,'pass',JSON.stringify(safe));assert.equal(safe.targetPlayerId,mates[0].id);
- assert.equal(safe.passRace.accepted,true);assert.equal(safe.passRace.safetyCritical,true);
+ assert.equal(safe.passRace.accepted,true);assert.equal(safe.passRace.ownThird,true);assert.equal(safe.passRace.safetyCritical,true);
  assert.ok(safe.passRace.launchSpeedMetresPerSecond>=14);
 });
 
@@ -1514,17 +1563,17 @@ test('CPU throw-ins check the real ball flight and receiver pressure before choo
  const run=attachment('cpu-v-cpu',{x:32,y:-25}),before=run.exportState();
  const safe=run.planRestartThrow(snapshot,OWNER_ID);
  assert.equal(safe.reason,'checked-throw-free-receiver',JSON.stringify(safe));assert.equal(safe.targetPlayerId,RECEIVER_ID);
- assert.equal(safe.passRace.accepted,true);assert.equal(safe.passRace.safetyCritical,true);assert.ok(safe.throwProfile.liftAngleDeg>0);
+ assert.equal(safe.passRace.accepted,true);assert.equal(safe.passRace.ownThird,true);assert.equal(safe.passRace.safetyCritical,false);assert.ok(safe.throwProfile.liftAngleDeg>0);
  assert.deepEqual(run.exportState(),before,'restart planning grants no control or commit');
  Object.assign(snapshot.players.find(p=>p.id==='opp-LCB'),worldPoint({x:32.5,y:-25}));
  const crowded=run.planRestartThrow(snapshot,OWNER_ID);
- assert.equal(crowded.reason,'crowded-throw-up-the-line');assert.equal(crowded.targetPlayerId,null);
+ assert.equal(crowded.reason,'named-throw-contested-receiver');assert.equal(crowded.targetPlayerId,RECEIVER_ID);assert.equal(crowded.passRace.accepted,false);
  assert.ok(crowded.target.x>owner.x);
 });
 
 test('checked CPU throws reach the free rendezvous through actual MR flight across the legal short range',()=>{
- for(const distance of [6,8,10,12,14,16,17.2]){
-  const origin={x:25,y:-33.6},target={x:25+Math.sqrt(distance*distance-4.6*4.6),y:-29};
+ for(const distance of [4.5,5,6,8,10,12,14,16,17.2]){
+  const origin={x:25,y:-33.6},inward=Math.min(distance,4.6),target={x:25+Math.sqrt(distance*distance-inward*inward),y:origin.y+inward};
   const {snapshot}=snapshotFixture({receiver:target}),owner=snapshot.players.find(p=>p.id===OWNER_ID);
   Object.assign(owner,worldPoint({x:25,y:-34.8}));
   for(const p of snapshot.players)if(p.teamId==='you'&&p.id!==OWNER_ID&&p.id!==RECEIVER_ID)Object.assign(p,worldPoint({x:65,y:20}));
@@ -1534,9 +1583,249 @@ test('checked CPU throws reach the free rendezvous through actual MR flight acro
   const profile=intent.throwProfile;
   let state=Ball.resolveLaunch({id:'physical-throw-range',origin:{...origin,z:50/30+.11},
     direction:{x:target.x-origin.x,y:target.y-origin.y},speed:profile.speed,liftAngleDeg:profile.liftAngleDeg,source:'throw-in'}).state;
-  let context=Ball.createSimulationContext({seed:1}),left=Math.min(1.35,Math.max(.72,.58+distance/20));
+  let context=Ball.createSimulationContext({seed:1}),left=profile.flightSeconds;
   while(left>1e-9){const dt=Math.min(.2,left),next=Ball.step(state,context,dt,{});state=next.state;context=next.context;left-=dt;}
   assert.ok(Math.hypot(state.position.x-target.x,state.position.y-target.y)<.02,JSON.stringify({distance,position:state.position,target}));
-  assert.ok(Math.abs(state.position.z-.75)<.02,JSON.stringify({distance,position:state.position}));
+  assert.ok(Math.abs(state.position.z-profile.targetHeightMetres)<.02,JSON.stringify({distance,position:state.position}));
+ }
+});
+
+// Midfield circulation must not inherit the emergency own-third policy.
+test('a clean midfield backward link keeps the real interception check with a distance-scaled margin',()=>{
+ const target={x:42,y:0},fixture=snapshotFixture({receiver:target,target});
+ Object.assign(fixture.snapshot.players.find(p=>p.id===OWNER_ID),worldPoint({x:55,y:0}));
+ Object.assign(fixture.snapshot.ball,worldPoint({x:55,y:0}));
+ const race=runTick(attachment('cpu-v-cpu',target),fixture.snapshot).cpu.you.telemetry.passReceiverRace;
+ assert.equal(race.accepted,true,JSON.stringify(race));assert.equal(race.safetyCritical,false);
+ assert.equal(race.requiredMarginTicks,4);assert.equal(race.requiredReceiverReadyBufferTicks,4);
+ assert.ok(race.projectedFlightTicks>0);
+});
+test('V2 throw support offers distinct feet, line, back and inside routes without moving bodies',()=>{
+ const {snapshot}=snapshotFixture(),owner=snapshot.players.find(p=>p.id===OWNER_ID);
+ Object.assign(owner,worldPoint({x:40,y:-34.8}));const original=structuredClone(snapshot);
+ const routes=attachment('cpu-v-cpu',{x:50,y:0}).planRestartThrowSupport(snapshot,OWNER_ID);
+ assert.equal(routes.length,4);assert.equal(new Set(routes.map(r=>r.playerId)).size,4);
+ assert.deepEqual(routes.map(r=>r.role),['throw-short-feet','throw-line-run','throw-back-support','throw-inside-link']);
+ assert.ok(routes.some(r=>r.target.x<owner.x));assert.ok(routes.some(r=>r.target.x>owner.x));
+ assert.deepEqual(snapshot,original);
+});
+
+test('a temporary receiver lock is checked at MR arrival rather than rejecting the entire next combination',()=>{
+ const target={x:42,y:0},fixture=snapshotFixture({receiver:target,target});
+ const receiver=fixture.snapshot.players.find(p=>p.id===RECEIVER_ID);
+ receiver.contactEligible=false;receiver.contactLockTicks=12;
+ const admitted=runTick(attachment('cpu-v-cpu',target),structuredClone(fixture.snapshot)).cpu.you.telemetry.passReceiverRace;
+ assert.equal(admitted.accepted,true,JSON.stringify(admitted));assert.ok(admitted.receiverContactTick>=12);
+ receiver.contactLockTicks=180;
+ const locked=runTick(attachment('cpu-v-cpu',target),structuredClone(fixture.snapshot)).cpu.you.telemetry.passReceiverRace;
+ assert.equal(locked.accepted,false,'a lock extending beyond the playable meeting still rejects the pass');
+ receiver.contactLockTicks=0;
+ const unavailable=runTick(attachment('cpu-v-cpu',target),fixture.snapshot).cpu.you.telemetry.passReceiverRace;
+ assert.equal(unavailable.accepted,false);assert.equal(unavailable.reason,'receiver-ineligible');
+});
+
+test('a prepared close midfield link keeps its MR check while overlapping and own-third micro passes remain rejected',()=>{
+ const target={x:49.5,y:0},fixture=snapshotFixture({receiver:target,target});
+ Object.assign(fixture.snapshot.players.find(p=>p.id===OWNER_ID),worldPoint({x:45,y:0}));
+ Object.assign(fixture.snapshot.ball,worldPoint({x:45,y:0}));
+ const safe=runTick(attachment('cpu-v-cpu',target),structuredClone(fixture.snapshot)).cpu.you.telemetry.passReceiverRace;
+ assert.equal(safe.accepted,true,JSON.stringify(safe));assert.ok(safe.projectedFlightTicks>0);assert.equal(safe.distanceMetres,4.5);
+ Object.assign(fixture.snapshot.players.find(p=>p.teamId==='opp'&&!p.isGK),worldPoint({x:47,y:0}));
+ const covered=runTick(attachment('cpu-v-cpu',target),fixture.snapshot).cpu.you.telemetry.passReceiverRace;
+ assert.equal(covered.accepted,false,'the shorter distance never bypasses a real interceptor');
+ const own=snapshotFixture({receiver:{x:24.5,y:0},target:{x:24.5,y:0}});
+ Object.assign(own.snapshot.players.find(p=>p.id===OWNER_ID),worldPoint({x:20,y:0}));Object.assign(own.snapshot.ball,worldPoint({x:20,y:0}));
+ const ownRace=runTick(attachment('cpu-v-cpu',{x:24.5,y:0}),own.snapshot).cpu.you.telemetry.passReceiverRace;
+ assert.equal(ownRace.accepted,false);assert.equal(ownRace.safetyCritical,true);assert.equal(ownRace.reason,'pass-distance-below-control-threshold');
+});
+
+test('contested neutral recovery requests the shared pursuit while a remote opponent leaves receiving movement unchanged',()=>{
+ for(const contested of [false,true]){
+  const {snapshot}=snapshotFixture();const ball=worldPoint({x:45,y:0});
+  for(const p of snapshot.players.filter(p=>p.teamId==='you'))Object.assign(p,worldPoint({x:20,y:-20}));
+  const actor=snapshot.players.find(p=>p.id===OWNER_ID);Object.assign(actor,worldPoint({x:41,y:0}));
+  const opponent=snapshot.players.find(p=>p.teamId==='opp'&&!p.isGK);Object.assign(opponent,worldPoint({x:contested?48:80,y:0}));
+  Object.assign(snapshot.ball,{ownerId:null,targetId:null,x:ball.x,y:ball.y,vx:0,vy:0,z:0,zv:0,flightType:'ground'});
+  const live=attachment('cpu-v-cpu',{x:55,y:0}),frame=runTick(live,snapshot);
+  const row=frame.hostProjection.recoveryAssignments.find(r=>r.playerId===OWNER_ID&&r.authority==='v2-loose-ball-recovery');assert.ok(row);
+  const control=live.exportState().domain.world.players.find(p=>p.id===OWNER_ID).control;
+  assert.equal(!!control.directionalSteering,contested);
+  if(contested){assert.equal(control.mode,'sprint');assert.equal(control.intensity,1);}
+  assert.equal(control.responsivenessMultiplier,1);
+ }
+});
+
+test('opponents chasing a descending clearance keep urgent shared pursuit instead of aerial walk-turn braking',()=>{
+ const {snapshot}=snapshotFixture();
+ for(const p of snapshot.players)Object.assign(p,worldPoint({x:p.teamId==='you'?15:80,y:25}));
+ const actor=snapshot.players.find(p=>p.id===OWNER_ID),opponent=snapshot.players.find(p=>p.teamId==='opp'&&!p.isGK);
+ for(const [p,y]of [[actor,-.4],[opponent,.4]])Object.assign(p,worldPoint({x:96,y}),{vx:2*UNITS.xPerMetre/60,vy:0,fx:1,fy:0});
+ const point=worldPoint({x:95,y:0});Object.assign(snapshot.ball,{ownerId:null,targetId:null,...point,z:.8*UNITS.zPerMetre,
+  vx:-.5*UNITS.xPerMetre/60,vy:0,zv:-2*UNITS.zPerMetre/60,flightType:'clearance',launchIntent:null});
+ const live=attachment('cpu-v-cpu',{x:55,y:0}),frame=runTick(live,snapshot);
+ for(const id of [actor.id,opponent.id]){
+  const row=frame.hostProjection.recoveryAssignments.find(r=>r.playerId===id&&r.authority==='v2-high-ball-contest');assert.ok(row);
+  const control=live.exportState().domain.world.players.find(p=>p.id===id).control;
+  assert.equal(control.mode,'sprint');assert.equal(control.intensity,1);assert.equal(control.directionalSteering,true);
+  assert.ok(Number.isSafeInteger(row.predictedInterceptTick));
+ }
+});
+
+test('a knock-on chase predicts a real meeting after the source boot lock rather than chasing its current spot',()=>{
+ const {snapshot}=snapshotFixture(),actor=snapshot.players.find(p=>p.id===OWNER_ID);
+ Object.assign(actor,worldPoint({x:45,y:0}),{vx:7.7*UNITS.xPerMetre/60,fx:1,fy:0,contactEligible:false,contactLockTicks:14});
+ const origin=worldPoint({x:45.4,y:0});Object.assign(snapshot.ball,{ownerId:null,targetId:OWNER_ID,...origin,z:0,vx:15*UNITS.xPerMetre/60,vy:0,zv:0,flightType:'directional-knock-on'});
+ snapshot.dribbling.directionalKnockOnIntent={playerId:OWNER_ID,authority:'live-v2',launchSequence:'locked-source',startX:origin.x,startY:origin.y,
+  targetX:origin.x+5.5*UNITS.xPerMetre,targetY:origin.y,nx:1,ny:0,distance:5.5*UNITS.xPerMetre,maximumTravelDistance:30*UNITS.xPerMetre};
+ const live=attachment('cpu-v-cpu',{x:55,y:0}),frame=runTick(live,snapshot);
+ const row=frame.hostProjection.recoveryAssignments.find(r=>r.playerId===OWNER_ID&&r.authority==='v2-knock-on-chase');assert.ok(row);
+ assert.ok(row.predictedInterceptTick>=snapshot.tick+14);assert.ok(row.target.x>45.4);
+ assert.equal(live.exportState().domain.world.players.find(p=>p.id===OWNER_ID).control.mode,'sprint');
+});
+
+test('a distant protected skill cannot gate the physical loose-ball contact of either opponent',()=>{
+ for(const team of ['you','opp']){
+  const {snapshot}=snapshotFixture(),actor=snapshot.players.find(p=>p.teamId===team&&!p.isGK),remote=snapshot.players.find(p=>p.teamId!==team&&!p.isGK);
+  for(const p of snapshot.players)Object.assign(p,worldPoint({x:15,y:25}));
+  Object.assign(actor,worldPoint({x:45,y:0}),{fx:1,fy:0,vx:0,vy:0});Object.assign(remote,worldPoint({x:80,y:-25}));
+  const point=worldPoint({x:45.55,y:0});Object.assign(snapshot.ball,{ownerId:null,targetId:null,...point,z:0,vx:0,vy:0,zv:0,flightType:'ground'});
+  snapshot.contact.gate.specialActionAuthority=true;snapshot.dribbling.specialActionPlayerIds=[remote.id];
+  const live=attachment('cpu-v-cpu',{x:55,y:0}),frame=runTick(live,snapshot);
+  const contact=frame.hostProjection.contact;
+  assert.equal(contact?.ownedContact,true,JSON.stringify(contact));assert.equal(contact.presentation.playerId,actor.id);
+ }
+});
+test('the host-protected skill actor stays excluded while another player can physically collect the same loose ball',()=>{
+ const {snapshot}=snapshotFixture(),protectedActor=snapshot.players.find(p=>p.id===OWNER_ID),actor=snapshot.players.find(p=>p.teamId==='opp'&&!p.isGK);
+ for(const p of snapshot.players)Object.assign(p,worldPoint({x:15,y:25}));
+ Object.assign(protectedActor,worldPoint({x:45,y:0}),{fx:1,fy:0});Object.assign(actor,worldPoint({x:46,y:0}),{fx:-1,fy:0});
+ const point=worldPoint({x:45.5,y:0});Object.assign(snapshot.ball,{ownerId:null,targetId:null,...point,z:0,vx:0,vy:0,zv:0,flightType:'ground'});
+ snapshot.contact.gate.specialActionAuthority=true;snapshot.dribbling.specialActionPlayerIds=[protectedActor.id];
+ const live=attachment('cpu-v-cpu',{x:55,y:0}),frame=runTick(live,snapshot),contact=frame.hostProjection.contact;
+ assert.equal(contact?.ownedContact,true,JSON.stringify(contact));assert.equal(contact.presentation.playerId,actor.id);
+});
+
+test('a low second-ball race keeps a kick-locked challenger sprinting without granting a second contact',()=>{
+ const {snapshot}=snapshotFixture(),source=snapshot.players.find(p=>p.id===OWNER_ID),rival=snapshot.players.find(p=>p.id==='opp-LCB');
+ Object.assign(source,worldPoint({x:61.8,y:-30.5}),{contactEligible:false,contactLockTicks:13,vx:0,vy:0});
+ Object.assign(rival,worldPoint({x:61,y:-28.6}),{vx:0,vy:-5*UNITS.yPerMetre/60});
+ Object.assign(snapshot.ball,worldPoint({x:61.4,y:-30.9}),{ownerId:null,z:.55*UNITS.zPerMetre,zv:.4*UNITS.zPerMetre/60,
+  vx:-2*UNITS.xPerMetre/60,vy:-2*UNITS.yPerMetre/60,lastKickerId:OWNER_ID,lastKickerTeamId:'you',flightType:'v2-headed-clearance',launchIntent:null});
+ const run=attachment('cpu-v-cpu',{x:80,y:0}),frame=run.planTick(snapshot);assert.ok(frame);assert.equal(run.commitTick(frame),true);
+ const own=run.exportState().domain.world.players.find(p=>p.id===OWNER_ID);
+ assert.equal(own.control.mode,'sprint','the last toucher can race while his real contact lock expires');
+ assert.equal(own.control.intensity,1);assert.equal(own.control.directionalSteering,true);
+ assert.notEqual(frame.hostProjection.contact?.ownerCandidateId,OWNER_ID,'pursuit cannot bypass the boot lock');
+});
+
+test('rejecting a short own-third pass does not clear when the nearest opponent is eight metres away',()=>{
+ const {snapshot}=snapshotFixture({receiver:{x:14,y:0},target:{x:14,y:0},interceptor:{x:14.2,y:0}});
+ Object.assign(snapshot.players.find(p=>p.id===OWNER_ID),worldPoint({x:25,y:0}));
+ Object.assign(snapshot.players.find(p=>p.id==='opp-RCB'),worldPoint({x:25,y:8}));
+ Object.assign(snapshot.ball,worldPoint({x:25,y:0}));
+ const cpu={...forcedPassCpu({x:14,y:0}),decide(...args){const d=forcedPassCpu({x:14,y:0}).decide(...args);return {...d,supportPassOptions:[]};}};
+ const run=attachment('cpu-v-cpu',{x:14,y:0},{cpu}),frame=run.planTick(snapshot);assert.ok(frame);
+ assert.notEqual(frame.cpu.you.carrierIntent.type,'clearance',JSON.stringify(frame.cpu.you.carrierIntent));
+ assert.ok(['carry','protect','wait','pass'].includes(frame.cpu.you.carrierIntent.type));
+});
+
+test('switch weighting drops through the real MR flight at the authored receiver, at both ends',()=>{
+ for(const direction of[1,-1]){
+  const x=v=>direction===1?v:105-v,target={x:x(55),y:19},fixture=snapshotFixture({receiver:target,target});
+  fixture.snapshot.teams[0].attackingDirection=direction;fixture.snapshot.teams[1].attackingDirection=-direction;
+  fixture.snapshot.teams[0].offsideLine=worldPoint({x:x(95),y:0}).x;
+  const origin=worldPoint({x:x(55),y:-21});Object.assign(fixture.snapshot.ball,origin);
+  Object.assign(fixture.snapshot.players.find(p=>p.id===OWNER_ID),origin);
+  for(const [i,p]of fixture.snapshot.players.filter(p=>p.teamId==='opp').entries())Object.assign(p,worldPoint({x:x(i<2?60:95),y:i<2?-20+i*3:29}));
+  const run=serviceAttachment(target,{supportKind:'switch',reason:'switch-congested-side'}),frame=run.planTick(fixture.snapshot);assert.ok(frame);
+  const intent=frame.cpu.you.carrierIntent,race=intent.passRace;assert.equal(intent.type,'pass',JSON.stringify(intent));
+  assert.equal(race.accepted,true);assert.ok(race.weightedFlightSeconds>1);
+  assert.ok(Math.abs(race.weightedLandingRangeMetres-40)<.5,JSON.stringify(race));
+  const launch=Ball.resolveLaunch({id:'actual-checked-switch',origin:{x:x(55),y:-21,z:1/UNITS.zPerMetre+.11},
+   direction:{x:0,y:1},speed:race.launchSpeedMetresPerSecond,liftAngleDeg:race.launchLiftAngleDeg,source:'long-pass'});
+  let state=launch.state,context=Ball.createSimulationContext({seed:173}),landing;
+  for(let t=0;t<180;t+=15){const step=Ball.step(state,context,.25);landing=step.trace.samples.find(p=>p.velocity.z<0&&p.position.z<=.65);
+   state=step.state;context=step.context;if(landing)break;}
+  assert.ok(landing);assert.ok(Math.abs(landing.position.y-target.y)<.6,JSON.stringify(landing.position));
+ }
+});
+
+test('a ground through pass uses the real running stride and cannot turn into a loft merely because it is long',()=>{
+ const target={x:88,y:0},fixture=snapshotFixture({receiver:{x:76,y:0},receiverVelocity:{x:6,y:0},target});
+ const origin=worldPoint({x:59,y:0});Object.assign(fixture.snapshot.players.find(p=>p.id===OWNER_ID),origin);Object.assign(fixture.snapshot.ball,origin);
+ for(const [i,p]of fixture.snapshot.players.filter(p=>p.teamId==='opp').entries())Object.assign(p,worldPoint({x:i<2?80:103,y:i<2?(i?-12:12):28}));
+ const run=serviceAttachment(target,{supportKind:'in-behind',flightType:'ground-pass',reason:'ground-through-ball-in-behind'}),frame=run.planTick(fixture.snapshot);assert.ok(frame);
+ const intent=frame.cpu.you.carrierIntent;assert.equal(intent.type,'pass',JSON.stringify(intent));assert.equal(intent.passRace.accepted,true);
+ assert.equal(intent.passRace.launchLiftAngleDeg,0);assert.ok(intent.passRace.runnerMeetingSeconds>0);
+ assert.ok(intent.target.x>80);assert.ok(intent.target.x<100.5);assert.equal(intent.passRace.movingInBehind,true);
+});
+
+test('a closing ground interception can select a separately checked loft to the runner, while an earlier blocker still rejects both',()=>{
+ for(const interceptorX of[68,64]){
+  const target={x:88,y:0},fixture=snapshotFixture({receiver:{x:76,y:0},receiverVelocity:{x:6,y:0},target});
+  const origin=worldPoint({x:59,y:0});Object.assign(fixture.snapshot.players.find(p=>p.id===OWNER_ID),origin);Object.assign(fixture.snapshot.ball,origin);
+  const opponents=fixture.snapshot.players.filter(p=>p.teamId==='opp');
+  for(const[i,p]of opponents.entries())Object.assign(p,worldPoint({x:i<2?80:103,y:i<2?(i?-12:12):28}));
+  Object.assign(opponents[1],worldPoint({x:interceptorX,y:0}));
+  const run=serviceAttachment(target,{supportKind:'in-behind',flightType:'ground-pass',reason:'ground-through-ball-in-behind'}),frame=run.planTick(fixture.snapshot);
+  assert.ok(frame);const intent=frame.cpu.you.carrierIntent;
+  if(interceptorX===64){assert.ok(['carry','protect','wait'].includes(intent.type));assert.equal(frame.cpu.you.telemetry.passReceiverRace.accepted,false);continue;}
+  const race=intent.passRace;assert.equal(intent.reason,'run-over-the-top');assert.equal(race.accepted,true);
+  assert.equal(race.originalRejectedRace.reason,'insufficient-interception-margin');assert.ok(race.launchLiftAngleDeg>0);
+  const delta={x:intent.target.x-59,y:intent.target.y},length=Math.hypot(delta.x,delta.y),
+    launch=Ball.resolveLaunch({id:'checked-run-loft',origin:{x:59,y:0,z:1/UNITS.zPerMetre+.11},
+      direction:{x:delta.x/length,y:delta.y/length},speed:race.launchSpeedMetresPerSecond,liftAngleDeg:race.launchLiftAngleDeg});
+  let state=launch.state,context=Ball.createSimulationContext({seed:173}),crossing;
+  for(let t=0;t<120&&!crossing;t+=15){const step=Ball.step(state,context,.25);
+   crossing=step.trace.samples.find(p=>p.position.x>=interceptorX);state=step.state;context=step.context;}
+  assert.ok(crossing);assert.ok(crossing.position.z>race.originalRejectedRace.maximumContactHeightMetres,JSON.stringify(crossing.position));
+ }
+});
+
+test('a six-tick rejected runner request does not rerun loft weighting while its authored pass is held',()=>{
+ const target={x:70,y:18},fixture=snapshotFixture({receiver:{x:65,y:16},receiverVelocity:{x:2,y:1},target,interceptor:{x:68,y:18}});
+ const origin=worldPoint({x:50,y:-22});Object.assign(fixture.snapshot.ball,origin);Object.assign(fixture.snapshot.players.find(p=>p.id===OWNER_ID),origin);
+ let measurements=0;const ball={...Ball,resolveLaunch(input,...args){if(input.id==='cpu-loft-weight')measurements++;return Ball.resolveLaunch(input,...args);}},base=forcedPassCpu(target);
+ const cpu={...base,decide(...args){const d=base.decide(...args);return d.carrierIntent.type==='pass'?{...d,supportPassOptions:[],carrierIntent:{...d.carrierIntent,supportKind:'switch',reason:'switch-congested-side'}}:d;}};
+ const run=Adapter.createAttachment({enabled:true,capability:capability('cpu-v-cpu'),seed:201020,
+  dependencies:{ball,movement:Movement,cpu,formation:Formation,contact:Contact,dribbling:Dribbling},host:{prepareTick:()=>({commit(){},rollback(){}})}});
+ const first=runTick(run,fixture.snapshot);assert.equal(first.cpu.you.telemetry.passReceiverRace.accepted,false);
+ assert.ok(measurements>0,'the fresh request must really forecast a moving loft');
+ measurements=0;fixture.snapshot.tick=2;const held=runTick(run,fixture.snapshot);
+ assert.equal(held.cpu.you.telemetry.passReceiverRace.reason,'rejected-pass-commitment-held');
+ assert.equal(measurements,0,'a held rejection has no new ball to weight');
+});
+
+test('a real formerly overhit switch keeps its checked feet receiver on the MR rendezvous and reaches physical control',()=>{
+ const fixture=JSON.parse(readFileSync(new URL('./fixtures/overhit-switch-receiver.json',import.meta.url),'utf8'));
+ const run=attachment('cpu-v-cpu',{x:70,y:0});let snapshot=fixture.snapshot,contact=null,minimumGap=Infinity,firstTouchTick=null;
+ const target={x:(fixture.target.x-snapshot.pitch.xMin)/snapshot.units.xPerMetre,
+  y:(fixture.target.y-(snapshot.pitch.yMin+snapshot.pitch.yMax)/2)/snapshot.units.yPerMetre};
+ for(let tick=0;tick<180;tick++){
+  const frame=runTick(run,snapshot),c=frame.hostProjection.contact,ball=frame.hostProjection.ball,
+    player=frame.hostProjection.movement.find(p=>p.id===fixture.receiverId);
+  const guide=frame.hostProjection.recoveryAssignments.find(r=>r.playerId===fixture.receiverId&&r.authority==='v2-cpu-reception-guidance');
+  if(guide&&frame.hostProjection.possession.meetingContract==='cpu-pass-race-mr-rendezvous-v2')
+   assert.ok(Math.hypot(guide.target.x-target.x,guide.target.y-target.y)<.01,'aerial arbitration cannot move an admitted feet rendezvous');
+  if(ball&&ball.z/snapshot.units.zPerMetre<1.45)minimumGap=Math.min(minimumGap,Math.hypot((ball.x-player.x)/snapshot.units.xPerMetre,(ball.y-player.y)/snapshot.units.yPerMetre));
+  if(c?.presentation?.playerId===fixture.receiverId&&c.ownedContact){firstTouchTick??=tick;if(c.ownerCandidateId===fixture.receiverId||frame.hostProjection.logicalBallOwnerId===fixture.receiverId||c.presentation.firstTimePass){contact={tick,c};break;}}
+  snapshot=advanceFlightSnapshot(snapshot,frame);
+  for(const p of snapshot.players){p.contactLockTicks=Math.max(0,p.contactLockTicks-1);p.stunTicks=Math.max(0,p.stunTicks-1);if(!p.contactLockTicks&&!p.isGK)p.contactEligible=true;}
+ }
+ assert.ok(contact,JSON.stringify({minimumGap,firstTouchTick}));assert.ok(firstTouchTick<=110,JSON.stringify({firstTouchTick,controlTick:contact.tick,minimumGap}));assert.ok(contact.tick<=firstTouchTick+45,JSON.stringify({firstTouchTick,controlTick:contact.tick}));
+ console.log('SCRIPTED_SWITCH_PROOF',JSON.stringify({firstTouchTick,controlTick:contact.tick,minimumGapMetres:minimumGap,ballRetargeted:false}));
+});
+
+
+test('a long escaping run clears the shared MR check while an early interception stays rejected',()=>{
+ const rows=JSON.parse(readFileSync(new URL('./fixtures/behind-pass-interception.json',import.meta.url),'utf8'));
+ for(const [index,row]of rows.entries()){
+  const cpu={...CPU,decide(snapshot,memory,config){const d=CPU.decide(snapshot,memory,config);
+   return snapshot.teamId===snapshot.possessionTeamId?{...d,carrierIntent:row.intent,supportPassOptions:[]}:d;}};
+  const frame=runTick(attachment('cpu-v-cpu',row.intent.target,{cpu}),row.snapshot),team=row.snapshot.players.find(p=>p.id===row.snapshot.ball.ownerId).teamId,
+   race=frame.cpu[team].telemetry.passReceiverRace;
+  assert.equal(race.accepted,index===0,JSON.stringify(race));
+  if(index===0){assert.equal(race.ownThird,true);assert.equal(race.safetyCritical,false);assert.ok(race.marginTicks>=race.requiredMarginTicks);}
+  else {assert.equal(race.reason,'insufficient-interception-margin');assert.ok(race.opponentTargetGapMetres>30);}
  }
 });

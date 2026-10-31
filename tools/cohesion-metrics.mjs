@@ -3,6 +3,7 @@ export function createCohesionMetrics() {
   const samples = [], passes = { attempted: 0, completed: 0, lofted: 0, loftedCompleted: 0, unresolved: 0 };
   let pending = null, looseTicks = 0;
   const midfieldSamples = [], supportSamples = [];
+  const buildupSamples=[];
   const contests = { looseRecoveries: 0, midfieldWins: 0 }, progression = { completedIntoFinalThird: 0 };
   const isMidfield = p => ['defensive-midfielder', 'central-midfielder', 'wide-midfielder', 'attacking-midfielder'].includes(p.family);
   const mean = (rows, key) => rows.reduce((sum, p) => sum + p[key], 0) / rows.length;
@@ -34,13 +35,21 @@ export function createCohesionMetrics() {
         pending = null;
       }
     },
-    sample({ players, ball, possessionTeam, ownerId }) {
+    sample({ players, ball, possessionTeam, ownerId, possessionAuthored=false, attackingDirections=null }) {
       for (const team of ['you', 'opp']) {
         const active = players.filter(p => p.team === team && !p.sentOff && !p.isGK);
         const midfield = active.filter(isMidfield);
         const defence = active.filter(p => ['centre-back', 'full-back', 'wing-back'].includes(p.family));
         const attack = active.filter(p => ['striker', 'winger'].includes(p.family));
         if (!midfield.length || !defence.length) continue;
+        const direction=attackingDirections?.[team];
+        if(possessionAuthored&&possessionTeam===team&&direction&&direction*(ball.x-52.5)<-17.5&&defence.length>=2){
+          const xs=defence.map(p=>p.x),ys=defence.map(p=>p.y),centres=defence.filter(p=>p.family==='centre-back');
+          buildupSamples.push({backLineWidth:Math.max(...ys)-Math.min(...ys),
+            backLineDepth:Math.max(...xs)-Math.min(...xs),
+            backLineMeanDepth:mean(defence,'x')*(direction>0?1:-1)+(direction>0?0:105),
+            centreBackWidth:centres.length>=2?Math.max(...centres.map(p=>p.y))-Math.min(...centres.map(p=>p.y)):null});
+        }
         const prefix = possessionTeam === team ? 'attacking' : 'defending';
         midfieldSamples.push({ [prefix + 'DefenceGap']: Math.abs(mean(defence, 'x') - mean(midfield, 'x')),
           [prefix + 'AttackGap']: attack.length ? Math.abs(mean(attack, 'x') - mean(midfield, 'x')) : null,
@@ -92,7 +101,8 @@ export function createCohesionMetrics() {
       const midfieldKeys = [...new Set(midfieldSamples.flatMap(Object.keys))];
       const midfield = Object.assign({}, ...midfieldKeys.map(key => summarize(midfieldSamples.map(row => ({ [key]: row[key] })))));
       return { passes: { ...passes, unresolved: pending ? 1 : 0 }, shapeSamples: samples.length, shape,
-        midfield, support: summarize(supportSamples), contests: { ...contests }, progression: { ...progression } };
+        midfield, support: summarize(supportSamples), buildup:summarize(buildupSamples),
+        contests: { ...contests }, progression: { ...progression } };
     }
   };
 }

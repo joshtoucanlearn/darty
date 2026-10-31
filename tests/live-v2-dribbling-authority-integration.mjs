@@ -691,3 +691,12 @@ test('the carrier own protected move retains its established explicit handoff', 
   const frame=runTick(live,snapshot);
   assert.equal(frame.hostProjection.dribbling.authorityHandoff?.reason,'protected-skill-handoff');
 });
+
+
+test('metric snapshot positions do not turn the anatomical fallback rig into a giant body',()=>{
+ const {live}=attachment();runTick(live,initialSnapshot());
+ for(const player of live.exportState().domain.world.players){
+  assert.ok(player.contactRig.bodyRadiusM>.2&&player.contactRig.bodyRadiusM<.3,JSON.stringify(player.contactRig));
+  assert.ok(player.contactRig.heightM>1.6&&player.contactRig.heightM<2.1,JSON.stringify(player.contactRig));
+ }
+});

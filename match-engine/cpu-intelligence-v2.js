@@ -302,8 +302,10 @@
       control: clamp(finite(source.control, 70), 1, 99),
       agility: clamp(finite(source.agility, source.acceleration || 70), 1, 99),
       committed: Boolean(source.committed),
+      touchPhase:Number.isFinite(source.touchPhase)?source.touchPhase:null,
+      nextTouchDistanceM:Math.max(0,finite(source.nextTouchDistanceM,.8)),
       skillCooldownTicks: Math.max(0, finite(source.skillCooldownTicks, 0)),
-      lowChallenge: Boolean(source.lowChallenge),
+      lowChallenge: Boolean(source.lowChallenge),physicalSkillActive:Boolean(source.physicalSkillActive),blockPurpose:String(source.blockPurpose||''),stunTicks:Math.max(0,finite(source.stunTicks,0)),
       skillExitTarget: source.skillExitTarget ? { x: finite(source.skillExitTarget.x, 0), y: finite(source.skillExitTarget.y, 0) } : null,
       defending: clamp(finite(source.defending, source.defend || 65), 1, 99),
       aggression: clamp(finite(source.aggression, 70), 1, 99),
@@ -388,6 +390,7 @@
       intendedReceiverId: snapshot.intendedReceiverId == null ? null : String(snapshot.intendedReceiverId),
       inFlight: snapshot.inFlight === true,
       flightType: String(snapshot.flightType || ''),
+      challengeForecasts:snapshot.challengeForecasts||null,
       sourcePlayerId: snapshot.sourcePlayerId == null ? null : String(snapshot.sourcePlayerId),
       attackingDirection: direction,
       offsideLine,
@@ -846,71 +849,114 @@
   }
 
   function physicalActionFor(primary, carrier, snapshot, memory, config) {
-    const cooldownUntil = memory.defense.cooldowns[primary.id];
-    if (Number.isInteger(cooldownUntil) && snapshot.tick < cooldownUntil) return null;
-    const space = pitchSpace(snapshot.pitch);
-    const dx = space.xToCanonical(carrier.x - primary.x);
-    const dy = space.yToCanonical(carrier.y - primary.y);
-    const contactDistance = Math.hypot(dx, dy);
-    if (!(contactDistance > 1e-9)) return null;
-    const toward = { x: dx / contactDistance, y: dy / contactDistance };
-    const velocity = canonicalVelocity(primary, space);
-    const carrierVelocity = canonicalVelocity(carrier, space);
-    let facing = { x: primary.fx, y: primary.fy };
-    let facingLength = Math.hypot(facing.x, facing.y);
-    if (facingLength <= 1e-9) {
-      facing = { ...velocity };
-      facingLength = Math.hypot(facing.x, facing.y);
+    const until=memory.defense.cooldowns[primary.id];
+    if(Number.isInteger(until)&&snapshot.tick<until)return null;
+    const space=pitchSpace(snapshot.pitch),dx=space.xToCanonical(carrier.x-primary.x),dy=space.yToCanonical(carrier.y-primary.y),
+      gap=Math.hypot(dx,dy),ballGap=distance(carrier,snapshot.ball,space),ballDistance=distance(primary,snapshot.ball,space);
+    if(gap<1e-9||gap>150||ballDistance>155)return null;
+    const toward={x:dx/gap,y:dy/gap},v=canonicalVelocity(primary,space),cv=canonicalVelocity(carrier,space),
+      speed=Math.hypot(v.x,v.y),closing=(v.x-cv.x)*toward.x+(v.y-cv.y)*toward.y,
+      faceLength=Math.hypot(primary.fx,primary.fy)||1,
+      alignment=(primary.fx*toward.x+primary.fy*toward.y)/faceLength,
+      ownGoal=snapshot.attackingDirection>0?snapshot.pitch.xMin:snapshot.pitch.xMax,
+      depth=space.xToCanonical(Math.abs(carrier.x-ownGoal)),quality=(primary.defending+primary.awareness)/198,
+      aggression=primary.aggression/99,composure=primary.awareness/99,
+      exposed=clamp((ballGap-8)/58,0,1),danger=clamp(1-depth/900,0,1),
+      fromBehind=carrier.fx*(-toward.x)+carrier.fy*(-toward.y)<-.25,
+      side=Math.abs(carrier.fx*toward.y-carrier.fy*toward.x),
+      arrivalSpeed=clamp(Math.max(speed,closing)/240,0,1),
+      screened=ballGap>12&&ballDistance>gap+8,
+      forecast=snapshot.challengeForecasts?(snapshot.challengeForecasts[primary.id]||{}):null,standRead=forecast?.['stand-tackle'],slideRead=forecast?.['slide-tackle'],
+      reachable=read=>read&&read.ballTick!==null,
+      standAvailable=forecast?reachable(standRead):alignment>.05&&gap<=62&&ballDistance<=65&&!screened,
+      shoulderAvailable=gap<=33&&alignment>-.05&&side>.30,
+      slideAvailable=(forecast?reachable(slideRead):alignment>-.05&&gap>=27&&ballDistance<=34+Math.max(5,speed/30.25)*30.25*.38)&&
+        (danger>0||arrivalSpeed>.15||exposed>.15||fromBehind);
+    // Geometry controls whether a real action can reach. Ratings change the
+    // frequency and chosen risk; a fast recovery is an opportunity, not a ban.
+    // A fast defender who is already overtaking the carrier can stay on
+    // his feet and reach the next boot window. The slide becomes worth its
+    // recovery cost when he is losing ground, reaching across a side, or
+    // protecting an imminent goal. Speed still raises its physical risk.
+    const recoveryNeed=clamp(.95-closing/30.25*.13+danger*.6+exposed*.25,.12,1.4);
+    const slideValue=slideAvailable?(.10+quality*.22+aggression*.18)*(.25+danger*.8+arrivalSpeed*.7+exposed*.5+(fromBehind?.12:0))*(standAvailable?.30:1)*recoveryNeed:0,
+      standValue=standAvailable?(.30+quality*.65)*(.25+exposed*.65+clamp((62-gap)/40,0,1)*.45):0,
+      shoulderValue=shoulderAvailable?(.20+(primary.strength+primary.balance)/198*.55)*side:0,
+      // A reachable input is not a reason to commit it. Keep approaching a
+      // carrier, or sprint onto an exposed ball, until the contest is worth
+      // leaving our feet for. Danger and a short boot window change that read.
+      jockeyValue=(.50+composure*.45)*(1-danger*.8)*(1-exposed*.35)*clamp((gap-25)/70,0,1),
+      raceValue=exposed*(.70+clamp((ballGap-25)/90,0,1)*.8),
+      physicalValue=slideValue+standValue+shoulderValue,
+      total=physicalValue+jockeyValue+raceValue;
+    if(total<=0)return null;
+    const cadenceKey=primary.id+':challenge-read:'+Math.floor(snapshot.tick/12),
+      attemptChance=clamp(.18+quality*.45+exposed*.25+danger*.12+aggression*.06-(screened?.20:0),.03,.95);
+    if(stableUnit(cadenceKey)>attemptChance)return null;
+    const choice=stableUnit(cadenceKey+':type')*total;
+    if(choice>=physicalValue)return null;
+    const type=choice<slideValue?'slide-tackle':choice<slideValue+standValue?'stand-tackle':'shoulder-challenge',
+      cooldownUntilTick=snapshot.tick+Math.round(config.defensiveActionCooldownTicks*(1.3-primary.defending/198)+(type==='slide-tackle'?55+(1-quality)*45:0)),
+      aimX=(type==='shoulder-challenge'?carrier.x:snapshot.ball.x)-primary.x,
+      aimY=(type==='shoulder-challenge'?carrier.y:snapshot.ball.y)-primary.y,aimLength=Math.hypot(aimX,aimY)||1;
+    memory.defense.cooldowns[primary.id]=cooldownUntilTick;
+    return {type,targetPlayerId:carrier.id,issuedTick:snapshot.tick,distance:rounded(gap),alignment:rounded(alignment,6),
+      relativeClosingSpeed:rounded(closing),ownGoalDepth:rounded(depth),cooldownUntilTick,
+      carrierBallGapMetres:rounded(ballGap/30.25),ballDistanceMetres:rounded(ballDistance/30.25),
+      defenderSpeedMps:speed/30.25,defenderHeading:{x:primary.fx,y:primary.fy},reactionDelayTicks:memory.defense.reactionTicks,carrierTouchPhase:carrier.touchPhase,
+      direction:(type==='stand-tackle'?standRead:type==='slide-tackle'?slideRead:null)?.direction||{x:aimX/aimLength,y:aimY/aimLength},
+      ...(forecast?{bootForecast:type==='stand-tackle'?standRead:slideRead,carrierTouchAgeTicks:forecast.carrierTouchAgeTicks,nextCarrierTouchTicks:forecast.nextCarrierTouchTicks}:{}),
+      purpose:type==='slide-tackle'?(danger>.5?'last-ditch':fromBehind||arrivalSpeed>.4?'recovery':'counter-stop'):
+        type==='shoulder-challenge'?'shoulder-contest':exposed>.2?'exposed-touch':'timed-poke',
+      risk:clamp((fromBehind?.4:0)+Math.max(0,closing/30.25-3)*.055+(1-composure)*.18,0,1)};
+  }
+
+  function anticipateCarrierShot(snapshot,config,defensiveIntents){
+    const carrier=defensiveCarrier(snapshot);if(!carrier)return null;
+    const space=pitchSpace(snapshot.pitch),gx=snapshot.attackingDirection>0?snapshot.pitch.xMin:snapshot.pitch.xMax,
+      gy=(snapshot.pitch.yMin+snapshot.pitch.yMax)/2,dx=space.xToCanonical(gx-carrier.x),dy=space.yToCanonical(gy-carrier.y),
+      goalDistance=Math.hypot(dx,dy),length=goalDistance||1;
+    if(goalDistance>config.shotDistance+Math.max(0,carrier.shooting-62)*5||Math.abs(space.yToCanonical(carrier.y-gy))>520)return null;
+    let best=null;
+    for(const player of activeControlledOutfield(snapshot)){
+      const existing=defensiveIntents.find(d=>d.playerId===player.id);
+      if(existing?.physicalAction||existing?.type==='press'||player.stunTicks>0)continue;
+      const px=space.xToCanonical(player.x-carrier.x),py=space.yToCanonical(player.y-carrier.y),gap=Math.hypot(px,py),
+        along=(px*dx+py*dy)/length,lateral=Math.abs(px*dy-py*dx)/length;
+      if(gap<40||gap>260||along<5||lateral>125)continue;
+      const quality=(player.defending+player.awareness)/198,
+        meetingAlong=Math.min(clamp(along,35,110),Math.max(5,goalDistance-12)),target={x:carrier.x+space.xFromCanonical(dx/length*meetingAlong),
+          y:carrier.y+space.yFromCanonical(dy/length*meetingAlong)},
+        reach=distance(player,target,space),score=quality*120-reach-lateral*.45;
+      if(!best||score>best.score)best={player,target,reach,quality,score};
     }
-    if (facingLength <= 1e-9) {
-      facing = { ...toward };
-      facingLength = 1;
-    }
-    const alignment = clamp((facing.x / facingLength) * toward.x + (facing.y / facingLength) * toward.y, -1, 1);
-    const relativeClosingSpeed = (velocity.x - carrierVelocity.x) * toward.x +
-      (velocity.y - carrierVelocity.y) * toward.y;
-    const safeRelativeSpeed = Math.abs(relativeClosingSpeed) <= config.defensiveMaximumActionRelativeSpeed;
-    const ownGoalX = snapshot.attackingDirection > 0 ? snapshot.pitch.xMin : snapshot.pitch.xMax;
-    const carrierOwnGoalDepth = space.xToCanonical(Math.abs(carrier.x - ownGoalX));
-    const ballGap = distance(carrier, snapshot.ball, space);
-    const ballDistance = distance(primary, snapshot.ball, space);
-    // An exposed ball on the far side of the carrier is still screened by
-    // his body. Jockey around it instead of lunging through his legs.
-    if (ballGap > 12 && ballDistance >= contactDistance - 4) return null;
-    // Inside boot reach a defender can poke; otherwise delay until the ball
-    // leaves the carrier's feet. Ratings change timing, never availability.
-    if (ballGap < 18 + primary.defending / 99 * 8 && contactDistance > 30) return null;
-    const slideEligible = safeRelativeSpeed &&
-      contactDistance >= config.defensiveSlideTackleMinDistance &&
-      contactDistance <= config.defensiveSlideTackleMaxDistance &&
-      alignment >= config.defensiveSlideMinimumAlignment &&
-      carrierOwnGoalDepth <= config.defensiveSlideDangerDepth;
-    const shoulderEligible = safeRelativeSpeed && contactDistance <= config.defensiveShoulderMaxDistance &&
-      contactDistance >= 4 && alignment >= config.defensiveMinimumActionAlignment * 0.5 && alignment < 0.82 &&
-      ballGap > 20;
-    const tackleEligible = safeRelativeSpeed &&
-      contactDistance >= config.defensiveStandTackleMinDistance &&
-      contactDistance <= config.defensiveStandTackleMaxDistance &&
-      alignment >= config.defensiveMinimumActionAlignment;
-    // Sliding is a committed recovery tool, never the default close-range
-    // challenge. It is available only beyond standing reach and close enough
-    // to the defender's own goal for the recovery risk to have a football
-    // reason. This mirrors FLAME's retained action/risk split without copying
-    // its Godot implementation into the browser simulation.
-    const type = slideEligible ? 'slide-tackle' : shoulderEligible ? 'shoulder-challenge' : tackleEligible ? 'stand-tackle' : null;
-    if (!type) return null;
-    const nextCooldown = snapshot.tick + Math.round(config.defensiveActionCooldownTicks * (1.3 - primary.defending / 198));
-    memory.defense.cooldowns[primary.id] = nextCooldown;
-    return {
-      type,
-      targetPlayerId: carrier.id,
-      issuedTick: snapshot.tick,
-      distance: rounded(contactDistance),
-      alignment: rounded(alignment, 6),
-      relativeClosingSpeed: rounded(relativeClosingSpeed),
-      ownGoalDepth: rounded(carrierOwnGoalDepth),
-      cooldownUntilTick: nextCooldown
-    };
+    if(!best||contextUnit(best.player.id+':shot-read:'+Math.floor(snapshot.tick/30))>.15+best.quality*.78)return null;
+    return {playerId:best.player.id,type:'shot-block',targetPlayerId:carrier.id,purpose:'shot',target:best.target,
+      targetSpeed:.65+best.quality*.22,accelerate:best.reach>120,urgency:best.reach>120?'sprint':'jockey',
+      reason:'read-carrier-shooting-lane',physicalAction:null};
+  }
+
+  function anticipateWideDelivery(snapshot,config){
+    const carrier=snapshot.players.find(p=>p.id===snapshot.carrierId);
+    if(!carrier||carrier.teamId===snapshot.teamId)return null;
+    const space=pitchSpace(snapshot.pitch),midY=(snapshot.pitch.yMin+snapshot.pitch.yMax)/2,
+      goalX=snapshot.attackingDirection>0?snapshot.pitch.xMin:snapshot.pitch.xMax,
+      depth=Math.abs(space.xToCanonical(carrier.x-goalX)),width=Math.abs(space.yToCanonical(carrier.y-midY));
+    if(depth>1050||width<420)return null;
+    const targetBox={x:goalX+snapshot.attackingDirection*space.xFromCanonical(300),y:midY},
+      dx=space.xToCanonical(targetBox.x-carrier.x),dy=space.yToCanonical(targetBox.y-carrier.y),length=Math.hypot(dx,dy)||1;
+    const options=activeControlledOutfield(snapshot).map(player=>({player,gap:distance(player,carrier,space)}))
+      .filter(o=>o.gap<235&&o.gap>25&&((space.xToCanonical(o.player.x-carrier.x)*dx+
+        space.yToCanonical(o.player.y-carrier.y)*dy)/length)>-30)
+      .sort((a,b)=>a.gap-b.gap||a.player.id.localeCompare(b.player.id));
+    const best=options[0];if(!best)return null;
+    const quality=(best.player.defending+best.player.awareness)/198;
+    if(contextUnit(best.player.id+':cross-read:'+Math.floor(snapshot.tick/30))>.22+quality*.72)return null;
+    return {playerId:best.player.id,type:'cross-block',targetPlayerId:carrier.id,purpose:'cross',
+      target:boundedDefensivePoint({x:carrier.x+space.xFromCanonical(dx/length*(64+quality*24)),
+        y:carrier.y+space.yFromCanonical(dy/length*(64+quality*24))},snapshot,config),
+      targetSpeed:.70+quality*.16,accelerate:best.gap>140,urgency:best.gap>140?'sprint':'jockey',
+      reason:'read-wide-crossing-lane',physicalAction:null};
   }
 
   function buildDefensiveIntents(snapshot, memory, config, telemetry) {
@@ -1006,10 +1052,11 @@
     const close = distance(primary, carrier, pitchSpace(snapshot.pitch)) < 155;
     const pressTarget = close && !exposed ? (() => {
       const space = pitchSpace(snapshot.pitch), ownDir = snapshot.attackingDirection;
-      return boundedDefensivePoint({ x: carrier.x - ownDir * space.xFromCanonical(60),
+      return boundedDefensivePoint({ x: carrier.x - ownDir * space.xFromCanonical(30+(1-(primary.defending+primary.awareness)/198)*18),
         y: carrier.y + carrier.vy * .12 }, snapshot, config);
     })() : exposed ? boundedDefensivePoint(snapshot.ball, snapshot, config) : defensivePressTarget(carrier, snapshot, config);
     const physicalAction = physicalActionFor(primary, carrier, snapshot, memory, config);
+    const coverPhysical=!physicalAction&&cover?physicalActionFor(cover,carrier,snapshot,memory,config):null;
     const intents = [{
       playerId: primary.id,
       type: 'press',
@@ -1041,7 +1088,7 @@
         commitTick: memory.defense.commitTick,
         minUntilTick: memory.defense.minUntilTick,
         expiresTick: memory.defense.expiresTick,
-        physicalAction: null
+        physicalAction: coverPhysical
       });
     }
     intents.sort((a, b) => (a.type === 'press' ? -1 : 1) - (b.type === 'press' ? -1 : 1) ||
@@ -1540,7 +1587,7 @@
     const maximumDistance = 780;
     const maximumBackwardProgress = -245;
     const maximumForwardProgress = 600;
-    const leadSeconds = .16;
+    const leadSeconds = .5;
     return snapshot.players.filter(player => player.teamId === snapshot.teamId && player.id !== carrier.id &&
       !player.isGK && !player.sentOff && player.available).map(player => {
         const target = {
@@ -1601,6 +1648,7 @@
       confidence: .8, reason: 'short-support-circulation',
       supportKind: best.progress < -45 ? 'recycle' : 'support', risk: best.risk,
       supportScore: best.score,
+      circulationPenalty:best.circulationPenalty||0,
       supportMetrics: { distance: rounded(best.passDistance), progress: rounded(best.progress),
         laneClearance: rounded(best.lane), receiverSpace: rounded(best.receiverSpace) }
     };
@@ -1668,7 +1716,7 @@
       const player = snapshot.players.find(p => p.id === id && !p.sentOff && p.available);
       if (!player) return null;
       // Pass into the runner's reachable stride, not his distant run endpoint.
-      const target = { x: player.x + player.vx * .22, y: player.y + player.vy * .22 };
+      const target = { x: player.x + player.vx * .5, y: player.y + player.vy * .5 };
       const progress = space.xToCanonical(snapshot.attackingDirection * (target.x - carrier.x));
       const length = distance(carrier, target, space), lane = nearestOpponentClearance(carrier, target, snapshot);
       const risk = passRisk(snapshot, carrier, player, target);
@@ -1687,8 +1735,11 @@
   function wideFinalThird(snapshot, carrier) {
     if (!carrier) return false;
     const space = pitchSpace(snapshot.pitch), goalX = snapshot.attackingDirection > 0 ? snapshot.pitch.xMax : snapshot.pitch.xMin;
-    return space.xToCanonical(snapshot.attackingDirection * (goalX - carrier.x)) < 1059 &&
-      Math.abs(space.yToCanonical(carrier.y - (snapshot.pitch.yMin + snapshot.pitch.yMax) / 2)) > 560;
+    const depth=space.xToCanonical(snapshot.attackingDirection*(goalX-carrier.x)),
+      width=Math.abs(space.yToCanonical(carrier.y-(snapshot.pitch.yMin+snapshot.pitch.yMax)/2));
+    // Beating the full-back brings the winger inside the box. The pullback
+    // remains a crossing option there, not only beside the corner flag.
+    return depth<1059&&(width>560||depth<260&&width>220);
   }
 
   function boxSlotIntents(snapshot, config, reservedIds = []) {
@@ -1700,13 +1751,14 @@
     const space = pitchSpace(snapshot.pitch), dir = snapshot.attackingDirection;
     const goalX = dir > 0 ? snapshot.pitch.xMax : snapshot.pitch.xMin, midY = (snapshot.pitch.yMin + snapshot.pitch.yMax) / 2;
     const side = reference.y <= midY ? -1 : 1;
+    const boxSnapshot={...snapshot,offsideLine:dir>0?Math.max(snapshot.offsideLine,snapshot.ball.x):Math.min(snapshot.offsideLine,snapshot.ball.x)};
     const candidates = eligibleCpuOutfield(snapshot).filter(p => p.id !== (snapshot.carrierId || snapshot.intendedReceiverId) && !isRestDefender(p) &&
       !isHoldDuty(p) && familyOf(p) !== 'defensive-midfielder' && !reservedIds.includes(p.id));
     const used = new Set(), slots = [['near-post', 195, side * 100], ['far-post', 240, -side * 155],
       ['penalty-spot', 333, side * 25], ['edge', 565, -side * 170]];
     return slots.map(([slot, depth, lateral]) => {
       const target = boundedDefensivePoint({ x: service ? goalX - dir * space.xFromCanonical(depth) :
-        safeOnsideX(goalX - dir * space.xFromCanonical(depth), snapshot, config),
+        safeOnsideX(goalX - dir * space.xFromCanonical(depth), boxSnapshot, config),
       y: midY + space.yFromCanonical(lateral) }, snapshot, config);
       const player = candidates.filter(p => !used.has(p.id) && distance(p, target, space) < 1000)
         .sort((a, b) => distance(a, target, space) - distance(b, target, space) || a.id.localeCompare(b.id))[0];
@@ -1721,6 +1773,9 @@
     const space = pitchSpace(snapshot.pitch), dir = snapshot.attackingDirection;
     const goalX = dir > 0 ? snapshot.pitch.xMax : snapshot.pitch.xMin, midY = (snapshot.pitch.yMin + snapshot.pitch.yMax) / 2;
     const depth = space.xToCanonical(dir * (goalX - carrier.x));
+    const canonicalMetre=(CANONICAL_PITCH.xMax-CANONICAL_PITCH.xMin)/105;
+    const ballDepth=space.xToCanonical(dir*(goalX-snapshot.ball.x));
+    const crossSnapshot={...snapshot,offsideLine:dir>0?Math.max(snapshot.offsideLine,snapshot.ball.x):Math.min(snapshot.offsideLine,snapshot.ball.x)};
     const slots = boxSlotIntents(snapshot, config);
     const options = slots.filter(slot => slot.slot !== 'edge' || depth < 260).map(slot => {
       const player = snapshot.players.find(p => p.id === slot.playerId);
@@ -1728,32 +1783,62 @@
       const length = distance(carrier, target, space), targetDepth = space.xToCanonical(dir * (goalX - target.x));
       const targetWidth = Math.abs(space.yToCanonical(target.y - midY));
       const pressure = nearestOpponentClearance(target, target, snapshot);
-      const cutback = depth < 260 && targetDepth > depth + 60;
+      const velocity=canonicalVelocity(player,space),arrival=clamp(dir*velocity.x/150,0,1),
+        face=player.facing||{x:player.fx??dir,y:player.fy??0},
+        arrivingFinisher=arrival>.2&&dir*face.x>.15&&targetDepth>=5*canonicalMetre;
+      // A pullback finds the deeper central runner. A byline ball to the
+      // near/far post also travels slightly backwards, but still needs the
+      // existing aerial cross rather than being forced along the ground.
+      const cutback = depth < 260 && targetDepth > depth + 60 &&
+        (targetDepth>=9*canonicalMetre||arrivingFinisher)&&targetWidth<=10*canonicalMetre;
+      const finishing=(player.shooting+player.control+player.awareness)/297;
       const score = Math.min(pressure, 180) * .45 - distance(target, slot.target, space) * .12 +
-        (cutback ? 40 : slot.slot === 'penalty-spot' ? 15 : 0);
+        (cutback ? 40+arrival*finishing*38 : slot.slot === 'penalty-spot' ? 15 : 0);
       return { player, target, length, targetDepth, targetWidth, pressure, cutback, score };
-    }).filter(p => p.targetDepth > 85 && p.targetDepth < 580 && p.targetWidth < 560 &&
-      p.length >= 200 && p.length <= 1300 && !currentOffside(p.player, snapshot, config))
+    }).filter(p => p.targetDepth >= 1.25*canonicalMetre && p.targetDepth < 580 && p.targetWidth < 560 &&
+      p.length >= 200 && p.length <= 1300 && !currentOffside(p.player, crossSnapshot, config))
       .sort((a, b) => b.score - a.score || a.player.id.localeCompare(b.player.id));
     const best = options[0], quality = (carrier.passing + carrier.control + carrier.awareness) / 297;
-    const driveTarget = boundedDefensivePoint({ x: carrier.x + dir * space.xFromCanonical(240), y: carrier.y }, snapshot, config);
+    const inward=clamp((12-depth/canonicalMetre)/12,0,1)*4.5*canonicalMetre,
+      side=carrier.y>=midY?1:-1,
+      driveY=carrier.y-side*space.yFromCanonical(Math.min(inward,Math.max(0,Math.abs(space.yToCanonical(carrier.y-midY))-7.5*canonicalMetre))),
+      driveTarget = boundedDefensivePoint({ x: carrier.x + dir * space.xFromCanonical(240), y: driveY }, snapshot, config);
+    // This target is the player's stopping point. The adapter reads the
+    // existing owned touch anchor and brakes before its next contact; adding
+    // a whole touch distance here reserved the same space a second time.
+    const bylineMargin=(snapshot.pitch.xMax-snapshot.pitch.xMin)*1.25/105;
+    driveTarget.x=clamp(driveTarget.x,snapshot.pitch.xMin+bylineMargin,snapshot.pitch.xMax-bylineMargin);
+    const touchlineMargin=(snapshot.pitch.yMax-snapshot.pitch.yMin)*1.25/68;
+    driveTarget.y=clamp(driveTarget.y,snapshot.pitch.yMin+touchlineMargin,snapshot.pitch.yMax-touchlineMargin);
     const driveQuality = (carrier.control + carrier.pace) / 198;
+    const wideDriveOption=(Math.min(depth,ballDepth)>1.5*canonicalMetre||Math.abs(space.yToCanonical(driveTarget.y-carrier.y))>30)&&
+      nearestOpponentClearance(carrier,carrier,snapshot)>=110&&
+      nearestOpponentClearance(carrier,driveTarget,snapshot)>=config.minimumCarryLaneClearance
+      ?{type:'carry',targetPlayerId:null,target:driveTarget,confidence:.6+driveQuality*.25,reason:'wide-carrier-drive-for-byline'}:null;
+    const bylineHoldOption=Math.min(depth,ballDepth)<3*canonicalMetre?{type:'protect',targetPlayerId:null,
+      target:{x:goalX-dir*(snapshot.pitch.xMax-snapshot.pitch.xMin)*2.5/105,
+        y:carrier.y+(midY-carrier.y)*.02},confidence:.8,reason:'byline-shield-awaits-delivery'}:null;
     // Keep a wide route to the byline when the carrier has real running room.
     // A fixed possession-scale draw prevents reconsidering the early cross on
     // every step of the same drive; pressure can still end it with a delivery.
-    if (depth > 165 && nearestOpponentClearance(carrier, carrier, snapshot) >= 110 &&
-        nearestOpponentClearance(carrier, driveTarget, snapshot) >= config.minimumCarryLaneClearance &&
+    if (wideDriveOption && (!best || Math.min(depth,ballDepth)>1.5*canonicalMetre) &&
         (!best || contextUnit(carrier.id + ':wide-drive:' + Math.floor(snapshot.tick / 360)) < .25 + driveQuality * .5)) {
-      return { type: 'carry', targetPlayerId: null, target: driveTarget, confidence: .6 + driveQuality * .25,
-        reason: 'wide-carrier-drive-for-byline' };
+      return wideDriveOption;
     }
-    if (!best) return null;
-    // Ratings affect frequency and delivery quality, never eligibility.
-    if (contextUnit(carrier.id + ':cross:' + Math.floor(snapshot.tick / 36)) > .35 + quality * .6) return null;
+    // If the delivery is not ready, keep the ball on the field while the box
+    // runners arrive. Falling back to a generic forward carry here used to
+    // run an otherwise successful byline approach straight out of play.
+    if (!best || contextUnit(carrier.id + ':cross:' + Math.floor(snapshot.tick / 36)) > .35 + quality * .6) {
+      return bylineHoldOption;
+    }
     return { type: 'cross', targetPlayerId: best.player.id, target: best.target, confidence: .62 + quality * .26,
-      crossKind: best.cutback ? 'cut-back' : depth < 360 ? 'byline' : 'early',
+      crossKind: best.cutback ? 'cut-back' : ballDepth <= 1.5*canonicalMetre ? 'byline' : 'early',
       flightType: best.cutback ? 'low-cross' : 'cross', offsideTiming: null,
-      reason: best.cutback ? 'wide-final-third-cutback' : depth < 360 ? 'wide-final-third-byline-cross' : 'wide-final-third-early-cross' };
+      wideDriveOption,bylineHoldOption,
+      deliveryOptions:options.slice(1).map(o=>({targetPlayerId:o.player.id,target:o.target,
+        crossKind:o.cutback?'cut-back':ballDepth<=1.5*canonicalMetre?'byline':'early',
+        flightType:o.cutback?'low-cross':'cross'})),
+      reason: best.cutback ? 'wide-final-third-cutback' : ballDepth <= 1.5*canonicalMetre ? 'wide-final-third-byline-cross' : 'wide-final-third-early-cross' };
   }
 
   function switchOption(snapshot, carrier, config) {
@@ -1793,6 +1878,26 @@
       circulation.lastCompletedTick = null;
       circulation.recentPasses = [];
       return;
+    }
+    if(snapshot.inFlight&&snapshot.sourcePlayerId&&snapshot.intendedReceiverId&&
+        snapshot.sourcePlayerId!==snapshot.intendedReceiverId){
+      // The MR gate may replace a proposed forward pass with a real short
+      // outlet. Remember that actual flight, not the original rejected target.
+      // A real first-time release also proves reception of its incoming pass.
+      if(circulation.pendingPasserId&&circulation.pendingReceiverId===snapshot.sourcePlayerId&&
+          circulation.pendingPasserId!==snapshot.sourcePlayerId){
+        circulation.lastCompletedPasserId=circulation.pendingPasserId;
+        circulation.lastCompletedReceiverId=circulation.pendingReceiverId;
+        circulation.lastCompletedTick=snapshot.tick;
+        circulation.recentPasses.push({passerId:circulation.pendingPasserId,receiverId:circulation.pendingReceiverId,tick:snapshot.tick});
+        circulation.recentPasses=circulation.recentPasses.filter(p=>snapshot.tick-p.tick<=config.circulationHistoryTicks)
+          .slice(-config.circulationHistoryPasses);
+      }
+      if(circulation.pendingPasserId!==snapshot.sourcePlayerId||circulation.pendingReceiverId!==snapshot.intendedReceiverId){
+        circulation.pendingPasserId=snapshot.sourcePlayerId;
+        circulation.pendingReceiverId=snapshot.intendedReceiverId;
+        circulation.pendingIssuedTick=snapshot.tick;
+      }
     }
     if (!circulation.pendingPasserId) return;
     const completed = snapshot.possessionTeamId === snapshot.teamId &&
@@ -1841,6 +1946,18 @@
         (pass.passerId === playerB && pass.receiverId === playerA))).length;
   }
 
+  function scoreCirculationHistory(snapshot,carrier,options,memory,config){
+    if(!isRestDefender(carrier))return options;
+    return options.map(option=>{
+      if(!isRestDefender(option.player))return option;
+      const repeats=recentCirculationPairCount(memory.circulation,carrier.id,option.player.id,snapshot.tick,config);
+      // One return can draw a presser. Repeating the same return again has
+      // rapidly diminishing value; it remains legal when it is the safe exit.
+      const repetitionCost=Math.max(0,repeats-1)**2*160;
+      return {...option,score:option.score-repetitionCost,circulationPenalty:repetitionCost};
+    }).sort((a,b)=>b.score-a.score||a.player.id.localeCompare(b.player.id));
+  }
+
   // One committed exit, chosen from real lanes. No per-frame skill lottery.
   function dribbleOptions(snapshot, carrier, memory, config) {
     const space = pitchSpace(snapshot.pitch), dir = snapshot.attackingDirection;
@@ -1851,7 +1968,15 @@
     if (state.carrierId !== carrier.id) {
       state.carrierId = carrier.id; state.intent = null; state.untilTick = 0;
     }
-    if (state.intent && snapshot.tick < state.untilTick && distance(carrier, state.intent.target, space) > 30) {
+    const bylineRun=state.intent?.reason==='wide-carrier-drive-for-byline',
+      goalLine=dir>0?snapshot.pitch.xMax:snapshot.pitch.xMin,
+      ballDepth=space.xToCanonical(dir*(goalLine-snapshot.ball.x)),
+      arrival=bylineRun?9:30;
+    // A metre is a useful ordinary carry arrival radius. It ended a winger's
+    // approach with the ball still outside delivery range. Finish this same
+    // run until the ball reaches the byline window, then score its delivery.
+    if (state.intent && snapshot.tick < state.untilTick && distance(carrier, state.intent.target, space) > arrival &&
+        !(bylineRun&&ballDepth<=1.5*30.25)) {
       const others = opponents.filter(p => p.id !== state.intent.defenderId);
       if (laneClearance(carrier, state.intent.target, others, space) >= 45) {
         const elapsed = snapshot.tick - state.intent.startedTick;
@@ -1859,10 +1984,17 @@
       }
     }
     state.intent = null;
-    const pointAt = (forward, lateral) => boundedDefensivePoint({
-      x: carrier.x + dir * space.xFromCanonical(forward),
-      y: carrier.y + space.yFromCanonical(lateral)
-    }, snapshot, config);
+    const pointAt = (forward, lateral) => {
+      const target=boundedDefensivePoint({x:carrier.x+dir*space.xFromCanonical(forward),
+        y:carrier.y+space.yFromCanonical(lateral)},snapshot,config),
+        marginX=(snapshot.pitch.xMax-snapshot.pitch.xMin)*1.25/105,
+        marginY=(snapshot.pitch.yMax-snapshot.pitch.yMin)*1.25/68;
+      // A skill exit needs grass to plant and turn, just like a wide carry.
+      // Clipping it to the body boundary left a winger's momentum outside
+      // the line while the next tactical choice already asked him to cut in.
+      target.x=clamp(target.x,snapshot.pitch.xMin+marginX,snapshot.pitch.xMax-marginX);
+      target.y=clamp(target.y,snapshot.pitch.yMin+marginY,snapshot.pitch.yMax-marginY);return target;
+    };
     const centre = (snapshot.pitch.yMin + snapshot.pitch.yMax) / 2;
     const lanes = [0, -.55, .55, -1, 1].map(slope => {
       const target = pointAt(420 / Math.hypot(1, slope), 420 * slope / Math.hypot(1, slope));
@@ -1875,8 +2007,10 @@
     }).sort((a, b) => b.score - a.score);
     const best = lanes[0];
     let takeOn = null;
-    if (nearest && nearest.d >= 32 && nearest.d <= 125 && snapshot.tick >= state.cooldownUntilTick &&
-        near.filter(p => p.d < 145).length === 1 && dir * space.xToCanonical(nearest.p.x - carrier.x) > nearest.d * .72) {
+    if (nearest && nearest.d >= 28 && nearest.d <= 132 && snapshot.tick >= state.cooldownUntilTick &&
+        !carrier.skillCooldownTicks && near.filter(p => p.d < 110).length <= 2 &&
+        dir * space.xToCanonical(nearest.p.x - carrier.x) > -nearest.d * .35 &&
+        (nearest.d < 80 || dir * space.xToCanonical(nearest.p.x - carrier.x) > nearest.d * .55)) {
       const defender = nearest.p, velocity = canonicalVelocity(defender, space);
       const closing = velocity.x * -dir;
       const side = defender.y >= carrier.y ? -1 : 1;
@@ -1888,13 +2022,37 @@
         const offBalance = Math.abs(velocity.y - sign * 90) / 160 + Math.max(0, closing) / 180;
         const quality = (carrier.control + carrier.agility - defender.defending - defender.pace) / 198;
         return { target, sign, behind, lane, score: Math.min(behind, 160) * .45 + Math.min(lane, 180) * .3 +
-          offBalance * 24 + quality * 35 };
+          offBalance * 24 + quality * 35+Math.min(120,Math.abs(space.yToCanonical(target.y-carrier.y)))*.20 };
       }).filter(e => e.behind > 70 && e.lane > 72).sort((a, b) => b.score - a.score);
       if (exits.length) {
         const exit = exits[0], set = Math.hypot(velocity.x, velocity.y) < 75 && !defender.committed;
         const lateral = Math.abs(space.yToCanonical(defender.y - carrier.y));
-        const skill = !set || nearest.d > 95 || stableUnit(carrier.id+':skill:'+Math.floor(snapshot.tick/90)) > .15+(carrier.control+carrier.agility+carrier.awareness)/297*.75 ? null : nearest.d < 52 ? 'roulette' : lateral > 30 ? 'bodyFeint' :
-          nearest.d < 80 ? 'stepover' : 'dragBack';
+        const front = dir * space.xToCanonical(defender.x - carrier.x) / nearest.d;
+        const backpedalling = dir * velocity.x > 35;
+        const situation = defender.lowChallenge ? 'low-challenge' : defender.isGK ? 'keeper-rush' :
+          front < .25 ? 'receiving-side-pressure' : defender.committed ? 'committed-challenge' :
+          backpedalling ? 'backpedalling' : set ? 'square-defender' : 'moving-challenger';
+        // Choose a useful, executable move. Ratings set the recovery cadence;
+        // they never switch a skill on/off with a lottery. The small contextual
+        // tie-break supplies variety among moves that fit this geometry.
+        const variety = name => contextUnit(carrier.id+':'+defender.id+':'+name+':'+Math.floor(snapshot.tick/60))*.18;
+        const face=carrier.facing||{x:carrier.fx??dir,y:carrier.fy??0},fl=Math.hypot(face.x,face.y)||1,
+          frontX=face.x>0?(snapshot.pitch.xMax-carrier.x)*fl/face.x:face.x<0?(snapshot.pitch.xMin-carrier.x)*fl/face.x:Infinity,
+          frontY=face.y>0?(snapshot.pitch.yMax-carrier.y)*fl/face.y:face.y<0?(snapshot.pitch.yMin-carrier.y)*fl/face.y:Infinity,
+          frontRoom=Math.min(space.xToCanonical(frontX),space.yToCanonical(frontY))/30.25,
+          edgePressure=clamp((3.5-frontRoom)/3.5,0,1);
+        // The real body feint initially travels along the current facing.
+        // Near a line, prefer the existing turn-back or directed fake exit
+        // rather than asking that forward plant to turn after the grass ends.
+
+        const candidates = [
+          {skill:'bodyFeint',score:.5+(set?.42:0)+(backpedalling?.25:0)+Math.min(lateral,60)/180+variety('body')-edgePressure*1.6},
+          {skill:'dragBack',score:.15+(front<.3?.7:0)+(closing>70?.25:0)+variety('drag')+edgePressure*1.6},
+          {skill:'fake-shot',score:.2+(set?.3:0)+(defender.isGK?.6:0)+(front>.4?.18:0)+variety('fake')},
+          {skill:'flick-up',score: -.5+(defender.lowChallenge?2:0)+variety('flick')}
+        ].sort((a,b)=>b.score-a.score);
+        const knockOn = !defender.lowChallenge && (defender.committed || closing > 90);
+        const skill = knockOn ? null : candidates[0].skill;
         const exitDx = dir * space.xToCanonical(exit.target.x - carrier.x), exitDy = space.yToCanonical(exit.target.y - carrier.y), exitLength = Math.hypot(exitDx, exitDy) || 1;
         let runwayMetres = 0;
         const cover = opponents.filter(p => p.id !== defender.id);
@@ -1911,8 +2069,9 @@
         ].sort((a, b) => b.score - a.score);
         takeOn = { type: 'take-on', targetPlayerId: null, target: exit.target, confidence: .7,
           reason: defender.committed || closing > 60 ? 'commitment-exit' : 'isolated-defender-space-behind',
-          defenderId: defender.id, skill, feintTicks: skill ? Math.round(12 - carrier.agility / 99 * 5) : 0,
-          knockOn: defender.committed || closing > 90, knockOnTier: tiers[0].tier, runwayMetres, startedTick: snapshot.tick, phase: skill ? 'feint' : 'burst',
+          defenderId: defender.id, skill, situation,
+          feintTicks: !skill?0:skill==='fake-shot'?12:skill==='flick-up'?12:skill==='dragBack'?19:16,
+          knockOn, knockOnTier: tiers[0].tier, runwayMetres, startedTick: snapshot.tick, phase: skill ? 'feint' : 'burst',
           score: exit.score };
       }
     }
@@ -1922,8 +2081,14 @@
   }
 
   function commitDribble(snapshot, memory, intent, ticks) {
+    if (intent.type === 'take-on') {
+      const player=snapshot.players.find(p=>p.id===snapshot.carrierId);
+      const quality=player?(player.control+player.agility+player.awareness)/297:.5;
+      intent={...intent,cooldownTicks:Math.round(250-quality*140)};
+      memory.dribble.cooldownUntilTick=snapshot.tick+intent.cooldownTicks;
+    }
+    memory.dribble.carrierId=snapshot.carrierId;
     memory.dribble.intent = cloneObject(intent); memory.dribble.untilTick = snapshot.tick + ticks;
-    if (intent.type === 'take-on') memory.dribble.cooldownUntilTick = snapshot.tick + 210;
     return intent;
   }
 
@@ -1953,10 +2118,42 @@
         space.xToCanonical(dir*(o.target.x-line))>90 && o.spaceBehind>80)
       .sort((a,b)=>b.score-a.score || a.player.id.localeCompare(b.player.id));
     const best=options[0]; if(!best)return null;
-    const loft=best.length>720 || nearestOpponentClearance(carrier,best.target,snapshot)<100;
+    // Distance alone does not turn a through ball into a lob. An open ground
+    // lane goes through the same MR arrival check; the adapter may then try
+    // the existing lofted launch if a defender can intercept that ground path.
+    const loft=nearestOpponentClearance(carrier,best.target,snapshot)<100;
     return {type:'pass',targetPlayerId:best.player.id,target:best.target,confidence:.86,
       supportKind:'in-behind',flightType:loft?'long-pass':'ground-pass',
       reason:loft?'high-line-over-the-top':'high-line-ball-in-behind',offsideTiming:null};
+  }
+
+  function groundThroughOutlet(snapshot,carrier,config){
+    const space=pitchSpace(snapshot.pitch),dir=snapshot.attackingDirection,
+      progress=dir>0?(carrier.x-snapshot.pitch.xMin)/(snapshot.pitch.xMax-snapshot.pitch.xMin):
+        (snapshot.pitch.xMax-carrier.x)/(snapshot.pitch.xMax-snapshot.pitch.xMin);
+    if(progress<1/3)return null;
+    const defenders=snapshot.players.filter(p=>p.teamId!==carrier.teamId&&!p.sentOff&&p.available)
+      .sort((a,b)=>dir*(b.x-a.x));
+    if(defenders.length<2)return null;
+    const line=defenders[1].x;
+    const candidates=eligibleCpuOutfield(snapshot).filter(p=>p.id!==carrier.id&&!isRestDefender(p)&&
+      ['striker','winger','attacking-midfielder'].includes(familyOf(p))&&!currentOffside(p,snapshot,config))
+      .map(player=>{
+        const velocity=canonicalVelocity(player,space),forward=dir*velocity.x,
+          seconds=clamp(distance(carrier,player,space)/470+.45,.8,1.65),
+          target=boundedDefensivePoint({x:player.x+player.vx*seconds,y:player.y+player.vy*seconds},snapshot,config),
+          length=distance(carrier,target,space),gain=space.xToCanonical(dir*(target.x-carrier.x)),
+          behind=space.xToCanonical(dir*(target.x-line)),lane=nearestOpponentClearance(carrier,target,snapshot),
+          receivingSpace=nearestOpponentClearance(target,target,snapshot),risk=passRisk(snapshot,carrier,player,target),
+          face=player.facing||{x:player.fx??dir,y:player.fy??0};
+        return {player,target,length,gain,behind,lane,receivingSpace,risk,forward,face:dir*face.x,
+          score:gain*.20+Math.min(240,lane)*.5+Math.min(240,receivingSpace)*.35+forward*.25-risk.probability*160};
+      }).filter(o=>o.forward>30&&o.face>.15&&o.behind>15&&o.gain>150&&o.length>=240&&o.length<=1100&&
+        o.lane>45&&o.receivingSpace>65&&o.risk.probability<.57)
+      .sort((a,b)=>b.score-a.score||a.player.id.localeCompare(b.player.id));
+    const best=candidates[0];if(!best)return null;
+    return {type:'pass',targetPlayerId:best.player.id,target:best.target,supportKind:'in-behind',flightType:'ground-pass',
+      confidence:.82,risk:best.risk,reason:'ground-through-ball-in-behind',offsideTiming:null};
   }
 
   function directionalTouchChoice(snapshot, carrier, target) {
@@ -1999,8 +2196,23 @@
     };
     const space = pitchSpace(pitch);
     const goalDistance = distance(carrier, goal, space);
+    const combination=combinationPass(snapshot,carrier,memory,config);
     const currentMove=memory.dribble.intent;
-    if(currentMove&&currentMove.skill==='fake-shot'&&snapshot.tick<currentMove.startedTick+currentMove.feintTicks){
+    const beatenDefender=currentMove?.defenderId&&snapshot.players.find(p=>p.id===currentMove.defenderId),
+      skillExitReady=currentMove?.type==='take-on'&&!carrier.physicalSkillActive&&
+        snapshot.tick>=currentMove.startedTick+currentMove.feintTicks&&
+        (currentMove.skill||beatenDefender&&snapshot.attackingDirection*(carrier.x-beatenDefender.x)>space.xFromCanonical(16));
+    // A finished feint may open a passing angle without running beyond the
+    // defender. Release the checked combination instead of making the actor
+    // finish an empty endpoint. A knock-on still needs its physical exit.
+    if(combination&&skillExitReady)return combination;
+    // Running at the byline is still a football choice: release a genuine
+    // combination when its return/third man is now free. A skill already in
+    // its physical animation keeps its accepted exit below.
+    if(combination&&currentMove?.reason==='wide-carrier-drive-for-byline')return combination;
+    if(currentMove&&(currentMove.skill==='fake-shot'||currentMove.type==='take-on'&&currentMove.skill&&
+        snapshot.tick<currentMove.startedTick+currentMove.feintTicks||currentMove.reason==='wide-carrier-drive-for-byline')&&
+        snapshot.tick<memory.dribble.untilTick){
       const committed=dribbleOptions(snapshot,carrier,memory,config);if(committed.type)return committed;
     }
     // A footballer does not abandon a valid shot merely because the exact
@@ -2019,34 +2231,84 @@
     const bestShotLane = shotLanes[0];
     const shotClearance = bestShotLane.clearance;
     const wideService=crossOption(snapshot,carrier,config);
-    if(wideService && !memory.combination.move && (wideService.type==='cross' ||
-      goalDistance>390&&Math.abs(space.yToCanonical(carrier.y-goal.y))>400))return wideService;
+    const freeDeepWideDrive=wideService?.reason==='wide-carrier-drive-for-byline'&&
+      space.xToCanonical(snapshot.attackingDirection*(goal.x-carrier.x))<15*30.25;
+    // A one-two into a free deep wing is the start of the delivery, not a
+    // reason to abandon it because the old combination is still remembered.
     const ratedShotDistance = config.shotDistance + clamp(carrier.shooting - 62, 0, 37) * 5;
     const blocker=snapshot.players.filter(p=>p.teamId!==carrier.teamId&&!p.sentOff&&p.available)
       .map(p=>({p,d:distance(p,carrier,space)})).filter(o=>o.d>34&&o.d<135&&snapshot.attackingDirection*(o.p.x-carrier.x)>0)
       .sort((a,b)=>a.d-b.d)[0];
-    if(goalDistance<880 && blocker && (blocker.p.lowChallenge||blocker.p.isGK||!blocker.p.committed&&shotClearance<config.minimumShotLaneClearance+24) &&
+    const crossBlocker=wideService&&snapshot.players.filter(p=>p.teamId!==carrier.teamId&&!p.isGK&&!p.sentOff&&p.stunTicks<=0&&p.blockPurpose==='cross')
+      .map(p=>({p,d:distance(p,carrier,space)})).filter(o=>o.d<142).sort((a,b)=>a.d-b.d)[0];
+    if(crossBlocker&&!combination&&snapshot.tick>=memory.dribble.cooldownUntilTick&&!carrier.skillCooldownTicks&&
+        contextUnit(carrier.id+':fake-cross:'+Math.floor(snapshot.tick/30))<.18+(carrier.control+carrier.awareness)/198*.65){
+      const outside=carrier.y>=goal.y?1:-1,
+        exits=[outside,-outside].map(side=>{const target=boundedDefensivePoint({x:carrier.x+snapshot.attackingDirection*space.xFromCanonical(96),
+          y:carrier.y+space.yFromCanonical(side*72)},snapshot,config);
+          const marginX=(pitch.xMax-pitch.xMin)*1.25/105,marginY=(pitch.yMax-pitch.yMin)*1.25/68;
+          target.x=clamp(target.x,pitch.xMin+marginX,pitch.xMax-marginX);target.y=clamp(target.y,pitch.yMin+marginY,pitch.yMax-marginY);
+          const others=snapshot.players.filter(p=>p.teamId!==carrier.teamId&&!p.sentOff&&p.available&&p.id!==crossBlocker.p.id),
+            clearance=Math.min(...others.map(p=>distance(p,target,space)),480),
+            lateral=Math.abs(space.yToCanonical(target.y-carrier.y)),
+            inwardGain=Math.abs(space.yToCanonical(carrier.y-goal.y))-Math.abs(space.yToCanonical(target.y-goal.y));
+          return {target,side,space:clearance,score:Math.min(clearance,240)+lateral*.7+inwardGain*1.2};
+        }).sort((a,b)=>b.score-a.score),exit=exits[0];
+      if(exit.space>42)return commitDribble(snapshot,memory,{type:'take-on',targetPlayerId:null,target:exit.target,
+        confidence:.8,skill:'fake-shot',defenderId:crossBlocker.p.id,situation:'fake-cross',reason:'fake-cross-draws-pass-block',
+        feintTicks:12,startedTick:snapshot.tick,phase:'feint',knockOn:false,exitLane:exit.side===outside?'outside-byline':'inside'},65);
+    }
+    if(!combination&&goalDistance<880 && blocker && (blocker.p.lowChallenge||blocker.p.isGK||!blocker.p.committed&&shotClearance<config.minimumShotLaneClearance+24) &&
       snapshot.tick >= memory.dribble.cooldownUntilTick && !carrier.skillCooldownTicks &&
       contextUnit(carrier.id+':fake:'+Math.floor(snapshot.tick/30)) < .30+(carrier.control+carrier.agility)/198*.6){
       const side=blocker.p.y>=carrier.y?-1:1;
       const target=boundedDefensivePoint({x:carrier.x+snapshot.attackingDirection*space.xFromCanonical(90),y:carrier.y+space.yFromCanonical(side*135)},snapshot,config);
       if(nearestOpponentClearance(target,target,snapshot)>50)return commitDribble(snapshot,memory,
-        {type:'take-on',targetPlayerId:null,target,confidence:.8,reason:'fake-shot-draws-shot-block',skill:'fake-shot',defenderId:blocker.p.id,feintTicks:25,startedTick:snapshot.tick,phase:'feint',knockOn:false},65);
+        {type:'take-on',targetPlayerId:null,target,confidence:.8,reason:'fake-shot-draws-shot-block',skill:'fake-shot',defenderId:blocker.p.id,feintTicks:12,startedTick:snapshot.tick,phase:'feint',knockOn:false},65);
     }
-    if (goalDistance <= ratedShotDistance && shotClearance >= config.minimumShotLaneClearance && stableUnit(carrier.id+':shot:'+Math.floor(snapshot.tick/24)) < .30 + carrier.shooting/99*.68) {
+    if(wideService && !combination && (freeDeepWideDrive || !memory.combination.move && (wideService.type==='cross' ||
+      !shortSupportOptions(snapshot,carrier,config).some(o=>o.passDistance<420&&o.progress>0)))){
+      if(wideService.reason==='wide-carrier-drive-for-byline'){
+        const margin=(pitch.xMax-pitch.xMin)*1.25/105,
+          target={...wideService.target,x:snapshot.attackingDirection>0?pitch.xMax-margin:pitch.xMin+margin};
+        // The winger has chosen to attack the outside space. Finish that
+        // real run before re-scoring an early cross every few strides. The
+        // shared commitment validator still abandons a lane a defender closes.
+        return commitDribble(snapshot,memory,{...wideService,target,startedTick:snapshot.tick,feintTicks:0,phase:'burst'},420);
+      }
+      return wideService;
+    }
+    const laneFreedom=clamp(shotClearance/Math.max(1,config.minimumShotLaneClearance),0,1),
+      shotQuality=(carrier.shooting+carrier.control+carrier.awareness)/297,
+      closeChance=clamp(1-goalDistance/Math.max(1,ratedShotDistance),0,1),
+      shotWillingness=(.30+carrier.shooting/99*.68)*(laneFreedom+(1-laneFreedom)*(.18+shotQuality*.28+closeChance*.3));
+    if (goalDistance <= ratedShotDistance && stableUnit(carrier.id+':shot:'+Math.floor(snapshot.tick/24)) < shotWillingness) {
       const lateralOffset = Math.abs(space.yToCanonical(carrier.y - goal.y));
       const closeRange = goalDistance <= 390;
       const longRange = goalDistance >= 690;
       const wideAngle = lateralOffset >= 360;
       const pressure = nearestOpponentClearance(carrier, carrier, snapshot);
       let technique = 'driven';
-      if (closeRange || pressure < 72) technique = 'low-driven';
+      if (closeRange || pressure < 72 && stableUnit(carrier.id+':keep-shot-low:'+Math.floor(snapshot.tick/24)) < .28+carrier.control/99*.38) technique = 'low-driven';
       else if (wideAngle && stableUnit(carrier.id+':placed:'+Math.floor(snapshot.tick/24)) < .25+carrier.control/99*.70) technique = 'placed';
       else if (longRange && stableUnit(carrier.id+':power:'+Math.floor(snapshot.tick/24)) < .25+carrier.shooting/99*.70) technique = 'power';
-      const power = clamp(0.48 + goalDistance / Math.max(1, ratedShotDistance) * 0.38 +
+      let power = clamp(0.48 + goalDistance / Math.max(1, ratedShotDistance) * 0.38 +
         (technique === 'power' ? 0.1 : technique === 'low-driven' ? 0.04 : 0), 0.5, 0.98);
+      const keeper=snapshot.players.find(p=>p.teamId!==carrier.teamId&&p.isGK&&!p.sentOff);
+      if(keeper){
+        const keeperDepth=space.xToCanonical(snapshot.attackingDirection*(goal.x-keeper.x))/30.25,
+          keeperGap=distance(carrier,keeper,space)/30.25,
+          closing=(keeper.vx*(carrier.x-keeper.x)+keeper.vy*(carrier.y-keeper.y))>0,
+          quality=(carrier.control+carrier.shooting+carrier.awareness)/297;
+        if(keeperDepth>3&&keeperGap<15&&goalDistance/30.25<28&&
+            (closing||keeperGap<8)&&contextUnit(carrier.id+':chip:'+Math.floor(snapshot.tick/30))<.12+quality*.73){
+          technique='chip';power=openPlayChipPower(goalDistance/30.25+1.2);
+        }
+      }
       return {
-        type: 'shot', targetPlayerId: null, target: { ...bestShotLane.target },
+        type: 'shot', targetPlayerId: null, target: bestShotLane.tiePriority===0?{...bestShotLane.target}:
+          {x:goal.x,y:goal.y+Math.sign(bestShotLane.target.y-goal.y)*space.yFromCanonical(
+            (3.66-(goalDistance/30.25<8?.65:.30+(1-shotQuality)*.85))*(CANONICAL_PITCH.yMax-CANONICAL_PITCH.yMin)/68)},
         confidence: rounded(clamp(0.45 + carrier.shooting / 180 + shotClearance / 900, 0, 0.99)),
         reason: 'goal-range-and-shot-lane-open',
         shotProfile: {
@@ -2062,23 +2324,44 @@
     const direct = highLineOutlet(snapshot, carrier, config);
     if (direct) return direct;
     const dribble = dribbleOptions(snapshot, carrier, memory, config);
-    if (dribble.type) return dribble;
-    const combination = combinationPass(snapshot, carrier, memory, config);
+    if (dribble.type) {
+      // A genuine forward run is an outlet during an ordinary carry. Never
+      // interrupt a physical skill/exit or the wide byline approach for it.
+      const through=dribble.type==='carry'&&!memory.combination.move&&!freeDeepWideDrive
+        ?groundThroughOutlet(snapshot,carrier,config):null;
+      return through||dribble;
+    }
     if (combination) return combination;
     const cross = crossOption(snapshot, carrier, config);
-    if (cross) return cross;
+    if (cross && cross.type==='cross') return cross;
     if (carrier.skillExitTarget && snapshot.attackingDirection * (carrier.skillExitTarget.x - carrier.x) > 0 &&
         distance(carrier, carrier.skillExitTarget, space) > 30) return { type: 'carry', targetPlayerId: null, target: carrier.skillExitTarget,
       confidence: .8, reason: 'finish-physical-skill-exit' };
+    const through=groundThroughOutlet(snapshot,carrier,config);
+    if(through)return through;
     const switchPass = switchOption(snapshot, carrier, config);
     const passOptions = runs.map(run => {
       const runner = snapshot.players.find(player => player.id === run.playerId);
-      const releaseTarget = run.continuationTarget || run.target;
+      const endpoint = run.continuationTarget || run.target;
+      let releaseTarget = endpoint;
+      if(runner){
+        const velocity=canonicalVelocity(runner,space),speed=Math.hypot(velocity.x,velocity.y),
+          toward={x:space.xToCanonical(endpoint.x-runner.x),y:space.yToCanonical(endpoint.y-runner.y)};
+        if(speed>15&&velocity.x*toward.x+velocity.y*toward.y>0){
+          // Author the ball into a runner's reachable stride, not the end of
+          // his whole run. This reuses the decision-time pass pace estimate;
+          // the shared MR race still has the final interception/readiness say.
+          const seconds=clamp(distance(carrier,runner,space)/(300+carrier.passing*1.1),.35,1.2),
+            fraction=Math.min(1,Math.hypot(toward.x,toward.y)/Math.max(1,speed*seconds));
+          releaseTarget=boundedDefensivePoint({x:runner.x+runner.vx*seconds*fraction,
+            y:runner.y+runner.vy*seconds*fraction},snapshot,config);
+        }
+      }
       const clearance = nearestOpponentClearance(carrier, releaseTarget, snapshot);
       const progress = space.xToCanonical(snapshot.attackingDirection * (releaseTarget.x - carrier.x));
       const passDistance = distance(carrier, releaseTarget, space);
       const risk = runner ? passRisk(snapshot, carrier, runner, releaseTarget) : { probability: 1 };
-      return { run, runner, clearance, progress, passDistance, risk,
+      return { run, runner, releaseTarget, clearance, progress, passDistance, risk,
         score: progress * 0.16 + Math.min(clearance, 210) * 0.42 + run.score * 0.75 - risk.probability * 210 };
     // A two-metre nudge is not a release into a coordinated run. Treat it as
     // continued possession and let the carrier/receiver create separation.
@@ -2088,18 +2371,18 @@
     // D1 (19 Oct 2026): a release beyond ~46 m (1390 canonical units) cannot be
     // delivered by Ball V2 as a playable pass, so it is not a real option.
     }).filter(option => option.runner && option.clearance >= config.minimumPassLaneClearance &&
-      option.progress > 75 && option.passDistance >= 165 && option.passDistance <= 1390 && option.risk.probability < .42)
+      option.progress > 75 && option.passDistance >= 165 && option.passDistance <= 1390 && option.risk.probability < .62)
       .sort((a, b) => b.score - a.score || a.run.playerId.localeCompare(b.run.playerId));
     const releaseRun = best => ({
       type: 'pass', targetPlayerId: best.run.playerId,
-      target: { ...(best.run.continuationTarget || best.run.target) },
+      target: { ...best.releaseTarget },
       offsideTiming: cloneObject(best.run.offsideTiming || null),
       confidence: rounded(clamp(0.42 + carrier.passing / 200 + best.clearance / 1000, 0, 0.98)),
       risk: best.risk,
       reason: best.run.observedOpening ? 'release-newly-opened-run' : 'release-coordinated-run'
     });
     const openedRun = passOptions.find(option => option.run.observedOpening);
-    const supportOptions = shortSupportOptions(snapshot, carrier, config);
+    const supportOptions = scoreCirculationHistory(snapshot,carrier,shortSupportOptions(snapshot, carrier, config),memory,config);
     const carrierPressure = nearestOpponentClearance(carrier, carrier, snapshot);
     // Under pressure, a safe outlet outranks a speculative opening. In space,
     // a genuinely better progressive lane still beats routine circulation.
@@ -2116,7 +2399,7 @@
       isRestDefender(carrier) && isRestDefender(previousPasser);
     const suppressDirectReturn = recentDefenderReceipt && carrierPressure >= 82;
     const repeatedDefenderPairs = new Set(supportOptions.filter(option =>
-      isRestDefender(carrier) && isRestDefender(option.player) && carrierPressure >= 82 &&
+      isRestDefender(carrier) && isRestDefender(option.player) &&
       recentCirculationPairCount(memory.circulation, carrier.id, option.player.id,
         snapshot.tick, config) >= config.circulationRepeatedPairLimit).map(option => option.player.id));
     const suppressHistoricalPair = repeatedDefenderPairs.size > 0;
@@ -2125,7 +2408,10 @@
         (!previousPasser || !suppressDirectReturn || option.player.id !== previousPasser.id) &&
         !repeatedDefenderPairs.has(option.player.id))
       : supportOptions;
-    const availableSupport = alternativeSupport.length ? alternativeSupport : supportOptions;
+    // Keep every safe candidate in the ranking. Memory reduces a repeated
+    // link's value rather than banning it when a pressing forward removes the
+    // alternatives. The physical MR safety check is unchanged.
+    const availableSupport = supportOptions;
     const preferredSupportOptions = preferSafeForwardSupport(availableSupport);
     // Circulation remains the default, but it must not erase an independently
     // authored penetrating run whose live geometry is materially better. This
@@ -2144,7 +2430,7 @@
     // A switch escapes a blocked local network; a safe short outlet keeps the
     // combination alive even when that outlet is sideways or behind the ball.
 
-    if (switchPass && !preferredSupportOptions.some(o=>o.progress>90&&o.risk.probability<.38) && carrierPressure < 240) return switchPass;
+    if (switchPass && !preferredSupportOptions.some(o=>o.risk.probability<.38) && carrierPressure < 240) return switchPass;
     const circulationRole = ['centre-back', 'full-back', 'wing-back', 'defensive-midfielder', 'midfielder']
       .includes(carrierFamily);
     const carryTarget = dribble.carry && dribble.carry.target;
@@ -2173,7 +2459,7 @@
     // Previously every available support pass won first, producing lateral
     // striker ping-pong and preventing the team from ever entering shot range.
     const freeProgress = carrierPressure >= 210 && carryClearance >= 120 && bestSupport && bestSupport.progress <= 0;
-    if ((assertiveCarrier || freeProgress) && carrierPressure >= 135 && carryClearance >= config.minimumCarryLaneClearance) {
+    if ((assertiveCarrier && (!bestSupport || bestSupport.progress < 75) || freeProgress) && carrierPressure >= 135 && carryClearance >= config.minimumCarryLaneClearance) {
       return {
         type: 'carry', targetPlayerId: null, target: carryTarget,
         confidence: rounded(clamp(0.45 + carrier.control / 185 + carryClearance / 1200, 0, 0.97)),
@@ -2195,6 +2481,7 @@
       };
     }
     if (passOptions.length) return releaseRun(passOptions[0]);
+    if (cross) return cross;
     if (carryClearance >= config.minimumCarryLaneClearance) {
       return {
         type: 'carry', targetPlayerId: null, target: carryTarget,
@@ -2257,7 +2544,13 @@
     let intent = carrierIntent(current, runs, memory, config);
     if(intent.type==='carry' && intent.target && !intent.knockOn){
       const carrier=current.players.find(p=>p.id===current.carrierId);
-      const choice=carrier&&directionalTouchChoice(current,carrier,intent.target);
+      // A frozen knock-on is a free roll, not a ball that stops at the
+      // gesture's nominal gap. Keep the final byline approach under close
+      // control instead of kicking that unchanged roll across the goal line.
+      const bylineApproach=carrier&&intent.reason==='wide-carrier-drive-for-byline'&&
+        (current.attackingDirection>0?current.pitch.xMax-carrier.x:carrier.x-current.pitch.xMin)<
+          (current.pitch.xMax-current.pitch.xMin)*14/105;
+      const choice=carrier&&!bylineApproach&&directionalTouchChoice(current,carrier,intent.target);
       if(choice)intent={...intent,...choice};
     }
     // Match lab only: count carrier decisions when the lab provides a ledger.
@@ -2280,6 +2573,12 @@
     }
     rememberCirculationPass(current, intent, memory);
     const defensiveIntents = buildDefensiveIntents(current, memory, config, telemetry);
+    const shotBlock=anticipateCarrierShot(current,config,defensiveIntents);
+    if(shotBlock){const i=defensiveIntents.findIndex(d=>d.playerId===shotBlock.playerId);if(i>=0)defensiveIntents[i]=shotBlock;else defensiveIntents.push(shotBlock); }
+    const crossBlock=anticipateWideDelivery(current,config);
+    if(crossBlock){const i=defensiveIntents.findIndex(d=>d.playerId===crossBlock.playerId);
+      if(i>=0){if(!defensiveIntents[i].physicalAction)defensiveIntents[i]=crossBlock;}else defensiveIntents.push(crossBlock);}
+
     const midfieldIntents = midfieldSupportIntents(current, config);
     const reservedIds = combinationIntents.map(p => p.playerId).concat(midfieldIntents.filter(p => p.type === 'return-outlet').map(p => p.playerId));
     const boxIntents = boxSlotIntents(current, config, reservedIds);
@@ -2305,8 +2604,8 @@
       // The live gate may reject an authored run. Reuse these same scored
       // support options rather than inventing an unscored forward fallback.
       supportPassOptions: current.carrierId && current.possessionTeamId === current.teamId
-        ? preferSafeForwardSupport(shortSupportOptions(current,
-          current.players.find(p => p.id === current.carrierId), config)).map(supportPassIntent) : [],
+        ? preferSafeForwardSupport(scoreCirculationHistory(current,current.players.find(p=>p.id===current.carrierId),shortSupportOptions(current,
+          current.players.find(p => p.id === current.carrierId), config),memory,config)).map(supportPassIntent) : [],
       memory,
       telemetry
     };
@@ -2398,14 +2697,14 @@
     const goalX=dir>0?105:0,dx=Math.max(.25,dir*(goalX-p.x));
     const frameClearance=.30+(1-rating)*.04;
     const time=dx/Math.max(1,dir*v.x),projectedY=p.y+v.y*time,projectedZ=p.z+v.z*time-4.903325*time*time;
-    const high=projectedZ>1.65 && p.z>1.1, wide=Math.abs(projectedY)>2.45;
+    const high=projectedZ>1.50 && p.z>1.1, wide=Math.abs(projectedY)>2.45;
     const quality=rating*.65+clamp(finite(input.contactQuality,.5),0,1)*.35;
     let kind,velocity;
     if(edge>.70 && (high||wide)) {
       kind=high?'tip-over':'tip-round';
       const retained=speed*(.80+rating*.12),vx=Math.max(2,Math.abs(v.x)*(.84+rating*.08)),t=dx/vx;
-      const vy=kind==='tip-round'?side*Math.max(Math.abs(v.y), (3.66+frameClearance-Math.abs(p.y))/Math.max(.008,t)):v.y;
-      const vz=kind==='tip-over'?Math.max(v.z,(2.44+frameClearance-p.z+4.903325*t*t)/Math.max(.008,t)):v.z*.9;
+      const vy=kind==='tip-round'?side*Math.max(Math.abs(v.y)+speed*.18, (3.66+frameClearance-Math.abs(p.y))/Math.max(.008,t)):v.y;
+      const vz=kind==='tip-over'?Math.max(v.z+speed*.18,(2.44+frameClearance-p.z+4.903325*t*t)/Math.max(.008,t)):v.z*.9;
       // A glancing touch changes heading but keeps most incoming energy.
       const length=Math.hypot(vx,vy,vz)||1;
       velocity={x:dir*vx*retained/length,y:vy*retained/length,z:vz*retained/length};
@@ -2414,11 +2713,78 @@
     } else {
       kind='parry-danger';velocity={x:-dir*(4+quality*3),y:v.y*.25+side*(1-quality)*3,z:Math.max(.6,Math.abs(v.z)*.22)};
     }
-    return {kind,velocity,position:{...p},fingertips:kind.startsWith('tip-'),contactEdge:edge,quality};
+    return {kind,velocity,position:{...p},fingertips:kind.startsWith('tip-'),contactEdge:edge,quality,sideSpinRpm:kind==='tip-round'?dir*side*(180+quality*240):dir*side*80,topSpinRpm:kind==='tip-over'?-(180+quality*180):0,axialSpinRpm:side*80};
+  }
+
+  function planCpuDive(facts={}){
+    const attrs=facts.attributes||{},rating=(key,fallback=70)=>clamp(finite(attrs[key],fallback)/99,.01,1),
+      flair=rating('flair',(finite(attrs.technique,70)+finite(attrs.control,70)+finite(attrs.agility,70))/3),
+      reputation=clamp(finite(facts.diverReputation,0)/100,0,1),
+      diving=rating('diving',24+flair*42+finite(attrs.aggression,70)*.2+reputation*50),
+      composure=rating('composure',finite(attrs.awareness,70)),
+      minute=Math.max(0,finite(facts.minute,0)),elapsed=Math.max(0,minute-finite(facts.lastAttemptMinute,0)),
+      challenge=facts.challenge||null,contact=Boolean(challenge?.contact),
+      nearMiss=Boolean(challenge?.nearMiss),clearContact=contact&&!challenge.ballFirst&&finite(challenge.severity,0)>=.46,
+      distance=finite(facts.defenderDistanceMetres,Infinity),inBox=Boolean(facts.inPenaltyArea),
+      progress=clamp(finite(facts.progress,0),0,1),pull=Boolean(facts.shirtPull),
+      freshVictim=Boolean(facts.recentlyChallenged),
+      noContactMoment=!challenge&&!pull&&distance>=2.5&&distance<=5.5,
+      boxMoment=inBox&&!contact&&distance>=1.25&&distance<=5.5,
+      eligible=Boolean(facts.physicallyEligible)&&(facts.ownsBall||freshVictim)&&
+        (noContactMoment||boxMoment||challenge||pull);
+    const cadenceMinutes=38-diving*12-flair*4+composure*2+(facts.booked?composure*6:0),
+      urgency=1+Math.min(3,Math.max(0,-finite(facts.scoreMargin,0)))*.08*clamp((minute-45)/45,0,1),
+      momentValue=(clearContact?1.3:contact?1.1:nearMiss?.9:1.1)+progress*.35+(inBox?.3:0),
+      positional=(challenge||pull)? .75+progress*.25 : clamp((progress-.15)/.4,0,1),
+      readiness=facts.ignoreCadence?1:Math.max(Math.pow(elapsed/Math.max(1,cadenceMinutes),6),
+        inBox&&(contact||pull||boxMoment)? .15+diving*.85:0),
+      chance=eligible?clamp((.003+diving*.008)*readiness*momentValue*urgency*positional*(facts.booked?1-composure*.25:1),0,.75):0,
+      key=['cpu-dive',facts.seed||1,facts.playerId||'',Math.floor(finite(facts.tick,0)/30)].join(':'),
+      roll=Number.isFinite(facts.roll)?clamp(facts.roll,0,1):contextUnit(key),
+      performanceRoll=Number.isFinite(facts.performanceRoll)?clamp(facts.performanceRoll,0,1):contextUnit(key+':performance'),
+      rolling=3.5+flair*3.5+diving*2+(noContactMoment||boxMoment?2.5:0),
+      flop=2+(1-composure)*.7+(contact?.9:0),
+      subtle=.4+composure*.6+(clearContact?1.2:0),
+      total=rolling+flop+subtle,pick=performanceRoll*total,
+      performance=pick<rolling?'rolling':pick<rolling+flop?'flop':'subtle';
+    return {selected:roll<chance,chance,performance,profile:{diving,flair,composure},cadenceMinutes,
+      momentValue,inBox,context:clearContact?'contact':contact?'marginal-contact':nearMiss?'near-miss':pull?'shirt-pull':'no-contact'};
+  }
+
+  // Power chooses the landing range. The flight itself is the existing
+  // penalty-chip vertical profile, sampled through the unchanged Ball engine.
+  function openPlayChipRange(power){return 3+42*Math.pow(clamp(finite(power,.6),.24,1),1.7);}
+  function openPlayChipPower(range){return clamp(Math.pow(Math.max(0,finite(range,18)-3)/42,1/1.7),.24,1);}
+  function weightChipLanding(input,ballApi){
+    const range=Math.max(2,finite(input.rangeMetres,18)),vertical=finite(input.verticalMetresPerSecond,8),
+      height=Math.max(.111,finite(input.heightMetres,.14)),spin=finite(input.sideSpinRpm,0);
+    function landing(horizontal){
+      let state=ballApi.resolveLaunch({id:'shared-chip-weight',origin:{x:0,y:0,z:height},direction:{x:1,y:0},
+        speed:Math.hypot(horizontal,vertical),liftAngleDeg:Math.atan2(vertical,horizontal)*180/Math.PI,
+        sideSpinRpm:spin,source:'shot'}).state,context=ballApi.createSimulationContext({seed:173});
+      for(let frame=0;frame<240;frame+=15){
+        const next=ballApi.step(state,context,.25,{});
+        const ground=next.trace.events.find(e=>e.type==='contact'&&e.normal?.z>.9);
+        if(ground){
+          const index=next.trace.samples.findIndex(p=>p.substepCount===ground.substepCount+1),
+            after=next.trace.samples[index],before=index>0?next.trace.samples[index-1]:state,
+            t=clamp(ground.timeFraction,0,1);
+          if(after)return Math.hypot(before.position.x+(after.position.x-before.position.x)*t,
+            before.position.y+(after.position.y-before.position.y)*t);
+        }
+        state=next.state;context=next.context;
+      }
+      return Math.hypot(state.position.x,state.position.y);
+    }
+    let low=.3,high=42;
+    for(let i=0;i<13;i++){const middle=(low+high)/2;if(landing(middle)<range)low=middle;else high=middle;}
+    const horizontal=(low+high)/2;
+    return {horizontalSpeedMetresPerSecond:horizontal,verticalMetresPerSecond:vertical,
+      landingMetres:landing(horizontal),requestedRangeMetres:range,trajectoryProfile:'penalty-chip'};
   }
 
   return Object.freeze({
-    keeperDeflectionPlan,
+    planCpuDive,keeperDeflectionPlan,openPlayChipRange,openPlayChipPower,weightChipLanding,
     VERSION,
     SNAPSHOT_SCHEMA,
     MEMORY_SCHEMA,

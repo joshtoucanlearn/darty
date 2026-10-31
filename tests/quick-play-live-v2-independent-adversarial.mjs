@@ -134,8 +134,8 @@ function protectedBuild173Payload(seed = 173173, matchType = 'co-op') {
 }
 
 test('frozen promotion bytes and lower-engine contracts are exact', () => {
-  assert.equal(hash(adapterSource), 'cbd0a00dbb5447d95ed5267da6f323019935b6df3dba5a101aa284172a52c792');
-  assert.equal(hash(matchSource), '49de01a1e3dab4f620f6fca0539faff5b06040f7ba924ab898607d59c9ebccc4');
+  assert.equal(hash(adapterSource), 'e4c820aa81a32565db2933a8d1b35714867000c5f365c191e7f02123eaacdf5e');
+  assert.equal(hash(matchSource), '7215eba7c0392c0ae1470d3c1abb164f16eecf3ef8bca7bdad3caeef06d856ce');
   assert.equal(Adapter.VERSION, '1.0.0-offline-live-authority-playtest');
   assert.deepEqual([...Adapter.SUPPORTED_WORKFLOWS], ['single-player', 'cpu-v-cpu']);
   assert.equal(Ball.VERSION, Adapter.DEPENDENCY_CONTRACTS.ball.version);
@@ -148,8 +148,8 @@ test('frozen promotion bytes and lower-engine contracts are exact', () => {
     /const deliberatePass = Boolean\(intendedReceiverId\) && !\/\(shot\|penalty\|direct-free-kick\)\/\.test\(releaseDescriptor\)/,
     'only a deliberate receiver-authored pass may create the reaction stimulus');
   assert.match(adapterSource, /reactionStimulus: deliberatePass \? \{/);
-  assert.match(adapterSource, /stimulus: 'deliberate-pass-release'/);
-  assert.match(adapterSource, /snapshot\.tick <= stimulus\.releaseTick \+ dependencies\.contact\.MAX_REACTION_DELAY_TICKS/);
+  assert.match(adapterSource, /stimulus:\s*stimulus\.physicalKick\?'deliberate-kick-release':'deliberate-pass-release'/);
+  assert.match(adapterSource, /snapshot\.tick <= priorReaction\.releaseTick \+ dependencies\.contact\.MAX_REACTION_DELAY_TICKS/);
   assert.match(adapterSource, /lastKickerTeamId && lastKickerTeamId !== domain\.possession\.teamId/,
     'an external opposing touch must terminate the authored flight');
   assert.match(adapterSource, /contactActor\.teamId !== possession\.teamId/,

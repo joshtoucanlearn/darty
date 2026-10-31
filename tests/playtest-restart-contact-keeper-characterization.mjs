@@ -178,14 +178,14 @@ test('controlled touches atomically clear stale throw and cross flight metadata'
   const state = {
     flightType: 'throw-in', flightAge: 35, aerialSource: { id: 'thrower' }, aerialCooldown: 9, minAerialFlightAge: 22,
     crossContestLogged: true, crossNoContactLogged: true, crossContactFrame: 31, crossContactHeight: 13, crossAuditId: 'old',
-    trajectoryProfile: { old: true }, aimTarget: { x: 1 }, dip: .3, spin: .4, curveAccel: .2
+    v2ServiceKind:'byline',trajectoryProfile: { old: true }, aimTarget: { x: 1 }, dip: .3, spin: .4, curveAccel: .2
   };
   assert.equal(runtime.clear(state), true);
   assert.deepEqual(runtime.aerialClearReasons, ['controlled-touch']);
   assert.deepEqual(state, {
     flightType: null, flightAge: 0, aerialSource: null, aerialCooldown: 0, minAerialFlightAge: 0,
     crossContestLogged: false, crossNoContactLogged: false, crossContactFrame: null, crossContactHeight: null, crossAuditId: null,
-    crossNoContactFrame: null, crossSourceFlight: null, crossRouteExpired: false,
+    crossNoContactFrame: null, crossSourceFlight: null, crossRouteExpired: false,v2ServiceKind:null,
     directionalKnockOnContract: null, pendingKickoffReceipt: null,
     trajectoryProfile: null, aimTarget: null, dip: 0, spin: 0, curveAccel: null
   });

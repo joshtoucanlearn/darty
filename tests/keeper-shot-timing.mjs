@@ -8,7 +8,14 @@ const html=fs.readFileSync(new URL('../match-engine/match.html',import.meta.url)
 const section=(start,end)=>{const a=html.indexOf(start),b=html.indexOf(end,a);assert.ok(a>=0&&b>a,start);return html.slice(a,b);};
 function fixture({height=12,lateral=90,pace=10,rating=80}={}){
   return new Function(`
-    const W=3344,H=2142,M=84,rad=12.75,GOAL_H=230;
+    const W=3344,H=2142,M=84,rad=12.75,GOAL_H=230,PITCH_UNITS_PER_METRE=H/68;
+    // This scheduler fixture deliberately advances a constant-velocity ball.
+    // Its forecast matches that driver; real MR/rig/contact is covered by
+    // keeper-contact-reach and the actual-host save/corner regressions.
+    const window={FootballLegacyLiveV2Authority:{keeperShotForecast(input){
+      const seconds=(input.planeX-input.position.x)/input.velocity.x;
+      return seconds>0?{x:input.planeX,y:input.position.y+input.velocity.y*seconds,z:input.position.z+input.velocity.z*seconds,frames:seconds*60}:null;
+    }}};
     const clamp=(v,a,b)=>Math.max(a,Math.min(b,v)),D=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
     const Math=Object.create(globalThis.Math);Math.random=()=>.5;
     let clockFrames=100,ball={x:2300,y:H/2+${lateral},z:${height},vx:${pace},vy:0,zv:0,

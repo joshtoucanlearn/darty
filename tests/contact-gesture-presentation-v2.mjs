@@ -58,10 +58,17 @@ test('slide/fall contact holds survive one-to-six gameplay ticks and roots stay 
   assert.equal(api.contactPresentationState(victim,now+65*(1000/60)).held,false);
 });
 
-test('autonomous contact stages both participants but does not change football outcome state',()=>{
+test('autonomous contact stages both participants and delegates its geometry to the physical fall path',()=>{
   const actor={action:'idle',actionT:0,x:10,y:10,vx:2,vy:0},target={action:'idle',actionT:0,x:11,y:13,vx:1,vy:1};
-  const before={actor:[actor.x,actor.y,actor.vx,actor.vy],target:[target.x,target.y,target.vx,target.vy]};api.stageAutonomousContactPresentation(actor,target,'shoulder-contact');
-  assert.equal(actor.presentationAction,'shoulderBarge');assert.equal(target.presentationAction,'shoulderHit');assert.deepEqual([actor.x,actor.y,actor.vx,actor.vy],before.actor);assert.deepEqual([target.x,target.y,target.vx,target.vy],before.target);assert.equal('owner' in actor,false);assert.equal('owner' in target,false);
+  const contact={bodyContact:true,ballFirst:true,normal:{x:1,y:0,z:0},point:{x:10.5,y:11,z:.8},approachSpeedMps:3};
+  let delegated;
+  // This extracted presentation unit supplies its new physical dependency;
+  // physical-contact-live separately exercises the actual fall implementation.
+  sandbox.applyContactFall=(victim,offender,context)=>{delegated={victim,offender,context};api.holdContactPresentation(victim,'fallSide',44);return{action:'fallSide',duration:44};};
+  const before={actor:[actor.x,actor.y,actor.vx,actor.vy],target:[target.x,target.y,target.vx,target.vy]};api.stageAutonomousContactPresentation(actor,target,'shoulder-contact',contact);
+  assert.equal(actor.presentationAction,'shoulderBarge');assert.equal(target.presentationAction,'fallSide');assert.equal(delegated.victim,target);assert.equal(delegated.offender,actor);
+  assert.equal(delegated.context.point,contact.point);assert.equal(delegated.context.normal,contact.normal);assert.equal(delegated.context.ballFirst,true);
+  assert.deepEqual([actor.x,actor.y,actor.vx,actor.vy],before.actor);assert.deepEqual([target.x,target.y,target.vx,target.vy],before.target);assert.equal('owner' in actor,false);assert.equal('owner' in target,false);
 });
 
 test('pause preserves contact holds and cancels orphaned standing-tackle windups',()=>{

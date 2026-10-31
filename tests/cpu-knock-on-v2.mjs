@@ -15,7 +15,8 @@ test('CPU light, strong and double strikes delegate to the exact accepted tier p
  for(const [tier,distance] of [['light',3.4],['strong',5.5],['double',8.5]])for(const control of [1,50,99]){
   const actor={id:'carrier',team:'you',x:1000,y:1000,vx:speed(8.8),vy:0,fx:1,fy:0,attrs:{control,pace:84}};
   let actual,executions=0;const before=[actor.vx,actor.vy];
-  const ctx=vm.createContext({clamp,rad:12.75,worldDistanceMetres:metres,worldBallSpeedForMetresPerSecond:speed,
+  // Isolate delegation; the real MR race/choice is covered by the host outcome regressions.
+  const ctx=vm.createContext({clockFrames:0,liveV2Tick:0,liveV2Snapshot:()=>({}),liveV2Authority:{planCpuKnockOn:(_s,_id,choices)=>({tier:choices[0].tier,checks:[]})},clamp,rad:12.75,worldDistanceMetres:metres,worldBallSpeedForMetresPerSecond:speed,
    facing:p=>({x:p.fx,y:p.fy}),logEvent:(type,team,p,extra)=>{actual=extra;},
    performDirectionalKnockOn:(p,stick,isSecond,state,options)=>{executions++;return true;}});
   vm.runInContext(plan+'\n'+launch+';this.launch=liveV2LaunchDribbleKnockOn;',ctx);
@@ -39,7 +40,8 @@ test('CPU jogging touch uses the unchanged human free-roll planner at low and hi
  for(const control of [1,50,99]) {
   const actor={id:'carrier',team:'you',x:1000,y:1000,vx:speed(3.5),vy:0,fx:1,fy:0,attrs:{control,pace:84}};
   let received;const before=[actor.vx,actor.vy];
-  const ctx=vm.createContext({clamp,rad:12.75,worldDistanceMetres:metres,worldBallSpeedForMetresPerSecond:speed,facing:p=>({x:p.fx,y:p.fy}),logEvent:()=>{},
+  // Isolate delegation; the real MR race/choice is covered by the host outcome regressions.
+  const ctx=vm.createContext({clockFrames:0,liveV2Tick:0,liveV2Snapshot:()=>({}),liveV2Authority:{planCpuKnockOn:(_s,_id,choices)=>({tier:choices[0].tier,checks:[]})},clamp,rad:12.75,worldDistanceMetres:metres,worldBallSpeedForMetresPerSecond:speed,facing:p=>({x:p.fx,y:p.fy}),logEvent:()=>{},
    performDirectionalKnockOn:(p,stick,isSecond,state,options)=>{received=ctx.directionalKnockOnPlan(p,stick,options);return true;}});
   vm.runInContext(plan+'\n'+launch+';this.launch=liveV2LaunchDribbleKnockOn;',ctx);
   assert.equal(ctx.launch(actor,{dribbleId:'jog',target:{x:1400,y:1000},maneuver:{knockOnTier:'baseline'}}),true);

@@ -25,7 +25,7 @@ export function replayRace(options={}) {
  for(let tick=1;tick<=180;tick++){
   snapshot.tick=tick;const frame=run.planTick(snapshot);assert.ok(frame,run.status().failure);
   const projection=frame.hostProjection;contacts.push(...projection.movementTelemetry.contacts.filter(c=>c.type==='shoulder-contact'));
-  rows.push({tick,ball:projection.ball,assignments:projection.recoveryAssignments,commands:commands.at(-1),racers:projection.movement.filter(p=>['you-player-8','opp-player-8'].includes(p.id)).map(p=>({id:p.id,speed:Math.hypot(p.vx/u.xPerMetre*60,p.vy/u.yPerMetre*60),gait:p.locomotionState}))});
+  rows.push({tick,contact:projection.contact?{type:projection.contact.contactType,owned:projection.contact.ownedContact,owner:projection.contact.ownerCandidateId,outcome:projection.contact.presentation?.outcome}:null,ball:projection.ball,assignments:projection.recoveryAssignments,commands:commands.at(-1),racers:projection.movement.filter(p=>['you-player-8','opp-player-8'].includes(p.id)).map(p=>({id:p.id,speed:Math.hypot(p.vx/u.xPerMetre*60,p.vy/u.yPerMetre*60),gait:p.locomotionState}))});
   assert.ok(run.commitTick(frame));
   for(const p of projection.movement)Object.assign(snapshot.players.find(q=>q.id===p.id),p);
   if(projection.ball)Object.assign(snapshot.ball,projection.ball);
@@ -56,7 +56,12 @@ test('a real lateral shoulder contest preserves sprint momentum, uses continuous
 });
 test('parallel opponents resolve a rolling loose-ball race through physical control on either attacking direction',()=>{
  for(const direction of [1,-1]){
-  const r=replayRace({direction});assert.equal(r.resolved,true);assert.ok(r.ticks<=90,JSON.stringify({ticks:r.ticks,last:r.rows.at(-1)}));
+  const r=replayRace({direction});assert.equal(r.resolved,true);
+  const firstBoot=r.rows.find(f=>f.contact?.owned&&f.contact.type==='first-touch');
+  assert.ok(firstBoot&&firstBoot.tick<=90,'real boot arrival must happen within1.5s');
+  // Retained touches stay live until the existing First Touch resolver
+  // actually secures possession. Do not turn that into an automatic owner.
+  assert.ok(r.ticks<=120,JSON.stringify({ticks:r.ticks,firstBoot:firstBoot?.tick,last:r.rows.at(-1)}));
   assert.ok(r.contacts.length>0,'arrival has an actual shoulder contact');
   assert.ok(r.rows.every(f=>f.racers.every(p=>p.gait==='sprint')),'no approach gait downgrade');
  }
