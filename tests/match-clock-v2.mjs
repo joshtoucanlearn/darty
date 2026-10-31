@@ -56,7 +56,6 @@ test('plain browser script exposes window.FootballLegacyMatchClockV2', () => {
 
 test('EXACT-FLAG AUTHORITY GATE: Build 173 has no unconditional MatchClock V2 load or live call', () => {
   assert.doesNotMatch(matchHtml, /<script\s+src=["']match-clock-v2\.js/i);
-  assert.match(matchHtml, /id="build173V2ShadowPreflight"/);
   assert.doesNotMatch(matchHtml, /FootballLegacyMatchClockV2/);
   assert.match(source, /intentionally dormant/i);
   assert.match(source, /Build 173 remains the sole live[\s*]+authority/i);

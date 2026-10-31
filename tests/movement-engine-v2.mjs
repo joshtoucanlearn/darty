@@ -111,7 +111,6 @@ test('plain browser script exposes window.FootballLegacyMovementEngineV2', () =>
 
 test('EXACT-FLAG AUTHORITY GATE: Build 173 has no unconditional movement V2 load or live call', () => {
   assert.doesNotMatch(matchHtml, /<script\s+src=["']movement-engine-v2\.js/i);
-  assert.match(matchHtml, /id="build173V2ShadowPreflight"/);
   assert.doesNotMatch(matchHtml, /FootballLegacyMovementEngineV2/);
   assert.match(source, /intentionally dormant/i);
 });

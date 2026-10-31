@@ -103,7 +103,6 @@ test('ball, shadow bridge and movement candidate coexist in CommonJS and one bro
 
 test('LIVE AUTHORITY GATE: candidates remain default-off and frozen online', () => {
   assert.doesNotMatch(matchHtml, /<script\s+src=["'](?:ball-engine-v2|ball-shadow-bridge-v2|movement-engine-v2)\.js/i);
-  assert.match(matchHtml, /id="build173V2ShadowPreflight"/);
   const match = matchHtml.match(/<script id="offlineLiveV2Preflight">([\s\S]*?)<\/script>/);
   assert.ok(match, 'conditional offline-live preflight must exist');
 

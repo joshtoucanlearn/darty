@@ -809,8 +809,31 @@
     return { point, nearest: nearest.point, distanceSquared: nearest.distanceSquared };
   }
 
+  // Conservative broadphase: true when the swept ball segment is separated from
+  // the capsule axis by more than the combined radius on some axis, so the
+  // full sweep below could only return null. The margin absorbs rounding.
+  function capsuleSweepMisses(start, relativeEnd, radius, collider) {
+    const margin = radius + collider.radius + 1e-4;
+    const a = collider.start;
+    const b = collider.end;
+    const lowX = a.x < b.x ? a.x : b.x;
+    const highX = a.x < b.x ? b.x : a.x;
+    if (start.x > highX + margin && relativeEnd.x > highX + margin) return true;
+    if (start.x < lowX - margin && relativeEnd.x < lowX - margin) return true;
+    const lowY = a.y < b.y ? a.y : b.y;
+    const highY = a.y < b.y ? b.y : a.y;
+    if (start.y > highY + margin && relativeEnd.y > highY + margin) return true;
+    if (start.y < lowY - margin && relativeEnd.y < lowY - margin) return true;
+    const lowZ = a.z < b.z ? a.z : b.z;
+    const highZ = a.z < b.z ? b.z : a.z;
+    if (start.z > highZ + margin && relativeEnd.z > highZ + margin) return true;
+    if (start.z < lowZ - margin && relativeEnd.z < lowZ - margin) return true;
+    return false;
+  }
+
   function sweepCapsule(start, end, radius, collider, dt) {
     const relativeEnd = subtract(end, scale(collider.velocity, dt));
+    if (capsuleSweepMisses(start, relativeEnd, radius, collider)) return null;
     const direction = subtract(relativeEnd, start);
     const combinedRadius = radius + collider.radius;
     const startDistance = capsuleDistanceAt(start, direction, 0, collider);

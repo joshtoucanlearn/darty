@@ -95,7 +95,6 @@ test('plain browser script exposes window.FootballLegacyFormationBehaviourV2', (
 
 test('EXACT-FLAG AUTHORITY GATE: Formation V2 is conditional and limited to stable shadow identities', () => {
   assert.doesNotMatch(matchHtml, /<script\s+src=["']formation-behaviour-v2\.js/i);
-  assert.match(matchHtml, /id="build173V2ShadowPreflight"/);
   assert.match(matchHtml, /const api=window\.FootballLegacyFormationBehaviourV2/);
   assert.doesNotMatch(matchHtml, /FootballLegacyFormationBehaviourV2\.(?:resolve|apply|project)\s*\(/);
   assert.match(source, /intentionally dormant/i);

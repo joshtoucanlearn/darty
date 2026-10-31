@@ -62,8 +62,7 @@ test('shadow bridge exposes CommonJS/browser APIs and has only the exact-flag co
   vm.runInNewContext(bridgeSource, browser);
   assert.equal(browser.window.FootballLegacyBallShadowBridgeV2.VERSION, Bridge.VERSION);
   assert.doesNotMatch(matchHtml, /<script\s+src=["'][^"']*ball-shadow-bridge-v2\.js/i);
-  assert.equal((matchHtml.match(/'ball-shadow-bridge-v2\.js'/g) || []).length, 1);
-  assert.match(matchHtml, /requested=values\.length===1&&values\[0\]==='1'/);
+  assert.equal((matchHtml.match(/ball-shadow-bridge-v2\.js/g) || []).length, 0);
   assert.doesNotMatch(matchHtml, /FootballLegacyBallShadowBridgeV2/);
 });
 

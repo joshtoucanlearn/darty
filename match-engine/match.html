@@ -194,35 +194,11 @@
 <script src="darty-video-capture.js"></script>
 <script src="vendor/three.min.js?v=r128-local"></script>
 <script src="instant-result.js"></script>
-<script src="ball-physics.js?v=174-dormant-kernel"></script>
 <script src="instant-replay-review-v2.js?v=174-pause-review"></script>
 <script src="playtest-full-state-replay-v1.js?v=174-final-candidate-2"></script>
 <script src="darty-impact-v1.js?v=1.2.0-slide-impact"></script>
 <script src="darty-commentary.js?v=1.2.1-fulltime"></script>
 <script>if(!window.THREE){document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>')}</script>
-<script id="build173V2ShadowPreflight">
-(function(){
-  const params=new URLSearchParams(location.search),values=params.getAll('v2Shadow'),requested=values.length===1&&values[0]==='1',urlMarkers=[];
-  if(params.getAll('engine').length)urlMarkers.push('live-engine-marker');
-  ['onlineRole','onlineRoom','onlineBuild','room','join'].forEach(key=>{const rows=params.getAll(key);if(rows.length>1)urlMarkers.push('duplicate-'+key);if(rows.some(value=>String(value||'')!==''))urlMarkers.push(key);});
-  for(const key of ['mode','matchType','online'])if(params.getAll(key).length>1)urlMarkers.push('duplicate-'+key);
-  const queryModeValues=params.getAll('mode').map(value=>String(value||'').toLowerCase()),queryMatchTypeValues=params.getAll('matchType').map(value=>String(value||'').toLowerCase()),onlineValues=params.getAll('online').map(value=>String(value||'').toLowerCase()),queryMode=queryModeValues[0]||'',queryMatchType=queryMatchTypeValues[0]||'';
-  if(queryMode==='online'||queryMode==='online-versus')urlMarkers.push('mode');
-  if(queryMatchType==='online'||queryMatchType==='online-versus')urlMarkers.push('matchType');
-  if(onlineValues.some(value=>value==='1'||value==='true')||queryModeValues.some(value=>value==='online'||value==='online-versus')||queryMatchTypeValues.some(value=>value==='online'||value==='online-versus'))urlMarkers.push('online');
-  let decoded=null,decodeFailed=false;const fragment=new URLSearchParams(location.hash.replace(/^#/,'')),payloadValues=fragment.getAll('flMatch'),raw=payloadValues.length===1?payloadValues[0]:null;if(payloadValues.length>1)urlMarkers.push('duplicate-match-payload');
-  if(raw){try{if(String(raw).length>1500000)throw new Error('match payload too large');const base64=String(raw).replace(/-/g,'+').replace(/_/g,'/').padEnd(Math.ceil(String(raw).length/4)*4,'='),binary=atob(base64);if(binary.length>1100000)throw new Error('decoded match payload too large');const bytes=Uint8Array.from(binary,char=>char.charCodeAt(0));decoded=JSON.parse(new TextDecoder().decode(bytes));if(!decoded||typeof decoded!=='object'||Array.isArray(decoded))throw new Error('invalid match payload');}catch(error){decodeFailed=true;}}
-  const decodedMode=String(decoded&&decoded.mode||'').toLowerCase(),decodedMatchType=String(decoded&&decoded.matchType||'').toLowerCase(),decodedOnline=!!(decoded&&decoded.online!==null&&decoded.online!==undefined&&decoded.online!==false),decodedControllersOnline=!!(decoded&&decoded.controllers&&decoded.controllers.online===true);
-  if(decoded&&decoded.engine&&decoded.engine.effective==='fl-v2')urlMarkers.push('decoded-live-engine');
-  if(decodedMode==='online'||decodedMode==='online-versus')urlMarkers.push('decoded-mode');
-  if(decodedMatchType==='online'||decodedMatchType==='online-versus')urlMarkers.push('decoded-matchType');
-  if(decodedOnline)urlMarkers.push('decoded-online');if(decodedControllersOnline)urlMarkers.push('decoded-controllers-online');if(decodeFailed)urlMarkers.push('decoded-payload-invalid');
-  const uniqueMarkers=Array.from(new Set(urlMarkers)).sort(),eligible=requested&&uniqueMarkers.length===0;
-  window.__FL_V2_SHADOW_PREFLIGHT=Object.freeze({requested,eligible,reason:!requested?'exact-flag-absent':eligible?'exact-offline-flag':'online-or-invalid-payload-frozen',urlMarkers:Object.freeze(uniqueMarkers.slice())});
-  if(!eligible)return;
-  ['ball-engine-v2.js','ball-shadow-bridge-v2.js','cpu-intelligence-v2.js','movement-engine-v2.js','formation-behaviour-v2.js','match-clock-v2.js','overhaul-shadow-orchestrator-v2.js','build173-live-shadow-adapter-v2.js','build173-shadow-host-capture-v2.js','build173-live-shadow-hook-v2.js'].forEach(src=>document.write('<script src="'+src+'"><\/script>'));
-})();
-</script>
 <script id="offlineLiveV2Preflight">
 (function(){
   const params=new URLSearchParams(location.search),engineValues=params.getAll('engine'),candidateValues=params.getAll('candidate'),seedValues=params.getAll('simulationSeed'),quickPlayValues=params.getAll('quickPlay'),shadowValues=params.getAll('v2Shadow'),autoplayValues=params.getAll('autoplay'),practiceValues=params.getAll('practice'),markers=[];
@@ -496,6 +472,58 @@
   renderer.shadowMap.enabled=true;renderer.shadowMap.type=RENDER_HIGH_QUALITY?THREE.PCFSoftShadowMap:THREE.BasicShadowMap;renderer.shadowMap.autoUpdate=RENDER_HIGH_QUALITY;
   renderer.outputEncoding=THREE.sRGBEncoding;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=.94;renderer.gammaFactor=2.2;
   renderer.physicallyCorrectLights=true;renderer.sortObjects=true;cv.style.visibility='hidden';let firstRenderedFrame=false;
+  // ===== Automatic lighter graphics for weak devices =====
+  // Render-only. It reads frame intervals and edits renderer/scene presentation
+  // (pixel ratio, crowd detail, crowd animation rate, street decoration). It
+  // never reads or writes match state, so the football is identical at every
+  // tier. Capable devices stay on tier 0 and look exactly as before; a device
+  // that cannot hold about 46 fps steps down one tier per measurement window and
+  // never steps back up, so quality cannot flap mid-match. ?renderTier=0..3 pins
+  // a tier, ?renderTier=auto is the default, ?renderQuality=high disables it.
+  const RENDER_TIERS=[
+    {id:'full',pixelScale:1,crowdDetail:0,crowdArms:true,crowdFigures:true,waveStride:1,armStride:4,streetDecor:true,actorDetailDistance:Infinity},
+    {id:'light',pixelScale:.85,crowdDetail:1,crowdArms:true,crowdFigures:true,waveStride:2,armStride:8,streetDecor:true,actorDetailDistance:300},
+    {id:'lighter',pixelScale:.7,crowdDetail:2,crowdArms:false,crowdFigures:true,waveStride:4,armStride:0,streetDecor:true,actorDetailDistance:220},
+    {id:'lightest',pixelScale:.55,crowdDetail:2,crowdArms:false,crowdFigures:false,waveStride:8,armStride:0,streetDecor:false,actorDetailDistance:160}
+  ];
+  const RENDER_GOVERNOR_SETTINGS={warmupFrames:150,windowFrames:90,settleFrames:45,slowMedianMs:21.5,stallP90Ms:33.4,stallMedianMs:18.5,maximumSimulationShare:.6,maximumFrameMs:250};
+  const renderTierRequest=query.get('renderTier'),renderTierPinned=/^[0-3]$/.test(String(renderTierRequest));
+  const renderGovernor={mode:RENDER_HIGH_QUALITY?'high':(video&&video.capture)?'capture':renderTierPinned?'pinned':'auto',tier:renderTierPinned?Number(renderTierRequest):0,appliedTier:0,frames:0,settle:RENDER_GOVERNOR_SETTINGS.warmupFrames,samples:[],simulation:[],history:[],waveStride:1,armStride:4,basePixelRatio:renderer.getPixelRatio(),baseActorDetailDistance:RENDER_QUALITY_PROFILE.actorDetailDistance,crowdGeometry:null};
+  function renderGovernorSummary(samples){const sorted=samples.slice().sort((a,b)=>a-b),pick=q=>sorted.length?sorted[Math.min(sorted.length-1,Math.max(0,Math.ceil(q*sorted.length)-1))]:0;return{median:pick(.5),p90:pick(.9)};}
+  // Pure decision: should a full window of frame intervals (and the share of each frame spent in the simulation) step the tier down?
+  function renderGovernorDecide(samples,simulationSamples,tier,settings=RENDER_GOVERNOR_SETTINGS){
+    const summary=renderGovernorSummary(samples),simulation=simulationSamples.length?simulationSamples.reduce((sum,value)=>sum+value,0)/simulationSamples.length:0,share=summary.median>0?simulation/summary.median:0;
+    const slow=summary.median>settings.slowMedianMs||summary.median>settings.stallMedianMs&&summary.p90>settings.stallP90Ms;
+    return{step:slow&&tier<RENDER_TIERS.length-1&&share<=settings.maximumSimulationShare,median:summary.median,p90:summary.p90,simulationShare:share};
+  }
+  function applyRenderTier(){
+    const spec=RENDER_TIERS[renderGovernor.tier],gov=renderGovernor;if(gov.appliedTier===gov.tier)return false;
+    renderer.setPixelRatio(gov.basePixelRatio*spec.pixelScale);
+    RENDER_QUALITY_PROFILE.actorDetailDistance=Math.min(gov.baseActorDetailDistance,spec.actorDetailDistance);
+    gov.waveStride=spec.waveStride;gov.armStride=spec.armStride;
+    if(crowdBodies&&crowdHeads&&crowdArms){
+      if(!gov.crowdGeometry)gov.crowdGeometry={full:{body:crowdBodies.geometry,head:crowdHeads.geometry,arm:crowdArms.geometry},
+        1:{body:new THREE.CylinderGeometry(3.9,4.8,24,6),head:new THREE.SphereGeometry(4.4,6,4),arm:new THREE.CylinderGeometry(1.0,1.18,15,5)},
+        2:{body:new THREE.CylinderGeometry(3.9,4.8,24,5),head:new THREE.SphereGeometry(4.4,5,3),arm:new THREE.CylinderGeometry(1.0,1.18,15,5)}};
+      const set=gov.crowdGeometry[spec.crowdDetail===0?'full':spec.crowdDetail];crowdBodies.geometry=set.body;crowdHeads.geometry=set.head;crowdArms.geometry=set.arm;
+      crowdBodies.visible=crowdHeads.visible=spec.crowdFigures;if(crowdFaces)crowdFaces.visible=spec.crowdFigures&&spec.crowdArms;if(crowdScarves)crowdScarves.visible=spec.crowdFigures;crowdArms.visible=spec.crowdFigures&&spec.crowdArms;
+    }
+    const decor=scene.getObjectByName('north-london-highbury-islington-streets');if(decor&&decor.userData.decor)decor.userData.decor.forEach(mesh=>{mesh.visible=spec.streetDecor;});
+    gov.appliedTier=gov.tier;return true;
+  }
+  function setRenderTier(tier){const value=Math.max(0,Math.min(RENDER_TIERS.length-1,Math.trunc(Number(tier))||0));renderGovernor.tier=value;renderGovernor.mode='pinned';if(scene3dBuilt&&!specialPSequence.active)applyRenderTier();return renderGovernor.tier;}
+  function renderGovernorFrame(frameMs,simulationMs){
+    const gov=renderGovernor;
+    if(scene3dBuilt&&gov.appliedTier!==gov.tier&&!specialPSequence.active)applyRenderTier();
+    if(gov.mode!=='auto'||!(frameMs>0)||frameMs>RENDER_GOVERNOR_SETTINGS.maximumFrameMs)return;
+    gov.frames++;if(gov.settle>0){gov.settle--;return;}
+    gov.samples.push(frameMs);gov.simulation.push(simulationMs);if(gov.samples.length<RENDER_GOVERNOR_SETTINGS.windowFrames)return;
+    const decision=renderGovernorDecide(gov.samples,gov.simulation,gov.tier);gov.samples=[];gov.simulation=[];
+    if(!decision.step){return;}
+    gov.history.push({frame:gov.frames,from:gov.tier,to:gov.tier+1,medianMs:+decision.median.toFixed(2),p90Ms:+decision.p90.toFixed(2),simulationShare:+decision.simulationShare.toFixed(2)});
+    gov.tier++;gov.settle=RENDER_GOVERNOR_SETTINGS.settleFrames;
+  }
+  function getRenderQuality(){const gov=renderGovernor,spec=RENDER_TIERS[gov.tier];return{mode:gov.mode,tier:gov.tier,appliedTier:gov.appliedTier,id:spec.id,pixelRatio:+renderer.getPixelRatio().toFixed(3),waveStride:gov.waveStride,armStride:gov.armStride,history:gov.history.map(row=>({...row})),settings:{...RENDER_GOVERNOR_SETTINGS}};}
   const scene=new THREE.Scene(); const sky=CONFIG.weather==='night'?0x07101d:CONFIG.weather==='overcast'||CONFIG.weather==='rain'?0x71808d:0x6f96b8;scene.background=new THREE.Color(sky);scene.fog=new THREE.Fog(CONFIG.weather==='night'?0x111b27:CONFIG.weather==='rain'?0x7c8991:0x8fb4d6,CONFIG.weather==='rain'?1800:2400,CONFIG.weather==='rain'?3600:4200);
   const camera=new THREE.PerspectiveCamera(CONFIG.camera==='tactical'?52:47,1,1,8000);
   const youS=document.getElementById('youS'), oppS=document.getElementById('oppS'), flash=document.getElementById('flash');
@@ -1283,7 +1311,7 @@
   function setWalkoutCameraBeat(beat){if(beat!==walkoutCameraBeat){walkoutCameraBeat=beat;walkoutCameraCut=true;}}
   let D0 = DIFF.ultimate;
   function aiDifficultyFor(){return D0;}
-  function focusGame(diff){ CONFIG.difficulty=normaliseDifficulty(diff);D0=DIFF[CONFIG.difficulty]||DIFF.ultimate; cv.focus(); initAudio();dartyResetMatch(); matchTemperature=clamp(18+Number(savedMatchConfig.rivalryIntensity||0)*.45,10,52);temperatureBand=temperatureLabel();activeShirtPulls.clear();pendingFreeKickReplay=null;replayBuffer=[];replayLastSampleAt=0;latestOpenPlayShotReplayAnchor=null;openPlayShotReplaySequence=0;pendingGoalKickoffTeam=null;postGoalAutoKickoffPending=false;postGoalWatchdogAt=0;kickoffWatchdogAt=0;goalBroadcastHoldUntil=0;goalBroadcastHoldTarget=null;pauseStartedAt=0;matchAbandoned=null;youScore=0;oppScore=0;youS.textContent=0;oppS.textContent=0;clockFrames=0;lastAIDiveFrame.you=lastAIDiveFrame.opp=-Infinity;lastAICpuDiveScanFrame=-Infinity;diveDecisionAwaitingApplication=null;matchOver=false;halfDone=false;halfTimeUntil=0;fullTimePresentationUntil=0;firstHalfAdded=null;secondHalfAdded=null;addedShownHalf=0;halfHardStopFrame=0;fullHardStopFrame=0;liveV2AuthorityTotals={candidateTicks:0,lastCommittedTick:0,gameplayEpochs:0};Object.assign(TEAM_BRAIN.you,makeTeamBrain());Object.assign(TEAM_BRAIN.opp,makeTeamBrain());you=[];opp=[];ykeep=okeep=null;bench=[];resetReport(); kickoff('you');started=true;dartyCommentaryReady.then(()=>{if(window.DartyCommentary)window.DartyCommentary.onEvent({type:'restart',kind:'KICK OFF',team:'you',minute:minuteNow()},dartyCommentaryContext());});if(liveV2StrictStopped){liveV2RecordStrictStop();recordLiveV2Authority('strict-playtest-stop');return;}recordLiveV2Authority('match-start');if(build173V2Shadow)build173V2Shadow.resetForNewMatch();
+  function focusGame(diff){ CONFIG.difficulty=normaliseDifficulty(diff);D0=DIFF[CONFIG.difficulty]||DIFF.ultimate; cv.focus(); initAudio();dartyResetMatch(); matchTemperature=clamp(18+Number(savedMatchConfig.rivalryIntensity||0)*.45,10,52);temperatureBand=temperatureLabel();activeShirtPulls.clear();pendingFreeKickReplay=null;replayBuffer=[];replayLastSampleAt=0;latestOpenPlayShotReplayAnchor=null;openPlayShotReplaySequence=0;pendingGoalKickoffTeam=null;postGoalAutoKickoffPending=false;postGoalWatchdogAt=0;kickoffWatchdogAt=0;goalBroadcastHoldUntil=0;goalBroadcastHoldTarget=null;pauseStartedAt=0;matchAbandoned=null;youScore=0;oppScore=0;youS.textContent=0;oppS.textContent=0;clockFrames=0;lastAIDiveFrame.you=lastAIDiveFrame.opp=-Infinity;lastAICpuDiveScanFrame=-Infinity;diveDecisionAwaitingApplication=null;matchOver=false;halfDone=false;halfTimeUntil=0;fullTimePresentationUntil=0;firstHalfAdded=null;secondHalfAdded=null;addedShownHalf=0;halfHardStopFrame=0;fullHardStopFrame=0;liveV2AuthorityTotals={candidateTicks:0,lastCommittedTick:0,gameplayEpochs:0};Object.assign(TEAM_BRAIN.you,makeTeamBrain());Object.assign(TEAM_BRAIN.opp,makeTeamBrain());you=[];opp=[];ykeep=okeep=null;bench=[];resetReport(); kickoff('you');started=true;dartyCommentaryReady.then(()=>{if(window.DartyCommentary)window.DartyCommentary.onEvent({type:'restart',kind:'KICK OFF',team:'you',minute:minuteNow()},dartyCommentaryContext());});if(liveV2StrictStopped){liveV2RecordStrictStop();recordLiveV2Authority('strict-playtest-stop');return;}recordLiveV2Authority('match-start');
     if(FREE_KICK_PRACTICE){enterFreeKickPractice();return;}
     // Both teams begin inside the tunnel, pass through the gap in the advertising boards, line up, then spread into formation.
     const colIndex=(p)=>{ const team=p.team==='you'?you:opp; let i=team.indexOf(p); return i<0?10:i; };
@@ -1864,7 +1892,6 @@
     const a={pace:clamp(base+Math.random()*12-4,62,88),accel:clamp(base+Math.random()*13-3,62,90),control:clamp(base+Math.random()*14-5,58,89),pass:clamp(base+Math.random()*15-6,56,90),shoot:clamp(base+Math.random()*14-8+(role==='fwd'?8:0),45,90),defend:clamp(base+Math.random()*14-7+(role==='def'?9:0),48,90),awareness:clamp(base+Math.random()*13-3,60,91),strength:clamp(base+Math.random()*14-5,57,89),heading:clamp(base+Math.random()*15-7+(role==='fwd'?6:role==='def'?5:0),50,91),jumping:clamp(base+Math.random()*14-5+(role==='def'?4:0),54,91),balance:clamp(base+Math.random()*13-4,57,90),agility:clamp(base+Math.random()*15-6+(role==='mid'?3:0),55,91),technique:clamp((base+Math.random()*15-6+(role==='mid'||role==='fwd'?4:0)),54,92),aggression:clamp(base+Math.random()*16-8+(role==='def'?6:0),50,92)};
     const appearance=randomAppearance();const player={id:team+'-'+idx,x,y,vx:0,vy:0,desiredVx:0,desiredVy:0,team,role,preferredFoot:'Right',fx:team==='you'?1:-1,fy:0,homeX:x,homeY:y,stun:0,tcd:0,lunge:0,slide:0,slideWon:false,phase:Math.random()*6,name:'',skill:0,skillType:null,skillProgress:0,setPieceLocked:false,fouled:false,shielding:false,aiChallenge:null,aiPullCooldown:0,stamina:100,attrs:a,appearance,temperament:clamp((a.aggression||70)+Math.random()*20-10,35,98),composure:clamp((a.awareness||70)+Math.random()*18-9,35,98),diveCooldown:0,dissentCooldown:0,confrontCooldown:0,pressureT:0,_challengeContext:null,_pullContext:null,_pullExpires:0,seasonApps:6+((Math.random()*24)|0),seasonGoals:role==='fwd'?1+((Math.random()*14)|0):role==='mid'?((Math.random()*7)|0):((Math.random()*3)|0),careerApps:18+((Math.random()*210)|0),careerGoals:role==='fwd'?4+((Math.random()*75)|0):role==='mid'?((Math.random()*28)|0):((Math.random()*9)|0),decision:Math.random()*20+8,scanT:Math.random()*14,scan:null,intent:null,preReceiveIntent:null,runIntent:null,runIntentT:Math.random()*90,action:'idle',actionT:0,receiveT:0,touchPhase:0,locomotionState:'idle',previousLocomotionState:'idle',turnAngle:0,turnCost:0,firstTouch:null,aiTarget:null,setPieceTarget:null,number:idx+2,sentOff:false,stats:{goals:0,assists:0,shots:0,onTarget:0,passes:0,completed:0,tackles:0,fouls:0,yellows:0,reds:0,touches:0,saves:0,distance:0,headersWon:0,aerialsWon:0,clearances:0,blocks:0,dives:0,shirtPulls:0,rating:6.0}};return applyConfiguredPlayer(player,configured);
   }
-  let build173V2Shadow=null,build173V2ShadowFailure=null,build173V2ShadowRoster=[];
   let you=[],opp=[],bench=[],ykeep,okeep,ball,controlled,controlledOpp=null,youScore=0,oppScore=0,celebrate=0,lastConceded='you',offsideCandidate=null,offsidePresentation=null,oppChaser=null,poss=0,kickoffHeld=false,kickoffReceiver=null,clockRunning=false,chargeAction=null,chargeAmt=0,passChargeStartedAt=0,shotChargeStartedAt=0,sTapAt=0,pendingShotTimer=null,suppressShotKeyup=false,tackleCharging=false,tackleAmt=0,lastTouch='you',restartMsg='',restartTimer=0,restartTaker=null,restartStartedAt=0,restartEarliestAt=0,restartForceAt=0,restartReadySince=0,restartReadySignalled=false,restartAnchor=null,restartBallAnchor=null,restartReceiver=null,restartCameraCut=false,cameraRecoveryUntil=0,setPieceCameraHold=null,setPieceWallMembers=[],activeFreeKickStaging=null,activeSetPieceWallShot=null,pendingFreeKickRunUp=null,pendingPenaltyRunUp=null,practiceTaker=null,practiceSpot=null,practiceBallReturnAt=0,practiceAttempt=0,resetPause=0,resetUntil=0,clockFrames=0,matchOver=false,matchAbandoned=null,paused=false,halfDone=false,halfTimeUntil=0,fullTimePresentationUntil=0,dTapTimer=null,qTapAt=0,autoSwitchEnabled=true,autoSwitchCooldown=0,lastAutoOwner=null,oppAutoSwitchCooldown=0,lastOppAutoOwner=null;
   const actionPowerFeedback={you:{action:'ready',power:0,actor:null,until:0},opp:{action:'ready',power:0,actor:null,until:0}};
   let instantGoalEnabled=query.get('instantGoal')==='1'||query.get('selfTest')==='1',instantGoalShot=null;try{instantGoalEnabled=instantGoalEnabled||localStorage.getItem('footballLegacyInstantGoal')==='on';}catch(e){}
@@ -2283,10 +2310,6 @@
     'winger-left':'LW','inside-forward-left':'LW','winger-right':'RW','inside-forward-right':'RW',
     'striker-left':'LST','striker-centre':'ST','striker-right':'RST'
   };
-  function build173ShadowWorkflow(){
-    if(FREE_KICK_PRACTICE)return'set-piece-suite';if(AUTO)return'cpu-v-cpu';if(SAME_TEAM_COOP)return'home-coop';
-    if(configuredSecondControllerSide==='away')return'local-two-player';if(QUICK_PLAY)return'quick-play';return'single-player';
-  }
   function build173ShadowFormation(team){
     const api=window.FootballLegacyFormationBehaviourV2,raw=team==='you'?(teamPlaystyle('you').baseFormation||CONFIG.formation):(teamPlaystyle('opp').baseFormation||normaliseFormation(awayInstructions.formation||awayTeamConfig.formation||'442'));
     const normalized=api&&typeof api.normalizeFormationCode==='function'?api.normalizeFormationCode(raw):'';if(!normalized)throw new Error('reviewed formation inventory rejected the Build 173 formation');return normalized;
@@ -2301,49 +2324,15 @@
     if(rows.length!==11||rows.some(row=>!row.slotId||!row.position))throw new Error('Build 173 shadow roster must resolve exactly eleven stable slots');
     return{team,teamId,formation,rows};
   }
-  function build173ShadowRebuildRoster(){build173V2ShadowRoster=[build173ShadowTeamRoster('you'),build173ShadowTeamRoster('opp')];return build173V2ShadowRoster;}
   function build173ShadowPlayer(row){return row.fieldIndex<0?(row.team==='you'?ykeep:okeep):(row.team==='you'?you:opp)[row.fieldIndex];}
-  function build173ShadowRating(value,fallback=50){const number=Number(value);return clamp(Number.isFinite(number)?number:fallback,0,100);}
-  function build173ShadowPlayerSnapshot(row){
-    const player=build173ShadowPlayer(row);if(!player)throw new Error('Build 173 shadow stable slot lost its legacy player');const attrs=player.attrs||{},facing=Math.hypot(Number(player.fx)||0,Number(player.fy)||0)>.000001?{x:Number(player.fx),y:Number(player.fy)}:{x:player.team==='you'?1:-1,y:0};
-    return{id:row.id,actualPlayerId:String(player.id),teamId:row.teamId,slotId:row.slotId,x:Number(player.x),y:Number(player.y),vx:Number(player.vx)||0,vy:Number(player.vy)||0,fx:facing.x,fy:facing.y,homeX:Number(player.homeX),homeY:Number(player.homeY),role:String(player.role||'mid'),position:row.position,attrs:{pace:build173ShadowRating(attrs.pace),accel:build173ShadowRating(attrs.accel),agility:build173ShadowRating(attrs.agility),balance:build173ShadowRating(attrs.balance),strength:build173ShadowRating(attrs.strength),stamina:build173ShadowRating(attrs.stamina,player.stamina),defend:build173ShadowRating(attrs.defend),aggression:build173ShadowRating(attrs.aggression),control:build173ShadowRating(attrs.control),pass:build173ShadowRating(attrs.pass),shoot:build173ShadowRating(attrs.shoot),awareness:build173ShadowRating(attrs.awareness)},stamina:build173ShadowRating(player.stamina,100),sentOff:player.sentOff===true,locomotionState:String(player.locomotionState||'idle')};
-  }
-  function build173ShadowOwnership(workflow){
-    const home=BUILD173_SHADOW_TEAM_IDS.you,away=BUILD173_SHADOW_TEAM_IDS.opp;
-    if(workflow==='local-two-player')return{participants:[{id:'build173-player-1',inputSlot:'player-1',teamId:home},{id:'build173-player-2',inputSlot:'player-2',teamId:away}],cpuTeamIds:[]};
-    if(workflow==='home-coop')return{participants:[{id:'build173-player-1',inputSlot:'player-1',teamId:home},{id:'build173-player-2',inputSlot:'player-2',teamId:home}],cpuTeamIds:[away]};
-    if(workflow==='cpu-v-cpu')return{participants:[],cpuTeamIds:[home,away]};
-    return{participants:[{id:'build173-player-1',inputSlot:'player-1',teamId:home}],cpuTeamIds:[away]};
-  }
-  function build173ShadowSessionOptions(){
-    const workflow=build173ShadowWorkflow(),roster=build173ShadowRebuildRoster();return{matchLengthMinutes:MATCH_LENGTH_MINUTES,ballId:'build173-ball',controlOwnership:build173ShadowOwnership(workflow),teams:roster.map((team,index)=>({id:team.teamId,candidateId:'v2-shadow-team-'+team.team,formation:team.formation,attackingDirection:index===0?1:-1,players:team.rows.map(row=>({id:row.id,actualPlayerId:String(build173ShadowPlayer(row).id),candidateId:row.candidateId,slotId:row.slotId,position:row.position}))}))};
-  }
-  function build173ShadowClockReason(){
-    if(matchPhase==='fulltime-presentation'||matchPhase==='walkin'||matchPhase==='ended'||matchOver)return'full-time';if(halfTimeUntil)return'half-time';if(paused)return'paused';if(offsidePresentation)return'offside-presentation';if(goalReplay.active||disciplineReplay.active||diveReplay.active)return'replay';if(celebrate>0)return'celebration';if(kickoffHeld)return String(restartMsg||'set-piece').toLowerCase();if(!clockRunning)return'dead-ball';return'live-play';
-  }
-  function build173ShadowSnapshot(options={}){
-    if(build173V2ShadowRoster.length!==2)build173ShadowRebuildRoster();const period=matchOver||['fulltime-presentation','walkin','ended'].includes(matchPhase)?'full-time':halfTimeUntil?'half-time':halfDone?'second-half':'first-half',replayActive=goalReplay.active||disciplineReplay.active||diveReplay.active||specialPSequence.active,deadBall=!clockRunning||paused||kickoffHeld||!!offsidePresentation||celebrate>0||replayActive||!!foulSequence||!!pendingDiveDecision||!!confrontationSequence||matchPhase!=='play';
-    const snapshot={players:build173V2ShadowRoster.flatMap(team=>team.rows.map(build173ShadowPlayerSnapshot)),ball:{id:'build173-ball',x:Number(ball.x),y:Number(ball.y),z:Number(ball.z)||0,vx:Number(ball.vx)||0,vy:Number(ball.vy)||0,zv:Number(ball.zv)||0,spin:Number(ball.spin)||0,dip:Number(ball.dip)||0,curveAccel:Number(ball.curveAccel)||0,ownerId:ball.owner?String(ball.owner.id):null,flightType:String(ball.flightType||ball.shotType||(ball.owner?'controlled':Number(ball.z)>1?'airborne':'ground'))},clock:{period,clockFrames:Math.max(0,Number(clockFrames)||0),matchPhase:String(matchPhase),paused:paused===true,setPieceActive:!!(kickoffHeld||externalSetPieceActive),kickoffHeld:kickoffHeld===true,restartKind:String(restartMsg||''),deadBall,offsidePresentation:!!offsidePresentation,celebrationActive:celebrate>0,replayActive,clockRunning:clockRunning===true,reason:build173ShadowClockReason()},restart:{kind:String(restartMsg||''),held:kickoffHeld===true,takerId:restartTaker?String(restartTaker.id):null},presentationPrelude:matchPhase==='walkout',postMatchPresentation:['fulltime-presentation','walkin','ended'].includes(matchPhase)};
-    if(options.freeKickPracticeReady===true)snapshot.freeKickPracticeReady=true;return snapshot;
-  }
   function build173ShadowFormationPhase(team){const brain=TEAM_BRAIN[team],logicalOwner=logicalLivePossessionOwner(),retained=logicalOwner&&logicalOwner.team===team||!logicalOwner&&ball.lastKicker&&ball.lastKicker.team===team&&ball.target&&ball.target.team===team;if(retained)return brain.transitionTicks>0?'positive-transition':'settled-attack';return brain.turnoverTicks>0?'negative-transition':'defend';}
-  function build173ShadowTeamStates(){return['you','opp'].map(team=>({teamId:BUILD173_SHADOW_TEAM_IDS[team],formationPhase:build173ShadowFormationPhase(team),offsideLine:Number(offsideLine(team)),cpuEvents:[]}));}
-  function build173ShadowOnlineMarkers(){
-    const preflight=window.__FL_V2_SHADOW_PREFLIGHT||{},savedOnline=savedMatchConfig&&savedMatchConfig.online,controllers=savedMatchConfig&&savedMatchConfig.controllers||{};return{onlineRole:query.get('onlineRole'),onlineRoom:query.get('onlineRoom'),onlineBuild:query.get('onlineBuild'),mode:String(savedMatchConfig.mode||query.get('mode')||'').toLowerCase(),matchType:String(savedMatchConfig.matchType||query.get('matchType')||'').toLowerCase(),configOnline:savedOnline!==null&&savedOnline!==undefined&&savedOnline!==false,controllersOnline:controllers.online===true,urlMarkers:Array.isArray(preflight.urlMarkers)?preflight.urlMarkers.slice():[]};
-  }
-  (function attachBuild173V2Shadow(){
-    const preflight=window.__FL_V2_SHADOW_PREFLIGHT;if(!preflight||preflight.eligible!==true)return;const api=window.FootballLegacyBuild173LiveShadowHookV2,workflow=build173ShadowWorkflow(),onlineMarkers=build173ShadowOnlineMarkers();
-    try{if(!api||typeof api.createAttachment!=='function')throw new Error('reviewed Build 173 live shadow hook did not load');build173V2Shadow=api.createAttachment({enabled:true,acknowledgement:api.ACKNOWLEDGEMENT,workflow,online:ONLINE_HOST||onlineMarkers.configOnline||onlineMarkers.controllersOnline,onlineMarkers,sessionId:'build173-'+workflow,host:{sessionOptions:build173ShadowSessionOptions,captureSnapshot:build173ShadowSnapshot,captureTeamStates:build173ShadowTeamStates,captureEnvironment:()=>({build:173,fast:FAST,workflow})}});}
-    catch(error){build173V2Shadow=null;build173V2ShadowFailure=Object.freeze({schema:'football-legacy-build173-live-shadow-hook-diagnostic-v2',enabled:false,lifecycle:'self-frozen',reason:String(error&&error.message||error||'shadow attachment failed').slice(0,1024),authority:'build-173-legacy',readOnly:true,liveWrites:false});}
-  })();
-
   // FL V2 is the sole playable authority. The read-only historical shadow lane
   // above remains diagnostic-only; it cannot arm gameplay. Rendering, cameras,
   // goalkeepers and presentation still use the preserved host scaffolding while
   // one atomic V2 transaction owns every eligible live gameplay tick.
   const LIVE_V2_PREFLIGHT=window.__FL_V2_LIVE_PREFLIGHT||Object.freeze({requested:false,eligible:false,urlMarkers:[]});
   const liveV2StatusEl=document.getElementById('v2AuthorityStatus'),liveV2StrictFailurePage=document.getElementById('v2StrictFailurePage'),liveV2StrictFailureReasonEl=document.getElementById('v2StrictFailureReason'),liveV2StrictFailureMetaEl=document.getElementById('v2StrictFailureMeta');
-  let liveV2Authority=null,liveV2AttachFailure=null,liveV2StrictStopped=false,liveV2TickApplied=false,liveV2TickBallApplied=false,liveV2WasEligible=false,liveV2Tick=0,liveV2LaunchSerial=0,liveV2PendingLaunch=null,liveV2SuppressLegacyReception=false,liveV2SuppressLegacyAerialDuel=false,liveV2SuppressLegacyBallBlock=false;
+  let liveV2OuterTransactionState=null,liveV2Authority=null,liveV2AttachFailure=null,liveV2StrictStopped=false,liveV2TickApplied=false,liveV2TickBallApplied=false,liveV2WasEligible=false,liveV2Tick=0,liveV2LaunchSerial=0,liveV2PendingLaunch=null,liveV2SuppressLegacyReception=false,liveV2SuppressLegacyAerialDuel=false,liveV2SuppressLegacyBallBlock=false;
   let liveV2PendingFoul=null,liveV2TickCarrier=null,liveV2DribbleLeaseOwnerId=null,liveV2PendingDribbleAction=null,liveV2DribbleActionSerial=0,liveV2ConsumedDribbleActionIds=new Set(),liveV2LastDribbleLogKey='';
   let liveV2AuthorityCounters={legacyOutfieldLocomotion:0,legacyCpu:0,legacyLooseBallIntegration:0,candidateTicks:0};
   let liveV2AuthorityTotals={candidateTicks:0,lastCommittedTick:0,gameplayEpochs:0};
@@ -2357,7 +2346,16 @@
   }
   function liveV2FailureCode(detail){const value=String(detail||'').toLowerCase();if(!value)return'none';if(value.includes('sequential')||value.includes('stale'))return'tick-sequence';if(value.includes('movement'))return'movement-projection';if(value.includes('launch'))return'launch-handoff';if(value.includes('ball'))return'ball-projection';if(value.includes('formation'))return'formation-projection';if(value.includes('cpu')||value.includes('intelligence'))return'cpu-projection';if(value.includes('transaction'))return'host-transaction';if(value.includes('non-finite'))return'non-finite-projection';return'authority-fault';}
   function liveV2AuthorityTelemetry(){const requested=!!LIVE_V2_PREFLIGHT.requested,failure=liveV2AttachFailure||null,active=requested&&LIVE_V2_PREFLIGHT.eligible===true&&!failure&&!liveV2ControlDisabled&&(!!liveV2Authority||!!liveV2ControlRuntime),progressed=liveV2AuthorityTotals.candidateTicks>0||liveV2ControlTick>0;return{requested:requested?'fl-v2':'fl-v2-required',effective:failure||liveV2StrictStopped?'fl-v2-stopped':active?(progressed?'fl-v2-live':'fl-v2-armed'):'fl-v2-stopped',authorityChangedAt:Date.now(),failureCode:failure?liveV2FailureCode(failure):null,failure,lastCommittedTick:Number(liveV2AuthorityTotals.lastCommittedTick)||0,currentEpochTick:Number(liveV2Tick)||0,gameplayEpochs:Number(liveV2AuthorityTotals.gameplayEpochs)||0,controlTick:Number(liveV2ControlTick)||0,candidateTicks:Number(liveV2AuthorityTotals.candidateTicks)||0};}
-  function recordLiveV2Authority(reason='state-change'){if(!report||!report.playtestId||!Array.isArray(report.events))return;const snapshot=liveV2AuthorityTelemetry(),previous=[...report.events].reverse().find(event=>event.type==='engine-authority');report.engineAuthority=snapshot;if(previous&&previous.effective===snapshot.effective&&previous.failureCode===snapshot.failureCode)return;logEvent('engine-authority',null,null,{reason,...snapshot});persistPlaytestLog(true);}
+  // Last 'engine-authority' event in the log, without copying the log. The scan resumes after the
+  // previously scanned tail and falls back to a full scan if the log was replaced, truncated or trimmed.
+  const liveV2AuthorityScan={events:null,length:0,tail:null,found:undefined};
+  function liveV2LastEngineAuthorityEvent(events){
+    const scan=liveV2AuthorityScan;let from=0,found;
+    if(scan.events===events&&scan.length>0&&scan.length<=events.length&&events[scan.length-1]===scan.tail){from=scan.length;found=scan.found;}
+    for(let index=from;index<events.length;index++){const event=events[index];if(event&&event.type==='engine-authority')found=event;}
+    scan.events=events;scan.length=events.length;scan.tail=events.length?events[events.length-1]:null;scan.found=found;return found;
+  }
+  function recordLiveV2Authority(reason='state-change'){if(!report||!report.playtestId||!Array.isArray(report.events))return;const snapshot=liveV2AuthorityTelemetry(),previous=liveV2LastEngineAuthorityEvent(report.events);report.engineAuthority=snapshot;if(previous&&previous.effective===snapshot.effective&&previous.failureCode===snapshot.failureCode)return;logEvent('engine-authority',null,null,{reason,...snapshot});persistPlaytestLog(true);}
   function liveV2Badge(text,stopped=false,diagnostic=''){if(!liveV2StatusEl)return;const detail=String(diagnostic||'').slice(0,320);liveV2StatusEl.textContent=text;liveV2StatusEl.classList.toggle('show',!!text);liveV2StatusEl.classList.toggle('stopped',stopped);liveV2StatusEl.dataset.authority=stopped?'fl-v2-stopped':'fl-v2';liveV2StatusEl.dataset.failureCode=liveV2FailureCode(detail);liveV2StatusEl.dataset.committedTick=String(liveV2AuthorityTotals.lastCommittedTick||0);liveV2StatusEl.dataset.currentEpochTick=String(liveV2Tick||0);liveV2StatusEl.dataset.candidateTicks=String(liveV2AuthorityTotals.candidateTicks||0);liveV2StatusEl.title=detail?`FL V2 diagnostic: ${detail}`:LIVE_V2_PREFLIGHT.workflow==='set-piece-suite'?'FL V2 live · Set-Piece Suite':LIVE_V2_PREFLIGHT.workflow==='cpu-v-cpu'?'FL V2 live · CPU vs CPU':'FL V2 live · Single Player';}
   function liveV2RecordStrictStop(){if(!report||!Array.isArray(report.events)||report.events.some(event=>event.type==='v2-authority-stop'))return;let diagnosticPhase='pre-match';try{diagnosticPhase=String(matchPhase||diagnosticPhase);}catch{}logEvent('v2-authority-stop',null,null,{reason:liveV2AttachFailure,failureCode:liveV2FailureCode(liveV2AttachFailure),liveV2Tick,liveV2ControlTick,counters:{...liveV2AuthorityCounters},matchPhase:diagnosticPhase,clockFrames:+Number(clockFrames||0).toFixed(3),continuedAsBuild173:false});persistPlaytestLog(true);}
   function liveV2Stop(reason){liveV2TickApplied=false;liveV2TickBallApplied=false;liveV2DribbleLeaseOwnerId=null;liveV2PendingDribbleAction=null;liveV2LastDribbleLogKey='';liveV2AttachFailure=String(reason&&reason.message||reason||'FL V2 authority unavailable').slice(0,320);liveV2ControlDisabled=true;liveV2StrictStopped=true;paused=true;clockRunning=false;try{if(liveV2Authority)liveV2Authority.disable(liveV2AttachFailure);}catch(_){}try{if(liveV2ControlApi&&liveV2ControlRuntime)liveV2ControlApi.disable(liveV2ControlRuntime,liveV2AttachFailure,liveV2ControlCapability);}catch(_){}document.body.classList.add('v2StrictStopped');liveV2Badge('FL V2 stopped · Match halted',true,liveV2AttachFailure);if(liveV2StrictFailureReasonEl)liveV2StrictFailureReasonEl.textContent=liveV2AttachFailure;if(liveV2StrictFailureMetaEl)liveV2StrictFailureMetaEl.textContent=`${liveV2FailureCode(liveV2AttachFailure)} · gameplay tick ${liveV2Tick} · control tick ${liveV2ControlTick}`;if(liveV2StrictFailurePage)liveV2StrictFailurePage.classList.add('open');liveV2RecordStrictStop();recordLiveV2Authority('strict-playtest-stop');return false;}
@@ -2467,15 +2465,40 @@
     for(const p of [...you,...opp])if(p.v2SlideOwned){p.v2SlideOwned=false;p.slide=0;p.action='slideRecover';p.actionT=18;clearContactPresentation(p,'slideTackle');}
     liveV2Authority.reset('build-173-dead-ball-presentation-or-special-action-handoff');liveV2Tick=0;liveV2WasEligible=false;liveV2PendingLaunch=null;liveV2DribbleLeaseOwnerId=null;liveV2PendingDribbleAction=null;liveV2LastDribbleLogKey='';
   }
-  function liveV2Clone(value){return value==null?value:JSON.parse(JSON.stringify(value));}
+  // Exact JSON round-trip clone with a fast path for plain JSON data. Anything
+  // JSON would drop, rewrite or throw on (undefined, NaN, functions, class
+  // instances, __proto__ keys, cycles) falls back to the original round-trip.
+  const LIVE_V2_CLONE_FAIL={};
+  function liveV2CloneFast(value){
+    if(value===null||typeof value==='boolean'||typeof value==='string')return value;
+    if(typeof value==='number')return Number.isFinite(value)?(value===0?0:value):LIVE_V2_CLONE_FAIL;
+    if(typeof value!=='object')return LIVE_V2_CLONE_FAIL;
+    if(Array.isArray(value)){
+      if(Object.getPrototypeOf(value)!==Array.prototype)return LIVE_V2_CLONE_FAIL;
+      const out=new Array(value.length);
+      for(let i=0;i<value.length;i++){if(!(i in value))return LIVE_V2_CLONE_FAIL;const item=liveV2CloneFast(value[i]);if(item===LIVE_V2_CLONE_FAIL)return LIVE_V2_CLONE_FAIL;out[i]=item;}
+      return out;
+    }
+    if(Object.getPrototypeOf(value)!==Object.prototype||value.toJSON!==undefined)return LIVE_V2_CLONE_FAIL;
+    const keys=Object.keys(value),out={};
+    for(let i=0;i<keys.length;i++){const key=keys[i];if(key==='__proto__')return LIVE_V2_CLONE_FAIL;const item=liveV2CloneFast(value[key]);if(item===LIVE_V2_CLONE_FAIL)return LIVE_V2_CLONE_FAIL;out[key]=item;}
+    return out;
+  }
+  function liveV2Clone(value){
+    if(value==null)return value;
+    let fast=LIVE_V2_CLONE_FAIL;
+    try{fast=liveV2CloneFast(value);}catch(_){fast=LIVE_V2_CLONE_FAIL;}
+    return fast!==LIVE_V2_CLONE_FAIL?fast:JSON.parse(JSON.stringify(value));
+  }
+  function liveV2PlayerTransactionValues(player){return{v2ContactAction:player.v2ContactAction,v2ContactTick:player.v2ContactTick,v2PhysicalFoulProof:player.v2PhysicalFoulProof,v2SlideOwned:player.v2SlideOwned,v2SlideCommandId:player.v2SlideCommandId,v2ActionCommandId:player.v2ActionCommandId,slide:player.slide,slideDuration:player.slideDuration,slideDirX:player.slideDirX,slideDirY:player.slideDirY,slideEntrySpeed:player.slideEntrySpeed,skill:player.skill,skillDuration:player.skillDuration,skillProgress:player.skillProgress,skillType:player.skillType,knockOnTargetDistance:player.knockOnTargetDistance,v2DribbleIntentKey:player.v2DribbleIntentKey,v2CpuSkillKey:player.v2CpuSkillKey,v2SkillExitTarget:player.v2SkillExitTarget,v2SkillExitUntil:player.v2SkillExitUntil,v2KnockOnKey:player.v2KnockOnKey,v2KnockChoiceUntil:player.v2KnockChoiceUntil,v2LastKnockTier:player.v2LastKnockTier,v2LastKnockOnFrame:player.v2LastKnockOnFrame,v2CpuFakeKey:player.v2CpuFakeKey,skillUtilityWindow:player.skillUtilityWindow,skillStartFx:player.skillStartFx,skillStartFy:player.skillStartFy,fakeExitX:player.fakeExitX,fakeExitY:player.fakeExitY,fakeShotStationary:player.fakeShotStationary,aiSkillCooldown:player.aiSkillCooldown,oneVOneState:player.oneVOneState,oneVOneCooldown:player.oneVOneCooldown,x:player.x,y:player.y,vx:player.vx,vy:player.vy,desiredVx:player.desiredVx,desiredVy:player.desiredVy,fx:player.fx,fy:player.fy,stamina:player.stamina,locomotionState:player.locomotionState,previousLocomotionState:player.previousLocomotionState,gait:player.gait,action:player.action,actionT:player.actionT,presentationAction:player.presentationAction,presentationActionDuration:player.presentationActionDuration,presentationActionUntil:player.presentationActionUntil,shielding:player.shielding,shieldSide:player.shieldSide,lunge:player.lunge,tcd:player.tcd,stun:player.stun,receiveT:player.receiveT,touchPhase:player.touchPhase,firstTouch:player.firstTouch,dribbleFoot:player.dribbleFoot,dribbleContact:player.dribbleContact,dribbleSeparation:player.dribbleSeparation,dribbleTargetSeparation:player.dribbleTargetSeparation,dribbleOutcome:player.dribbleOutcome,intent:player.intent,aiTarget:player.aiTarget,runIntent:player.runIntent,runIntentT:player.runIntentT,aerialCommand:player.aerialCommand,aerialCommandUntil:player.aerialCommandUntil,aerialCommandFrame:player.aerialCommandFrame,aerialTiming:player.aerialTiming,aerialLockUntil:player.aerialLockUntil,setPieceLocked:player.setPieceLocked,setPieceTarget:player.setPieceTarget,hold:player.hold,holdReleaseAt:player.holdReleaseAt};}
   function liveV2CaptureTransactionState(){
-    const actors=[...you,...opp,ykeep,okeep].filter(Boolean),playerKeys=['v2ContactAction','v2ContactTick','v2PhysicalFoulProof','v2SlideOwned','v2SlideCommandId','v2ActionCommandId','slide','slideDuration','slideDirX','slideDirY','slideEntrySpeed','skill','skillDuration','skillProgress','skillType','knockOnTargetDistance','v2DribbleIntentKey','v2CpuSkillKey','v2SkillExitTarget','v2SkillExitUntil','v2KnockOnKey','v2KnockChoiceUntil','v2LastKnockTier','v2LastKnockOnFrame','v2CpuFakeKey','skillUtilityWindow','skillStartFx','skillStartFy','fakeExitX','fakeExitY','fakeShotStationary','aiSkillCooldown','oneVOneState','oneVOneCooldown','x','y','vx','vy','desiredVx','desiredVy','fx','fy','stamina','locomotionState','previousLocomotionState','gait','action','actionT','presentationAction','presentationActionDuration','presentationActionUntil','shielding','shieldSide','lunge','tcd','stun','receiveT','touchPhase','firstTouch','dribbleFoot','dribbleContact','dribbleSeparation','dribbleTargetSeparation','dribbleOutcome','intent','aiTarget','runIntent','runIntentT','aerialCommand','aerialCommandUntil','aerialCommandFrame','aerialTiming','aerialLockUntil','setPieceLocked','setPieceTarget','hold','holdReleaseAt'];
+    const actors=[...you,...opp,ykeep,okeep].filter(Boolean);
     // Several Build 173 intent objects deliberately retain live footballer
     // references (scan.teammates[].player), so JSON-cloning them is neither
     // valid nor desirable. The V2 transaction only replaces these top-level
     // fields; retaining their exact pre-commit references gives rollback true
     // identity semantics without traversing the circular match graph.
-    return{players:actors.map(player=>({player,values:Object.fromEntries(playerKeys.map(key=>[key,player[key]])),stats:liveV2Clone(player.stats)})),ballRef:ball,ball:{...ball,aimTarget:ball.aimTarget?{...ball.aimTarget}:null},poss,controlled,controlledOpp,lastTouch,lastTouchPlayer,lastPasser,assistCandidate,offsideCandidate,lastSkillReplayCandidate,liveV2PendingLaunch,liveV2LaunchSerial,liveV2SuppressLegacyReception,liveV2SuppressLegacyAerialDuel,liveV2SuppressLegacyBallBlock,liveV2DribbleLeaseOwnerId,liveV2PendingDribbleAction:liveV2Clone(liveV2PendingDribbleAction),liveV2DribbleActionSerial,liveV2ConsumedDribbleActionIds:[...liveV2ConsumedDribbleActionIds],liveV2LastDribbleLogKey,actionSequence,lastPlaytestPersistAt,lastLoggedOwnerId,lastLoggedOwnerZone,lastLoggedOwnerZone18,lastLoggedOwnerZone20,aerialSequence,actionPowerFeedback:{...actionPowerFeedback},eventsLength:report.events.length,reportTeams:liveV2Clone(report.teams),brains:{you:{...TEAM_BRAIN.you},opp:{...TEAM_BRAIN.opp}},clockFrames,halfDone,halfTimeUntil,firstHalfAdded,secondHalfAdded,addedShownHalf,halfHardStopFrame,fullHardStopFrame,fullTimePresentationUntil,matchPhase,matchAbandoned,pendingFreeKickReplay,halfLabelText:halfLabel.textContent,restartMsg,restartTimer,restartTaker,restartStartedAt,restartEarliestAt,restartForceAt,restartReadySince,restartReadySignalled,restartAnchor:restartAnchor?{...restartAnchor}:null,restartBallAnchor:restartBallAnchor?{...restartBallAnchor}:null,restartReceiver,kickoffReceiver,kickoffHeld,clockRunning,resetPause,resetUntil,restartCameraCut,cameraRecoveryUntil,setPieceCameraHold:setPieceCameraHold?{...setPieceCameraHold}:null,liveV2SetPieceCameraPolicy:liveV2SetPieceCameraPolicy?{...liveV2SetPieceCameraPolicy}:null,activeFreeKickStaging,pendingFreeKickRunUp,pendingPenaltyRunUp,practiceSpot:practiceSpot?{...practiceSpot}:null,practiceBallReturnAt,practiceAttempt,lastKeeperParry,offsidePresentation:offsidePresentation?liveV2Clone(offsidePresentation):null,liveV2HalfTimeSeen,liveV2PeriodTransitionApplied,liveV2SuiteEvent:liveV2SuiteEvent?liveV2Clone(liveV2SuiteEvent):null,liveV2SuiteEventQueue:liveV2Clone(liveV2SuiteEventQueue),liveV2SuiteShotActive,liveV2SuiteMenuOpen,liveV2ControlApplied};
+    return{players:actors.map(player=>({player,values:liveV2PlayerTransactionValues(player),stats:liveV2Clone(player.stats)})),ballRef:ball,ball:{...ball,aimTarget:ball.aimTarget?{...ball.aimTarget}:null},poss,controlled,controlledOpp,lastTouch,lastTouchPlayer,lastPasser,assistCandidate,offsideCandidate,lastSkillReplayCandidate,liveV2PendingLaunch,liveV2LaunchSerial,liveV2SuppressLegacyReception,liveV2SuppressLegacyAerialDuel,liveV2SuppressLegacyBallBlock,liveV2DribbleLeaseOwnerId,liveV2PendingDribbleAction:liveV2Clone(liveV2PendingDribbleAction),liveV2DribbleActionSerial,liveV2ConsumedDribbleActionIds:[...liveV2ConsumedDribbleActionIds],liveV2LastDribbleLogKey,actionSequence,lastPlaytestPersistAt,lastLoggedOwnerId,lastLoggedOwnerZone,lastLoggedOwnerZone18,lastLoggedOwnerZone20,aerialSequence,actionPowerFeedback:{...actionPowerFeedback},eventsLength:report.events.length,reportTeams:liveV2Clone(report.teams),brains:{you:{...TEAM_BRAIN.you},opp:{...TEAM_BRAIN.opp}},clockFrames,halfDone,halfTimeUntil,firstHalfAdded,secondHalfAdded,addedShownHalf,halfHardStopFrame,fullHardStopFrame,fullTimePresentationUntil,matchPhase,matchAbandoned,pendingFreeKickReplay,halfLabelText:halfLabel.textContent,restartMsg,restartTimer,restartTaker,restartStartedAt,restartEarliestAt,restartForceAt,restartReadySince,restartReadySignalled,restartAnchor:restartAnchor?{...restartAnchor}:null,restartBallAnchor:restartBallAnchor?{...restartBallAnchor}:null,restartReceiver,kickoffReceiver,kickoffHeld,clockRunning,resetPause,resetUntil,restartCameraCut,cameraRecoveryUntil,setPieceCameraHold:setPieceCameraHold?{...setPieceCameraHold}:null,liveV2SetPieceCameraPolicy:liveV2SetPieceCameraPolicy?{...liveV2SetPieceCameraPolicy}:null,activeFreeKickStaging,pendingFreeKickRunUp,pendingPenaltyRunUp,practiceSpot:practiceSpot?{...practiceSpot}:null,practiceBallReturnAt,practiceAttempt,lastKeeperParry,offsidePresentation:offsidePresentation?liveV2Clone(offsidePresentation):null,liveV2HalfTimeSeen,liveV2PeriodTransitionApplied,liveV2SuiteEvent:liveV2SuiteEvent?liveV2Clone(liveV2SuiteEvent):null,liveV2SuiteEventQueue:liveV2Clone(liveV2SuiteEventQueue),liveV2SuiteShotActive,liveV2SuiteMenuOpen,liveV2ControlApplied};
   }
   function liveV2RestoreTransactionState(saved){
     liveV2SuppressLegacyBallBlock=saved.liveV2SuppressLegacyBallBlock===true;
@@ -2709,11 +2732,11 @@
   }
   function liveV2PrepareHostTick(projection){
     if(!projection||projection.snapshotTick!==liveV2Tick+1)throw new Error('stale FL V2 host projection');const counters=projection.authorityCounters||{};if(counters.candidateTicks!==1||counters.legacyOutfieldLocomotion!==0||counters.legacyCpu!==0||counters.legacyLooseBallIntegration!==0)throw new Error('FL V2 single-authority counters invalid');
-    const saved=liveV2CaptureTransactionState();let committed=false;return{commit(){if(committed)throw new Error('FL V2 host transaction already committed');liveV2ApplyMovement(projection);liveV2ApplyIntelligence(projection);liveV2ApplyBall(projection);liveV2ApplyContact(projection);liveV2ApplyDribbling(projection);liveV2ApplyCpuTouches(projection);finalizeCleanKickoffReception(ball);committed=true;},rollback(){liveV2RestoreTransactionState(saved);committed=false;}};
+    const saved=liveV2OuterTransactionState||liveV2CaptureTransactionState();liveV2OuterTransactionState=null;let committed=false;return{commit(){if(committed)throw new Error('FL V2 host transaction already committed');liveV2ApplyMovement(projection);liveV2ApplyIntelligence(projection);liveV2ApplyBall(projection);liveV2ApplyContact(projection);liveV2ApplyDribbling(projection);liveV2ApplyCpuTouches(projection);finalizeCleanKickoffReception(ball);committed=true;},rollback(){liveV2RestoreTransactionState(saved);committed=false;}};
   }
   function liveV2RunTick(){
     liveV2TickApplied=false;liveV2TickBallApplied=false;liveV2PendingFoul=null;liveV2TickCarrier=liveV2Carrier();liveV2AuthorityCounters={legacyOutfieldLocomotion:0,legacyCpu:0,legacyLooseBallIntegration:0,candidateTicks:0};if(!liveV2CanAdvance()){liveV2ObserveBoundary();return false;}
-    const saved=liveV2CaptureTransactionState(),nextTick=liveV2Tick+1,launchAtPlan=liveV2PendingLaunch,frame=liveV2Authority.planTick(liveV2Snapshot(nextTick));if(!frame){const status=liveV2Authority.status();liveV2Stop(status.failure||'candidate planning fault');return false;}
+    const saved=liveV2OuterTransactionState=liveV2CaptureTransactionState(),nextTick=liveV2Tick+1,launchAtPlan=liveV2PendingLaunch,frame=liveV2Authority.planTick(liveV2Snapshot(nextTick));if(!frame){const status=liveV2Authority.status();liveV2Stop(status.failure||'candidate planning fault');return false;}
     let prepared=null,controlPlan=null;try{prepared=liveV2Authority.prepareCommit(frame);if(!prepared)throw new Error('candidate host transaction prepare fault');controlPlan=liveV2PrepareControl(frame.hostProjection);if(!liveV2Authority.applyPrepared(prepared)){const status=liveV2Authority.status();throw new Error(status&&status.failure||'candidate host transaction apply fault');}if(!liveV2Authority.finalizePrepared(prepared)){const status=liveV2Authority.status();throw new Error(status&&status.failure||'candidate host transaction finalize fault');}liveV2CommitControl(controlPlan);}
     catch(error){liveV2RestoreTransactionState(saved);if(prepared)liveV2Authority.rollbackPrepared(prepared,error);if(controlPlan)try{liveV2ControlApi.rollback(liveV2ControlRuntime,controlPlan,'outer-host-rollback',liveV2ControlCapability);}catch(_){}liveV2Stop(error);return false;}
     liveV2Tick=nextTick;if(liveV2PendingLaunch===launchAtPlan)liveV2PendingLaunch=null;liveV2TickApplied=true;liveV2TickBallApplied=!!frame.hostProjection.ball;if(!liveV2WasEligible)liveV2AuthorityTotals.gameplayEpochs++;liveV2WasEligible=true;liveV2AuthorityCounters={...frame.hostProjection.authorityCounters};liveV2AuthorityTotals.candidateTicks+=Number(liveV2AuthorityCounters.candidateTicks)||0;liveV2AuthorityTotals.lastCommittedTick++;dartyRecordCommittedContacts(frame.hostProjection);liveV2Badge(LIVE_V2_PREFLIGHT.workflow==='cpu-v-cpu'?'V2 · CPU':'V2 · SP');recordLiveV2Authority('first-live-authority-tick');return true;
@@ -2736,12 +2759,11 @@
   function liveV2ControlPhase(){if(paused)return'paused';if(matchOver||matchPhase==='ended'||matchPhase==='walkin'||matchPhase==='fulltime-presentation')return'full-time';if(halfTimeUntil)return'half-time';if(offsidePresentation)return'offside-presentation';if(goalReplay.active||disciplineReplay.active||diveReplay.active||specialPSequence.active)return'replay';if(celebrate>0)return'celebration';if(foulSequence||pendingDiveDecision||varSequence||officialPauseUntil>performance.now()||diveDecisionAwaitingApplication&&!diveDecisionAwaitingApplication.decisionApplied||confrontationSequence)return'presentation';if(FREE_KICK_PRACTICE||externalSetPieceActive)return'set-piece';if(kickoffHeld)return restartMsg==='KICK OFF'?'kickoff':'restart-setup';return clockRunning?'live':'dead-ball';}
   function liveV2OwnsPeriodClock(){return !!(liveV2ControlRuntime&&!liveV2ControlDisabled);}
   function liveV2AddedMinutes(clock){const seconds=Number(clock&&clock.addedTime&&clock.addedTime.totalSeconds);return Number.isFinite(seconds)?Math.max(0,Math.round(seconds/60)):0;}
-  function finishBuild173ShadowBeforeFullTime(){if(build173V2Shadow)build173V2Shadow.finishBeforeFullTimePresentation();}
   function liveV2ApplyHostPeriod(clock){
     if(!clock||!Number.isFinite(clock.clocks&&clock.clocks.gameplaySeconds))throw new Error('FL V2 committed clock snapshot unavailable');clockFrames=clock.clocks.gameplaySeconds/(90*60)*MATCH_FRAMES;
     if(clock.period==='half-time'&&!liveV2HalfTimeSeen){liveV2HalfTimeSeen=true;firstHalfAdded=liveV2AddedMinutes(clock);halfDone=true;if(pendingFreeKickReplay)discardPendingFreeKickReplay('half-time');halfTimeUntil=performance.now()+(FAST?120:2600);clockRunning=false;showFlash('HALF TIME','#f7f1e7');logEvent('half-time',null,null,{authority:'match-clock-v2',addedMinutes:firstHalfAdded});liveV2PeriodTransitionApplied=true;}
     else if(clock.period==='second-half'){liveV2HalfTimeSeen=false;halfDone=true;}
-    else if(clock.period==='full-time'&&!matchOver&&!['fulltime-presentation','walkin','ended'].includes(matchPhase)){matchAbandoned=clock.abandonment||null;secondHalfAdded=liveV2AddedMinutes(clock);clearHumanAerialFinishIntent('full-time');if(pendingFreeKickReplay)discardPendingFreeKickReplay('full-time');finishBuild173ShadowBeforeFullTime();matchPhase='fulltime-presentation';fullTimePresentationUntil=performance.now()+(FAST?120:1600);clockRunning=false;showFlash(matchAbandoned?'MATCH ABANDONED':'FULL TIME','#f7f1e7');finishMatchAudio();liveV2PeriodTransitionApplied=true;}
+    else if(clock.period==='full-time'&&!matchOver&&!['fulltime-presentation','walkin','ended'].includes(matchPhase)){matchAbandoned=clock.abandonment||null;secondHalfAdded=liveV2AddedMinutes(clock);clearHumanAerialFinishIntent('full-time');if(pendingFreeKickReplay)discardPendingFreeKickReplay('full-time');matchPhase='fulltime-presentation';fullTimePresentationUntil=performance.now()+(FAST?120:1600);clockRunning=false;showFlash(matchAbandoned?'MATCH ABANDONED':'FULL TIME','#f7f1e7');finishMatchAudio();liveV2PeriodTransitionApplied=true;}
     return true;
   }
   function liveV2PeriodEndBlocked(projection){
@@ -3536,7 +3558,6 @@ function beginDedicatedSetPiece(kind,team,taker,x,y){
     practiceTaker=actor;practiceSpot={x:clamp(actor.x,M+80,W-M-80),y:clamp(actor.y,70,H-70)};practiceBallReturnAt=0;practiceAttempt++;
     if(LIVE_V2_PREFLIGHT.workflow==='set-piece-suite'){const side=practiceSpot.y<H*.42?'left':practiceSpot.y>H*.58?'right':'centre';liveV2QueueSuiteEvent('stage',{scenario:'free-kick-'+side+'-23m',takerOwner:'controller-1',goalkeeperOwner:'cpu',attackingDirection:attackDirection('you')});}
     restart('FREE KICK','you',practiceSpot.x,practiceSpot.y,false,actor);restartEarliestAt=performance.now()+(FAST?40:650);restartForceAt=performance.now()+(FAST?90:1250);restartReadySince=0;
-    if(build173V2Shadow)build173V2Shadow.armAfterSetPieceSuiteReady();
     showEvent('FREE KICK '+practiceAttempt+' · WAIT FOR THE WHISTLE',1150);logEvent('practice-free-kick-placed','you',actor,{attempt:practiceAttempt,x:+practiceSpot.x.toFixed(1),y:+practiceSpot.y.toFixed(1),wallPlayers:setPieceWallMembers.length});return true;
   }
   function queuePracticeBallReturn(reason='shot',delay=2600){
@@ -6107,7 +6128,7 @@ function beginDedicatedSetPiece(kind,team,taker,x,y){
         return{x:p.homeX,y:p.homeY};
       },inTunnel?1.45:inLine?1.72:2.35);
       updateWalkoutInteractions(now,inTunnel,inLine);
-      if(now>walkoutUntil){matchPhase='play';kickoff('you');if(build173V2Shadow)build173V2Shadow.armAfterPostWalkoutKickoff();}
+      if(now>walkoutUntil){matchPhase='play';kickoff('you');}
       return;
     }
     if(matchPhase==='walkin'){                           // teams walk off at full time
@@ -6141,7 +6162,7 @@ function beginDedicatedSetPiece(kind,team,taker,x,y){
       if(!halfDone&&clockFrames>=firstRegularEnd&&firstHalfAdded===null){firstHalfAdded=calculateAddedMinutes(1);halfHardStopFrame=firstRegularEnd+(firstHalfAdded+2)*FRAMES_PER_GAME_MINUTE;addedShownHalf=1;showEvent('ADDED TIME  +'+firstHalfAdded,1500);logEvent('added-time',null,null,{half:1,minutes:firstHalfAdded});}
       if(!halfDone&&firstHalfAdded!==null){halfLabel.textContent='1ST +'+firstHalfAdded;const target=firstRegularEnd+firstHalfAdded*FRAMES_PER_GAME_MINUTE;if(clockFrames>=target&&(canBlowForTime()||(clockFrames>=halfHardStopFrame&&canSettlePeriod()))){halfDone=true;clockFrames=firstRegularEnd;if(pendingFreeKickReplay)discardPendingFreeKickReplay('half-time');halfTimeUntil=now+(FAST?120:2600);clockRunning=false;showFlash('HALF TIME','#f7f1e7');logEvent('half-time',null,null);return;}}
       if(halfDone&&clockFrames>=secondRegularEnd&&secondHalfAdded===null){secondHalfAdded=calculateAddedMinutes(2);fullHardStopFrame=secondRegularEnd+(secondHalfAdded+2)*FRAMES_PER_GAME_MINUTE;addedShownHalf=2;showEvent('ADDED TIME  +'+secondHalfAdded,1500);logEvent('added-time',null,null,{half:2,minutes:secondHalfAdded});}
-      if(halfDone&&secondHalfAdded!==null){halfLabel.textContent='2ND +'+secondHalfAdded;const target=secondRegularEnd+secondHalfAdded*FRAMES_PER_GAME_MINUTE;if(clockFrames>=target&&(canBlowForTime()||(clockFrames>=fullHardStopFrame&&canSettlePeriod()))){clearHumanAerialFinishIntent('full-time');if(pendingFreeKickReplay)discardPendingFreeKickReplay('full-time');finishBuild173ShadowBeforeFullTime();matchPhase='fulltime-presentation';fullTimePresentationUntil=now+(FAST?120:1600);clockRunning=false;showFlash('FULL TIME','#f7f1e7');finishMatchAudio();return;}}
+      if(halfDone&&secondHalfAdded!==null){halfLabel.textContent='2ND +'+secondHalfAdded;const target=secondRegularEnd+secondHalfAdded*FRAMES_PER_GAME_MINUTE;if(clockFrames>=target&&(canBlowForTime()||(clockFrames>=fullHardStopFrame&&canSettlePeriod()))){clearHumanAerialFinishIntent('full-time');if(pendingFreeKickReplay)discardPendingFreeKickReplay('full-time');matchPhase='fulltime-presentation';fullTimePresentationUntil=now+(FAST?120:1600);clockRunning=false;showFlash('FULL TIME','#f7f1e7');finishMatchAudio();return;}}
     }
     if(pendingGoalKickoffTeam&&postGoalWatchdogAt&&now-postGoalWatchdogAt>18000){completeGoalSequenceToPlay();return;}
     if(offsidePresentation){if(!liveV2ControlApplied)updateOffsidePresentation(now);updateDeadBallDisplay();return;}
@@ -6650,7 +6671,7 @@ function beginDedicatedSetPiece(kind,team,taker,x,y){
   }
 
   // ===================== 3D SCENE =====================
-  let scene3dBuilt=false,youMeshes=[],oppMeshes=[],ykeepMesh,okeepMesh,ballMesh,ballVisualPreviousX=null,ballVisualPreviousZ=null,ballVisualRollAxis=null,refMesh,ref={x:W/2,y:H/2,action:'idle',actionT:0},crowd=null,nearCrowd=null,crowdBaseY=null,crowdPointSupport=[],crowdBodies=null,crowdHeads=null,crowdFaces=null,crowdArms=null,crowdScarves=null,crowdArmData=[],crowdFigureData=[],crowdAnimTick=0,crowdAnimDummy=new THREE.Object3D(),crowdT=0,goalNets=[],netRipple=null,cameraSideStand=null,nearTunnel=null,leftEndStand=null,rightEndStand=null,innerCityTrain=null,weatherFX=null,weatherBase=null,stadiumEnvMap=null,sunGlowSprite=null,pitchsideCameraOperators=[];
+  let scene3dBuilt=false,youMeshes=[],oppMeshes=[],ykeepMesh,okeepMesh,ballMesh,ballVisualPreviousX=null,ballVisualPreviousZ=null,ballVisualRollAxis=null,refMesh,ref={x:W/2,y:H/2,action:'idle',actionT:0},crowd=null,nearCrowd=null,crowdBaseY=null,crowdPointSupport=[],crowdBodies=null,crowdHeads=null,crowdFaces=null,crowdArms=null,crowdScarves=null,crowdArmData=[],crowdFigureData=[],crowdAnimTick=0,crowdWaveTick=0,crowdAnimDummy=new THREE.Object3D(),crowdT=0,goalNets=[],netRipple=null,cameraSideStand=null,nearTunnel=null,leftEndStand=null,rightEndStand=null,innerCityTrain=null,weatherFX=null,weatherBase=null,stadiumEnvMap=null,sunGlowSprite=null,pitchsideCameraOperators=[];
   let specialPManagers=[],specialExteriorGroup=null,specialEarthGroup=null,specialEarthPlanetRoot=null,specialEarthPileRoot=null,specialEarthClouds=null,specialExteriorField=null,specialEarthField=null,specialExteriorData=[],specialEarthData=[],specialDummy=new THREE.Object3D(),specialEarthCameraTarget=new THREE.Vector3();
   const specialPSequence={active:false,stage:0,stageStartedAt:0,startedAt:0,stageElapsed:0,scorer:null,logicActors:[],sceneSnapshot:null,cameraCut:false,cameraBeat:-1};
   let matchPhase='play', walkoutUntil=0, walkoutTunnelUntil=0, walkoutLineUntil=0, walkinUntil=0;
@@ -7750,7 +7771,7 @@ function buildGoal(gx){
     }
     function buildNorthLondonBackdrop(){
       if(STADIUM_THEME!=='north-london')return;
-      const city=new THREE.Group();city.name='north-london-highbury-islington-streets';scene.add(city);
+      const city=new THREE.Group();city.name='north-london-highbury-islington-streets';scene.add(city);const cityDecor=city.userData.decor=[];
       const brick=[0x63342c,0x774238,0x51302b,0x84523d,0x6b3c32],roofCity=new THREE.MeshStandardMaterial({color:0x24282b,roughness:.83,metalness:.08,envMapIntensity:.30}),pavement=new THREE.MeshStandardMaterial({color:0x777771,roughness:.98}),asphalt=new THREE.MeshStandardMaterial({color:0x20262a,roughness:.97}),kerb=new THREE.MeshStandardMaterial({color:0xb1ada2,roughness:.96}),decoStone=new THREE.MeshStandardMaterial({color:0xd8d0bd,roughness:.87}),decoBrick=new THREE.MeshStandardMaterial({map:brickTexture,color:0xe9d8cc,roughness:.92}),doorMat=new THREE.MeshStandardMaterial({color:0x18252a,roughness:.70}),windowGlow=new THREE.MeshStandardMaterial({color:night?0xe5c47d:0x7891a0,emissive:night?0x715b2b:0x000000,emissiveIntensity:night?.72:0,roughness:.38});
       const facadeCache={};
       const facade=(base,frame,lit=false)=>{
@@ -7765,8 +7786,8 @@ function buildGoal(gx){
       };
       const addBuilding=(x,z,w,h,d,paletteIndex=0,mansion=false)=>{
         const colour=brick[paletteIndex%brick.length],base='#'+colour.toString(16).padStart(6,'0'),map=facade(base,mansion?'#d6cbb8':'#30221f',night||paletteIndex%3===0),mat=new THREE.MeshStandardMaterial({map,color:0xffffff,roughness:.92,metalness:0,envMapIntensity:.18});
-        const building=box(w,h,d,x,h/2-1,z,mat,city);building.castShadow=false;
-        box(w+5,7,d+5,x,h+2,z,roofCity,city);if(mansion){box(w+9,8,d+9,x,h*.34,z,decoStone,city);box(w+9,7,d+9,x,h*.68,z,decoStone,city);}else box(12,24,12,x+w*.28,h+13,z,decoBrick,city);
+        const building=box(w,h,d,x,h/2-1,z,mat,city);building.castShadow=false;cityDecor.push(building);
+        cityDecor.push(box(w+5,7,d+5,x,h+2,z,roofCity,city));if(mansion){cityDecor.push(box(w+9,8,d+9,x,h*.34,z,decoStone,city),box(w+9,7,d+9,x,h*.68,z,decoStone,city));}else cityDecor.push(box(12,24,12,x+w*.28,h+13,z,decoBrick,city));
       };
       // Anchor the streetscape to the true rear faces of the four stands. The
       // previous offsets stopped short of the stand backs, so the Highbury
@@ -7782,7 +7803,7 @@ function buildGoal(gx){
       for(const side of [-1,1]){let hx=-W*.66,i=0;while(hx<W*.66){const w=166+(i%3)*18,h=touchStandTop-40+(i%4)*24,d=92+(i%2)*14;addBuilding(hx,side*(sideBack(side)+roadWidth+64),w,h,d,i,false);hx+=w+8;i++;}}
       for(const side of [-1,1]){let hz=-H*.62,i=0;while(hz<H*.62){const d=158+(i%3)*18,h=endStandTop+12+(i%4)*25,w=96+(i%2)*16;addBuilding(side*(endBack+roadWidth+66),hz,w,h,d,i+22,false);hz+=d+8;i++;}}
       const mansionPositions=[[-1,-1],[-1,1],[1,-1],[1,1]];mansionPositions.forEach(([sx,sz],i)=>addBuilding(sx*(endBack+roadWidth+92),sz*(sideBack(sz)+roadWidth+104),204,touchStandTop+130+(i%2)*42,178,i+40,true));
-      for(const side of [-1,1])for(let i=-4;i<=4;i++){const lx=i*260,postX=side<0?lx:lx+54;box(5,72,5,postX,36,side*(sideBack(side)+38),roofCity,city);const lamp=new THREE.Mesh(new THREE.SphereGeometry(7,10,7),windowGlow);lamp.position.set(postX,75,side*(sideBack(side)+38));city.add(lamp);}
+      for(const side of [-1,1])for(let i=-4;i<=4;i++){const lx=i*260,postX=side<0?lx:lx+54;cityDecor.push(box(5,72,5,postX,36,side*(sideBack(side)+38),roofCity,city));const lamp=new THREE.Mesh(new THREE.SphereGeometry(7,10,7),windowGlow);lamp.position.set(postX,75,side*(sideBack(side)+38));city.add(lamp);cityDecor.push(lamp);}
 
       // Joshua, 29 Oct: "can we have the train back?" The viaduct rides high enough that the train travels along above the far roof in the background.
       const trainPosition=trainWorldPosition(TRAIN_POSITION_SCRATCH,performance.now()),railZ=trainPosition.z,deckY=trainPosition.y-48,viaductMat=new THREE.MeshStandardMaterial({color:0x4b5052,roughness:.90,metalness:.12});
@@ -8437,9 +8458,9 @@ function buildGoal(gx){
     }
     // Partisan crowd motion reads match events but never alters match logic.
     if(cameraSideStand)cameraSideStand.visible=true;if(nearTunnel)nearTunnel.visible=matchPhase==='walkout'&&performance.now()<walkoutTunnelUntil;if(leftEndStand)leftEndStand.visible=cameraMode!=='endToEnd';if(rightEndStand)rightEndStand.visible=true;
-    if(!specialPSequence.active&&crowd&&crowdBaseY){crowdT+=0.05;const now=performance.now(),pa=crowd.geometry.attributes.position,arr=pa.array;for(let i=0;i<crowdBaseY.length;i++){const support=crowdPointSupport[i]||'you',mood=crowdMood[support],active=mood&&mood.until>now,amp=active?(mood.kind==='roar'?5.8:mood.kind==='whey'?4.1:mood.kind==='boo'?2.7:1.55)*mood.intensity:1.55,speed=active&&mood.kind==='boo'?2.7:1;arr[i*3+1]=crowdBaseY[i]+Math.sin(crowdT*speed+i*.35)*amp;}pa.needsUpdate=true;}
+    if(!specialPSequence.active&&crowd&&crowdBaseY&&(++crowdWaveTick%renderGovernor.waveStride===0)){crowdT+=0.05*renderGovernor.waveStride;const now=performance.now(),pa=crowd.geometry.attributes.position,arr=pa.array;for(let i=0;i<crowdBaseY.length;i++){const support=crowdPointSupport[i]||'you',mood=crowdMood[support],active=mood&&mood.until>now,amp=active?(mood.kind==='roar'?5.8:mood.kind==='whey'?4.1:mood.kind==='boo'?2.7:1.55)*mood.intensity:1.55,speed=active&&mood.kind==='boo'?2.7:1;arr[i*3+1]=crowdBaseY[i]+Math.sin(crowdT*speed+i*.35)*amp;}pa.needsUpdate=true;}
     if(innerCityTrain)innerCityTrain.position.x=trainWorldPosition(TRAIN_POSITION_SCRATCH,performance.now()).x;
-    if(!specialPSequence.active&&crowdArms&&crowdArmData&&(++crowdAnimTick%4===0)){const now=performance.now();for(let i=0;i<crowdArmData.length;i++){const q=crowdArmData[i],mood=crowdMood[q.support]||crowdMood.you,active=mood.until>now,pulse=Math.sin(crowdT*(active&&mood.kind==='boo'?3.1:1.15)+q.phase),lift=active?(mood.kind==='roar'?1.05:mood.kind==='whey'?1.28:mood.kind==='boo'?.08:0)*mood.intensity:0,bounce=active?(mood.kind==='boo'?Math.abs(pulse)*.34:Math.abs(pulse)*(1.0+lift)):.38*Math.abs(pulse),swing=active&&mood.kind==='boo'?pulse*.48:pulse*(.14+lift*.20);crowdAnimDummy.position.set(q.x,q.y+bounce,q.z);crowdAnimDummy.rotation.set(0,q.faceY,q.side*(q.raise+lift+swing));crowdAnimDummy.scale.setScalar(q.scale);crowdAnimDummy.updateMatrix();crowdArms.setMatrixAt(i,crowdAnimDummy.matrix);}crowdArms.instanceMatrix.needsUpdate=true;}
+    if(!specialPSequence.active&&crowdArms&&crowdArmData&&renderGovernor.armStride>0&&(++crowdAnimTick%renderGovernor.armStride===0)){const now=performance.now();for(let i=0;i<crowdArmData.length;i++){const q=crowdArmData[i],mood=crowdMood[q.support]||crowdMood.you,active=mood.until>now,pulse=Math.sin(crowdT*(active&&mood.kind==='boo'?3.1:1.15)+q.phase),lift=active?(mood.kind==='roar'?1.05:mood.kind==='whey'?1.28:mood.kind==='boo'?.08:0)*mood.intensity:0,bounce=active?(mood.kind==='boo'?Math.abs(pulse)*.34:Math.abs(pulse)*(1.0+lift)):.38*Math.abs(pulse),swing=active&&mood.kind==='boo'?pulse*.48:pulse*(.14+lift*.20);crowdAnimDummy.position.set(q.x,q.y+bounce,q.z);crowdAnimDummy.rotation.set(0,q.faceY,q.side*(q.raise+lift+swing));crowdAnimDummy.scale.setScalar(q.scale);crowdAnimDummy.updateMatrix();crowdArms.setMatrixAt(i,crowdAnimDummy.matrix);}crowdArms.instanceMatrix.needsUpdate=true;}
     if(sunGlowSprite&&CONFIG.weather!=='night')sunGlowSprite.material.opacity=.80+Math.sin(crowdT*.18)*.035;
     if(weatherFX&&weatherBase){const pa=weatherFX.geometry.attributes.position,arr=pa.array;for(let i=0;i<arr.length;i+=3){arr[i+1]-=26;arr[i]-=4.2;if(arr[i+1]<8){arr[i]=weatherBase[i];arr[i+1]=650+Math.random()*160;arr[i+2]=weatherBase[i+2];}}pa.needsUpdate=true;}
     // The dual bottom-corner cards are updated by the shared power HUD. The
@@ -8598,6 +8619,12 @@ function buildGoal(gx){
   function debugKickoffLaw(team='you'){
     if(!started)focusGame(CONFIG.difficulty);matchPhase='play';kickoff(team);const intruder=team==='you'?opp[8]:you[8];intruder.x=team==='you'?W*.43:W*.57;intruder.y=H*.5;enforceKickoffRestrictions();return{legal:kickoffPlayersLegal(),intruderX:+intruder.x.toFixed(1),halfway:W*.5,team:intruder.team,centreDistance:+Math.hypot(intruder.x-W*.5,intruder.y-H*.5).toFixed(1)};
   }
+  // Render-only diagnostic: triangles and draw calls grouped by top-level scene child.
+  function debugRenderBreakdown(rootName){
+    const triangles=object=>{let total=0,calls=0;object.traverse(node=>{if(!node.isMesh&&!node.isPoints&&!node.isLine)return;let visible=true;for(let up=node;up;up=up.parent)if(!up.visible){visible=false;break;}if(!visible)return;const geometry=node.geometry;if(!geometry)return;const base=node.isPoints?(geometry.attributes.position?geometry.attributes.position.count:0):(geometry.index?geometry.index.count:(geometry.attributes.position?geometry.attributes.position.count:0))/3,instances=node.isInstancedMesh?node.count:1;total+=base*instances;calls++;});return{triangles:Math.round(total),calls};};
+    const root=rootName?scene.getObjectByName(rootName):scene,rows=(root?root.children:[]).map((child,index)=>({index,name:child.name||child.type,kind:child.isInstancedMesh?'instanced:'+child.count+'x'+(child.geometry&&child.geometry.type):child.isMesh?'mesh:'+(child.geometry&&child.geometry.type):child.type,visible:child.visible,...triangles(child)}));
+    rows.sort((a,b)=>b.triangles-a.triangles);return{total:rows.reduce((sum,row)=>sum+row.triangles,0),calls:rows.reduce((sum,row)=>sum+row.calls,0),top:rows.slice(0,24)};
+  }
   function debugGeometryAudit(){
     const invalid=[];scene.traverse(object=>{const attribute=object.geometry&&object.geometry.attributes&&object.geometry.attributes.position;if(!attribute||!attribute.array)return;const array=attribute.array;for(let i=0;i<array.length;i++){if(!Number.isFinite(array[i])){const ancestry=[];let node=object;while(node&&ancestry.length<6){ancestry.push([node.type||'Object3D',node.userData&&node.userData.humanoidRole||'',node.name||''].filter(Boolean).join(':'));node=node.parent;}invalid.push({type:object.type||'Object3D',geometry:object.geometry.type||'',material:object.material&&object.material.type||'',name:object.name||'',parent:object.parent&&object.parent.type||'',count:attribute.count,index:i,value:String(array[i]),position:[object.position.x,object.position.y,object.position.z],ancestry});break;}}});return{valid:invalid.length===0,invalid};
   }
@@ -8682,8 +8709,8 @@ function buildGoal(gx){
   }
   function getAudioStateForOnline(){return{requestedPercent:Math.round(AUDIO_LEVEL*100),context:actx?actx.state:'not-created',unlocked:audioUnlocked,muted:audioMuted,explicitlyMuted:AUDIO_LEVEL===0||audioMuted,error:audioUnlockError||null};}
   function getV2ShadowTelemetry(){
-    if(build173V2Shadow)return build173V2Shadow.exportTelemetry();const preflight=window.__FL_V2_SHADOW_PREFLIGHT||{};
-    return Object.freeze({diagnostic:build173V2ShadowFailure||Object.freeze({schema:'football-legacy-build173-live-shadow-hook-diagnostic-v2',requestedEnabled:preflight.requested===true,enabled:false,lifecycle:preflight.eligible===true?'self-frozen':'disabled',reason:String(preflight.reason||'exact-flag-absent'),authority:'build-173-legacy',readOnly:true,liveWrites:false}),telemetry:null});
+    // The Build 173 shadow lane was retired from the live page; the API stays so callers get the same disabled diagnostic.
+    return Object.freeze({diagnostic:Object.freeze({schema:'football-legacy-build173-live-shadow-hook-diagnostic-v2',requestedEnabled:false,enabled:false,lifecycle:'disabled',reason:'exact-flag-absent',authority:'build-173-legacy',readOnly:true,liveWrites:false}),telemetry:null});
   }
   window.FLMatch={
     start:(difficulty='ultimate')=>focusGame(difficulty),
@@ -8742,6 +8769,10 @@ function buildGoal(gx){
     setAudioMuted:muted=>setAudioMuted(muted,false),
     getControllerState:()=>({supported:typeof navigator.getGamepads==='function',forceSingle:FORCE_SINGLE_CONTROLLER,requestedSecond:SECOND_CONTROLLER_REQUESTED,sameTeamCoop:SAME_TEAM_COOP,player1:{team:'you',connected:gamepadInput.connected,index:gamepadInput.index,id:gamepadInput.id,nativeMapping:gamepadInput.nativeMapping,layout:gamepadInput.layout,moveX:gamepadInput.moveX,moveY:gamepadInput.moveY,sprint:gamepadInput.sprint},player2:{team:SECOND_CONTROLLER_TEAM,connected:gamepadInput2.connected,index:gamepadInput2.index,id:gamepadInput2.id,nativeMapping:gamepadInput2.nativeMapping,layout:gamepadInput2.layout},localTwoPlayer:twoPlayerEnabled}),
     debugGeometryAudit:()=>debugGeometryAudit(),
+    debugRenderBreakdown:rootName=>debugRenderBreakdown(rootName),
+    getRenderQuality:()=>getRenderQuality(),
+    setRenderTier:tier=>setRenderTier(tier),
+    debugRenderGovernorDecision:(samples,simulation=[],tier=0)=>renderGovernorDecide(samples,simulation,tier),
     debugPitchsideCameraOperators:()=>debugPitchsideCameraOperators(),
     getRestartState:()=>({held:kickoffHeld,kind:restartMsg,taker:restartTaker&&restartTaker.id,ready:kickoffHeld?setPieceReady():true,canTake:kickoffHeld?restartCanBeTaken():true,remaining:kickoffHeld?Math.max(0,restartEarliestAt-performance.now()):0,aim:{...setPieceAim}}),
     takeRestart:(mode='pass',power=.7)=>kickoffHeld?(mode==='shoot'&&['FREE KICK','PENALTY'].includes(restartMsg)?takeUserSetPieceShot(power):takeUserRestart(mode,power)):false,
@@ -9397,7 +9428,7 @@ function buildGoal(gx){
   let selectedStarter=null,selectedBench=null;
   let build173ShadowRenderFrameSequence=0,build173ShadowSimulationStepIndex=0;
   let DT=1,_lastT=0,_acc=0;const STEP=1000/60;
-  const build173SimulationTick=build173V2Shadow?build173V2Shadow.selectTickRunner(update,()=>({renderFrameSequence:build173ShadowRenderFrameSequence,simulationStepIndex:build173ShadowSimulationStepIndex,simulationStepsPerRender:SIM_STEPS})):update;
+  const build173SimulationTick=update;
 
   if(video)video.bind({
     started:()=>started,
@@ -9421,9 +9452,10 @@ function buildGoal(gx){
   function loop(now){
     pollGamepad();
     const t=now||performance.now(),rawElapsed=_lastT?Math.max(0,t-_lastT):0;if(!_lastT)_lastT=t;_acc+=Math.min(100,rawElapsed);_lastT=t;
-    let fixedTicks=0;
-    try{while(_acc>=STEP){DT=1;for(let n=0;n<SIM_STEPS;n++){build173ShadowSimulationStepIndex=n;build173SimulationTick();}build173ShadowRenderFrameSequence++;_acc-=STEP;fixedTicks++;}recordReplayFrame(t);if(video)video.update();draw();}
+    let fixedTicks=0;const simulationStartedAt=performance.now();let simulationMs=0;
+    try{while(_acc>=STEP){DT=1;for(let n=0;n<SIM_STEPS;n++){build173ShadowSimulationStepIndex=n;build173SimulationTick();}build173ShadowRenderFrameSequence++;_acc-=STEP;fixedTicks++;}simulationMs=performance.now()-simulationStartedAt;recordReplayFrame(t);if(video)video.update();draw();}
     catch(err){liveV2Stop(err);window.DartyStartup.fail('The game stopped while building the pitch.');console.error(err);errorBox.style.display='block';errorBox.textContent='Runtime error: '+err.message+'\n'+(err.stack||'');return;}
+    if(started&&!paused&&!matchOver&&document.visibilityState==='visible')renderGovernorFrame(rawElapsed,simulationMs);
     if(report&&report.performance&&started&&!paused&&!matchOver&&document.visibilityState==='visible'&&rawElapsed>0&&rawElapsed<5000){const perf=report.performance,sample=+rawElapsed.toFixed(2),renderInfo=renderer.info&&renderer.info.render||{};perf.renderFrames++;perf.simulation.ticks+=fixedTicks*SIM_STEPS;if(fixedTicks>1)perf.simulation.catchUpFrames++;perf.simulation.maximumTicksInRender=Math.max(perf.simulation.maximumTicksInRender,fixedTicks*SIM_STEPS);if(rawElapsed>100)perf.simulation.clampedElapsedFrames++;if(sample>25)perf.longFrames.over25Ms++;if(sample>40)perf.longFrames.over40Ms++;if(sample>80)perf.longFrames.over80Ms++;perf.renderer.maximumDrawCalls=Math.max(perf.renderer.maximumDrawCalls,Number(renderInfo.calls)||0);perf.renderer.maximumTriangles=Math.max(perf.renderer.maximumTriangles,Number(renderInfo.triangles)||0);perf.renderer.canvasWidth=cv.width;perf.renderer.canvasHeight=cv.height;perf.samples.push(sample);if(perf.samples.length>3600)perf.samples.splice(0,perf.samples.length-3600);}
     requestAnimationFrame(loop);
   }

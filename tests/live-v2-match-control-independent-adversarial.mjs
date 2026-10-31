@@ -12,11 +12,11 @@ const require = createRequire(import.meta.url);
 const Control = require('../match-engine/live-v2-match-control-composition.js');
 
 const HASHES = Object.freeze({
-  'match-clock-v2.js': '77249cadbccf83169b25741e9ee7ad704ef8dc751cb12e0960f09b3c97e3dea8',
+  'match-clock-v2.js': '7de89ff88a372fd7a4d275b301e513e6c9b96c15b09931cf0fdfa0b7c4e21397',
   'restart-presentation-v2.js': '1d6e6c17c240152f2279a96f69431b9cf4ff38954b35a50a87e063704ebbf54c',
   'set-piece-suite-v2.js': 'ac49f9edce6120bfccf0c4f4f1462a0db57bdbe23a54711c7582ee38a632fcb0',
   'set-piece-coordinate-contract-v2.js': '7f5226aba8a58a4132501c3519820a536b921a6344bca99e65d2e49ec87247e0',
-  'live-v2-match-control-composition.js': '406124352ab2550d03da2b845c34c79f2f426a26028639dc390bd0bfac4fa7e6'
+  'live-v2-match-control-composition.js': '60de20abb07b8de2374d7760f8b028200be6a66b5cf11ee6e8f6b56d0e626bb3'
 });
 
 function sha(file) {

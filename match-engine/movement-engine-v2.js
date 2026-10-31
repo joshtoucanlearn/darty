@@ -126,10 +126,11 @@
   }
 
   function cloneObject(value) {
+    if (value === null || typeof value !== 'object') return value;
     if (Array.isArray(value)) return value.map(cloneObject);
-    if (!value || typeof value !== 'object') return value;
     const result = {};
-    for (const key of Object.keys(value)) result[key] = cloneObject(value[key]);
+    const keys = Object.keys(value);
+    for (let index = 0; index < keys.length; index += 1) result[keys[index]] = cloneObject(value[keys[index]]);
     return result;
   }
 
@@ -174,8 +175,18 @@
     return config;
   }
 
+  // roleFamily is a pure function of a short role label; memoise the result.
+  const ROLE_FAMILY_CACHE = new Map();
   function roleFamily(value) {
     const label = String(value || 'midfielder').toLowerCase();
+    const cached = ROLE_FAMILY_CACHE.get(label);
+    if (cached !== undefined) return cached;
+    const family = classifyRoleFamily(label);
+    if (ROLE_FAMILY_CACHE.size < 512) ROLE_FAMILY_CACHE.set(label, family);
+    return family;
+  }
+
+  function classifyRoleFamily(label) {
     if (/keeper|\bgk\b/.test(label)) return 'goalkeeper';
     if (/back|defender|\bcb\b|\blb\b|\brb\b/.test(label)) return 'defender';
     if (/winger|wide|\blw\b|\brw\b|\blm\b|\brm\b/.test(label)) return 'winger';

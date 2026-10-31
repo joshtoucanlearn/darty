@@ -199,37 +199,6 @@ test('the live host composes candidate transactions with rollback and a blocking
   assert.match(matchHtml, /controlOwnership:\{humanPlayerIds:\[\],cpuTeamIds:\['you','opp'\]\}/);
 });
 
-test('the exact-flag v2Shadow path remains offline, read-only and independently pinned', () => {
-  const shadow = manifest.allowedCandidateDelta.liveShadowAttachment;
-  const shadowPreflight = inlineScript('build173V2ShadowPreflight');
-  assert.equal(shadow.id, 'build173-exact-flag-offline-read-only-shadow');
-  assert.equal(shadow.exactFlag, 'v2Shadow=1');
-  assert.equal(shadow.defaultLoadsV2, false);
-  assert.equal(shadow.onlinePolicy, 'preflight-and-capture-frozen');
-  assert.equal(shadow.armingPolicy, 'exact-workflow-method-bound-fail-closed');
-  assert.equal(shadow.authority, 'nonplayable-build-173-reference-only');
-  assert.equal(shadow.liveProjectionAllowed, false);
-  assert.equal(shadow.workflowRemovalAllowed, true);
-  assert.match(shadowPreflight, /values=params\.getAll\('v2Shadow'\),requested=values\.length===1&&values\[0\]==='1'/);
-  assert.match(shadowPreflight, /if\(!eligible\)return/);
-  let priorIndex = -1;
-  for (const filename of shadow.orderedScripts) {
-    assert.equal(shadowPreflight.split(`'${filename}'`).length - 1, 1, `${filename} exact shadow loader entry`);
-    const index = shadowPreflight.indexOf(`'${filename}'`);
-    assert.ok(index > priorIndex, `${filename} shadow order`);
-    priorIndex = index;
-  }
-  for (const [fileKey, hashKey] of [
-    ['adapter', 'adapterSha256'], ['capture', 'captureSha256'], ['hook', 'hookSha256'],
-    ['contract', 'contractSha256'], ['regressionGate', 'regressionGateSha256']
-  ]) {
-    assert.ok(existsSync(path.join(root, shadow[fileKey])), `${fileKey} must exist`);
-    assert.equal(sha256(read(shadow[fileKey])), shadow[hashKey], `${fileKey} protected hash`);
-  }
-  assert.doesNotMatch(matchHtml, /build173V2Shadow\.(?:state|snapshot|commands?|apply|project|commit)\b/);
-  assert.match(matchHtml, /getV2ShadowTelemetry/);
-});
-
 test('legacy maintenance and the additive Madrid contract remain sealed', () => {
   const delta = manifest.allowedCandidateDelta;
   assert.equal(delta.liveMaintenance.id, 'offside-restart-presentation-camera-policy');

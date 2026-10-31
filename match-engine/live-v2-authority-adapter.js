@@ -195,11 +195,52 @@
   }
 
   function clone(value) {
+    if (value === null || typeof value !== 'object') return value;
     if (Array.isArray(value)) return value.map(clone);
-    if (!value || typeof value !== 'object') return value;
     const output = {};
-    for (const key of Object.keys(value)) output[key] = clone(value[key]);
+    const keys = Object.keys(value);
+    for (let index = 0; index < keys.length; index += 1) {
+      const key = keys[index];
+      output[key] = clone(value[key]);
+    }
     return output;
+  }
+
+  // The live host reads only hostProjection from a plan; the other public
+  // fields (formation, cpu, telemetry, contact, dribbling) are diagnostic. They
+  // are still detached, deeply frozen copies, but each is cloned on first read
+  // and then memoised, so ordinary play does not pay for fields nobody reads.
+  const LAZY_PUBLIC_FRAME_FIELDS = ['formation', 'cpu', 'movementTelemetry', 'ballTrace', 'contact', 'dribbling'];
+  function createPublicFrame(frame) {
+    const publicFrame = {
+      schema: frame.schema, version: frame.version, planSequence: frame.planSequence, snapshotTick: frame.snapshotTick,
+      hostProjection: freezeFreshTree(clone(frame.hostProjection))
+    };
+    LAZY_PUBLIC_FRAME_FIELDS.forEach(name => {
+      let value;
+      let ready = false;
+      Object.defineProperty(publicFrame, name, {
+        enumerable: true,
+        get() {
+          if (!ready) { value = freezeFreshTree(clone(frame[name])); ready = true; }
+          return value;
+        }
+      });
+    });
+    return Object.freeze(publicFrame);
+  }
+
+  // Freezes a tree that was just produced by clone(): every node is fresh,
+  // unshared and unfrozen, so no visited-set is needed.
+  function freezeFreshTree(value) {
+    if (value === null || typeof value !== 'object') return value;
+    if (Array.isArray(value)) {
+      for (let index = 0; index < value.length; index += 1) freezeFreshTree(value[index]);
+    } else {
+      const keys = Object.keys(value);
+      for (let index = 0; index < keys.length; index += 1) freezeFreshTree(value[keys[index]]);
+    }
+    return Object.freeze(value);
   }
 
   function deepFreeze(value, seen) {
@@ -3872,12 +3913,7 @@
           formation: formations, cpu: cpu.outputs, movementTelemetry: movement.telemetry, ballTrace: plannedBall.trace,
           contact, dribbling
         };
-        const publicFrame = deepFreeze({
-          schema: frame.schema, version: frame.version, planSequence: frame.planSequence, snapshotTick: frame.snapshotTick,
-          hostProjection: clone(frame.hostProjection), formation: clone(frame.formation), cpu: clone(frame.cpu),
-          movementTelemetry: clone(frame.movementTelemetry), ballTrace: clone(frame.ballTrace), contact: clone(frame.contact),
-          dribbling: clone(frame.dribbling)
-        });
+        const publicFrame = createPublicFrame(frame);
         latestPlanSequence = frame.planSequence; issuedFrames.add(publicFrame); privateFrames.set(publicFrame, frame); return publicFrame;
       } catch (error) { freeze(error); return null; }
     }

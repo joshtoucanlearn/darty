@@ -72,13 +72,37 @@
   }
 
   function clone(value) {
+    if (value === null || typeof value !== 'object') return value;
     if (Array.isArray(value)) return value.map(clone);
-    if (!value || typeof value !== 'object') return value;
     const result = {};
-    Object.keys(value).forEach(key => {
-      result[key] = clone(value[key]);
-    });
+    const keys = Object.keys(value);
+    for (let index = 0; index < keys.length; index += 1) result[keys[index]] = clone(value[keys[index]]);
     return result;
+  }
+
+  // State transitions clone the state, but history and stoppages are
+  // persistent copy-on-write arrays of immutable entries (see recordInPlace),
+  // so the clone shares them instead of re-copying every recorded entry.
+  function cloneState(state) {
+    const result = {};
+    const keys = Object.keys(state);
+    for (let index = 0; index < keys.length; index += 1) {
+      const key = keys[index];
+      result[key] = key === 'history' || key === 'stoppages' ? state[key] : clone(state[key]);
+    }
+    return result;
+  }
+
+  // Snapshots expose frozen copies of the persistent arrays, built once per
+  // distinct array identity.
+  const FROZEN_COPIES = new WeakMap();
+  function frozenCopy(array) {
+    let copy = FROZEN_COPIES.get(array);
+    if (copy === undefined) {
+      copy = deepFreeze(clone(array));
+      FROZEN_COPIES.set(array, copy);
+    }
+    return copy;
   }
 
   function deepFreeze(value) {
@@ -207,8 +231,13 @@
       details: clone(details || {})
     };
     state.nextEventSequence += 1;
-    state.history.push(event);
-    if (state.history.length > state.config.maximumTraceEntries) state.history.shift();
+    // history and stoppages are persistent copy-on-write arrays: recorded
+    // entries are never mutated, so state clones share the arrays and an
+    // append replaces the array instead of mutating a shared one.
+    const history = state.history.slice();
+    history.push(event);
+    if (history.length > state.config.maximumTraceEntries) history.shift();
+    state.history = history;
     return event;
   }
 
@@ -249,8 +278,10 @@
     const completed = clone(state.activeStoppage);
     completed.endedTick = state.tick;
     completed.endReason = String(endReason || 'phase-transition');
-    state.stoppages.push(completed);
-    if (state.stoppages.length > state.config.maximumTraceEntries) state.stoppages.shift();
+    const stoppages = state.stoppages.slice();
+    stoppages.push(completed);
+    if (stoppages.length > state.config.maximumTraceEntries) stoppages.shift();
+    state.stoppages = stoppages;
     state.activeStoppage = null;
   }
 
@@ -347,7 +378,7 @@
     if (!activePeriod(state.period)) throw new Error(`cannot enter ${phase} during ${state.period}`);
     if (state.phase === 'paused') throw new Error('resume the clock before entering another phase');
     if (!PHASES.includes(phase) || phase === 'paused') throw new Error(`unknown match phase ${phase}`);
-    const next = clone(state);
+    const next = cloneState(state);
     if (next.phase === phase) return next;
     const from = next.phase;
     closeStoppageInPlace(next, `enter-${phase}`);
@@ -365,8 +396,8 @@
     assertState(state);
     const details = meta || {};
     assertTransitionTick(state, details);
-    if (state.phase === 'paused') return clone(state);
-    const next = clone(state);
+    if (state.phase === 'paused') return cloneState(state);
+    const next = cloneState(state);
     const from = next.phase;
     next.resumePhase = from;
     next.phase = 'paused';
@@ -379,7 +410,7 @@
     const details = meta || {};
     assertTransitionTick(state, details);
     if (state.phase !== 'paused') throw new Error('clock is not paused');
-    const next = clone(state);
+    const next = cloneState(state);
     const restored = next.resumePhase;
     next.phase = restored;
     next.resumePhase = null;
@@ -395,7 +426,7 @@
     if (state.periodState.addedTime.sealedSeconds != null) throw new Error('added time is already sealed');
     const declared = nonNegativeNumber(seconds, 0, 'added time seconds');
     if (declared > state.config.maximumAddedTimeSeconds) throw new Error('added time exceeds configured maximum');
-    const next = clone(state);
+    const next = cloneState(state);
     next.periodState.addedTime.manualSeconds = declared;
     recordInPlace(next, 'added-time-declared', {
       seconds: declared,
@@ -539,7 +570,7 @@
     const periodEndBlocked = options && options.periodEndBlocked === true;
     if (options && options.periodEndBlocked != null && typeof options.periodEndBlocked !== 'boolean')
       throw new TypeError('periodEndBlocked must be a boolean');
-    const next = clone(state);
+    const next = cloneState(state);
     const dt = next.config.fixedTickSeconds;
     for (let index = 0; index < tickCount; index += 1) {
       next.tick += 1;
@@ -586,7 +617,7 @@
     if(state.phase==='paused')throw new Error('resume before abandoning the match');
     if(typeof source.teamId!=='string'||!source.teamId||!Number.isInteger(source.remainingPlayers)||
         source.remainingPlayers<0||source.remainingPlayers>=7)throw new TypeError('abandonment requires a named team with fewer than seven players');
-    const next=clone(state),period=next.period;
+    const next=cloneState(state),period=next.period;
     closeStoppageInPlace(next,'match-abandoned');
     next.abandonment={teamId:source.teamId,remainingPlayers:source.remainingPlayers,minimumPlayers:7,
       reason:'insufficient-players',period,tick:next.tick,gameplaySeconds:next.totalGameplaySeconds};
@@ -600,7 +631,7 @@
     assertTransitionTick(state, details);
     if (state.period !== 'half-time') throw new Error('second half can only start from half-time');
     if (state.phase === 'paused') throw new Error('resume before starting the second half');
-    const next = clone(state);
+    const next = cloneState(state);
     const from = next.phase;
     next.period = 'second-half';
     next.phase = details.initialPhase || 'dead-ball';
@@ -633,7 +664,7 @@
   function runTimeline(state, segments) {
     assertState(state);
     if (!Array.isArray(segments)) throw new Error('segments must be an array');
-    let current = clone(state);
+    let current = cloneState(state);
     segments.forEach((segment, index) => {
       if (!segment || typeof segment !== 'object') throw new Error(`segment ${index} must be an object`);
       if (segment.event) current = transition(current, { ...segment.event, tick: current.tick });
@@ -717,8 +748,8 @@
         period: state.period,
         phase: state.phase,
         activeStoppage: clone(state.activeStoppage),
-        completedStoppages: clone(state.stoppages),
-        history: clone(state.history)
+        completedStoppages: frozenCopy(state.stoppages),
+        history: frozenCopy(state.history)
       }
     };
   }

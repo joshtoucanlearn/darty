@@ -28,7 +28,8 @@
     "path": "match-engine/match.html",
     "kind": "fl-v2-only-playable-authority-plus-nonplayable-build-173-provenance-and-host-compatibility",
     "exactLine": "<script src=\"ball-physics.js?v=174-dormant-kernel\"></script>",
-    "occurrences": 1,
+    "occurrences": 0,
+    "retiredNote": "The dormant ball-physics kernel script tag was removed from the live page in the speed round; the kernel file and its module tests remain.",
     "effectPolicy": "FL V2 is the sole playable match authority. Only exact Single Player, CPU versus CPU and Set-Piece Suite contracts may start. Co-op, same-team co-op and Online are unavailable until their V2 authority is complete. Missing, malformed, stale and prior-engine match routes fail closed before a simulation tick. Build 173 names, hashes, tests, host helpers and rollback sentinels remain only as nonplayable engineering provenance and compatibility inside the V2 host; they are not a selectable default or fallback.",
     "baselineSha256": "8380734db3a142293c5bca2a22f6b6cc9e6a0fa658f9f0c26cce8ad1801cf678",
     "offlineOptInAuthority": {
@@ -238,7 +239,7 @@
       "path": "match-engine/match.html",
       "purpose": "V2-only playable host with exact three-workflow fail-closed preflight",
       "baselineSha256": "8380734db3a142293c5bca2a22f6b6cc9e6a0fa658f9f0c26cce8ad1801cf678",
-      "candidateSha256": "72c05f774c29b74312fb66a8b6c2eb08824d0a4c46fa71620978369ec7a9e812",
+      "candidateSha256": "352c8fce0133d59e091db488c9cfcf35ba0a94e38c0e7cb1db2004ee02ad079c",
       "pinState": "frozen",
       "expectedRelation": "authoritative-v2-only-three-workflow-host-plus-nonplayable-compatibility-scaffold"
     },
@@ -402,7 +403,7 @@
       "path": "match-engine/ball-engine-v2.js",
       "purpose": "deterministic Magnus Reynolds ball launch, flight, ground regimes and passive player-body deflections",
       "baselineAbsent": true,
-      "candidateSha256": "e2b6776a12ebcf8353e322c181e2f38dbb18c1c41d10c1cebf134418a296a819",
+      "candidateSha256": "8482a5a1bf2d520d9725827c0aa4fea0bdb333b9e357d5839641f022edfde5f7",
       "authorityScope": ["single-player-quick-play", "cpu-versus-cpu", "set-piece-suite", "v2-shadow"]
     },
     {
@@ -416,7 +417,7 @@
       "path": "match-engine/movement-engine-v2.js",
       "purpose": "deterministic FL V2 locomotion and player collision authority",
       "baselineAbsent": true,
-      "candidateSha256": "4f9affedcdc406bb9513ecad23c2a864a6246a9560d9dbb645f27e8168fb472e",
+      "candidateSha256": "5efecf48b02cc436d9ca821808b07661ae3038ffa39a14cb794c18411adf1244",
       "authorityScope": ["single-player-quick-play", "cpu-versus-cpu", "v2-shadow"]
     },
     {
@@ -458,14 +459,14 @@
       "path": "match-engine/live-v2-contact-authority-composer.js",
       "purpose": "ordered reaction-rated first-touch, passive body-deflection, aerial and protected legacy-contact arbitration",
       "baselineAbsent": true,
-      "candidateSha256": "1f395433fbd46e05f1e96dbc707e7a3d412a7d5de8eb2f5b288a6fad7d361389",
+      "candidateSha256": "a4c3dd8513b71cbae47dc4e0aca64857edb92218748db877f18f24b33ae7dec9",
       "authorityScope": ["single-player-quick-play", "cpu-versus-cpu"]
     },
     {
       "path": "match-engine/match-clock-v2.js",
       "purpose": "one simulation-time source with accelerated live-ball and real-time dead-ball presentation",
       "baselineAbsent": true,
-      "candidateSha256": "77249cadbccf83169b25741e9ee7ad704ef8dc751cb12e0960f09b3c97e3dea8",
+      "candidateSha256": "7de89ff88a372fd7a4d275b301e513e6c9b96c15b09931cf0fdfa0b7c4e21397",
       "authorityScope": ["single-player-quick-play", "cpu-versus-cpu", "set-piece-suite", "v2-shadow"]
     },
     {
@@ -493,14 +494,14 @@
       "path": "match-engine/live-v2-match-control-composition.js",
       "purpose": "exact-once clock, restart and suite transaction composer",
       "baselineAbsent": true,
-      "candidateSha256": "406124352ab2550d03da2b845c34c79f2f426a26028639dc390bd0bfac4fa7e6",
+      "candidateSha256": "60de20abb07b8de2374d7760f8b028200be6a66b5cf11ee6e8f6b56d0e626bb3",
       "authorityScope": ["single-player-quick-play", "cpu-versus-cpu", "set-piece-suite"]
     },
     {
       "path": "match-engine/live-v2-authority-adapter.js",
       "purpose": "outer offline normal-match gameplay transaction with rollback and host-level strict-stop enforcement",
       "baselineAbsent": true,
-      "candidateSha256": "e4c820aa81a32565db2933a8d1b35714867000c5f365c191e7f02123eaacdf5e",
+      "candidateSha256": "9e0ffb76f88d61d7846d6f8cb554bc3e85ff150024d095fd6f072a8450b1c63f",
       "pinState": "frozen",
       "authorityScope": ["single-player-quick-play", "cpu-versus-cpu"]
     },

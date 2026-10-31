@@ -121,19 +121,22 @@
     return value;
   }
 
+  // `seen` is the current root-to-node path (a stack), so a cycle is a value that
+  // is already on the path; shared but acyclic references are cloned independently.
   function clone(value, seen) {
     if (value === null || typeof value === 'string' || typeof value === 'boolean') return value;
     if (typeof value === 'number') return finite(value, 'JSON value');
     if (!value || typeof value !== 'object') throw new TypeError('contact plan data must be JSON-safe');
-    const active = seen || new WeakSet();
-    if (active.has(value)) throw new TypeError('contact plan data must not contain cycles');
-    active.add(value);
+    const active = seen || [];
+    if (active.indexOf(value) !== -1) throw new TypeError('contact plan data must not contain cycles');
+    active.push(value);
     const output = Array.isArray(value) ? [] : {};
     if (!Array.isArray(value) && Object.getPrototypeOf(value) !== Object.prototype) {
-      active.delete(value); throw new TypeError('contact plan data must use plain objects');
+      active.pop(); throw new TypeError('contact plan data must use plain objects');
     }
-    for (const key of Object.keys(value)) output[key] = clone(value[key], active);
-    active.delete(value);
+    const keys = Object.keys(value);
+    for (let index = 0; index < keys.length; index += 1) output[keys[index]] = clone(value[keys[index]], active);
+    active.pop();
     return output;
   }
 

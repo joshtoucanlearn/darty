@@ -90,8 +90,7 @@ test('plain browser scripts expose the adapter only after the pinned V2 dependen
 
 test('EXACT-FLAG GATE: the live shadow adapter has no unconditional load or direct match-page API call', () => {
   assert.doesNotMatch(matchHtml, /<script\s+src=["']build173-live-shadow-adapter-v2\.js/i);
-  assert.equal((matchHtml.match(/build173-live-shadow-adapter-v2\.js/g)||[]).length,1);
-  assert.match(matchHtml, /id="build173V2ShadowPreflight"/);
+  assert.equal((matchHtml.match(/build173-live-shadow-adapter-v2\.js/g)||[]).length,0);
   assert.doesNotMatch(matchHtml, /FootballLegacyBuild173LiveShadowAdapterV2/);
   assert.match(source, /Build 173 remains the sole authority/i);
 });

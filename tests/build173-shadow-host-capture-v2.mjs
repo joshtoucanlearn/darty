@@ -81,8 +81,7 @@ test('API and exact six-workflow scope are pinned to the Build 173 plain-host ca
 
 test('EXACT-FLAG/READ-ONLY GATE: host capture has no unconditional load, direct API call or application surface', () => {
   assert.doesNotMatch(matchHtml, /<script\s+src=["']build173-shadow-host-capture-v2\.js/i);
-  assert.equal((matchHtml.match(/build173-shadow-host-capture-v2\.js/g)||[]).length,1);
-  assert.match(matchHtml, /id="build173V2ShadowPreflight"/);
+  assert.equal((matchHtml.match(/build173-shadow-host-capture-v2\.js/g)||[]).length,0);
   assert.doesNotMatch(matchHtml, /FootballLegacyBuild173ShadowHostCaptureV2/);
   assert.match(source, /never calls the match[\s*]+update loop/i);
   assert.doesNotMatch(source, /function\s+(?:apply|project|commit|mutate)(?:ToLive|Candidate)?\s*\(/i);

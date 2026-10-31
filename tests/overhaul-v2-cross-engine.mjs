@@ -83,9 +83,7 @@ test('both candidates coexist and browser loading stays behind exact offline pre
   assert.notEqual(browser.window.FootballLegacyBallEngineV2, browser.window.FootballLegacyCPUIntelligenceV2);
 
   assert.doesNotMatch(matchHtml, /<script\s+src=["'](?:ball-engine-v2|cpu-intelligence-v2)\.js/i);
-  const shadowPreflight = matchHtml.match(/<script id="build173V2ShadowPreflight">([\s\S]*?)<\/script>/)?.[1] || '';
   const livePreflight = matchHtml.match(/<script id="offlineLiveV2Preflight">([\s\S]*?)<\/script>/)?.[1] || '';
-  assert.match(shadowPreflight, /if\(!eligible\)return;[\s\S]*'ball-engine-v2\.js'[\s\S]*'cpu-intelligence-v2\.js'/);
   assert.match(livePreflight, /if\(!eligible\)return;[\s\S]*'ball-engine-v2\.js'[\s\S]*'cpu-intelligence-v2\.js'/);
   assert.match(matchHtml,
     /window\.FootballLegacyBallEngineV2&&window\.FootballLegacyBallEngineV2\.ENGINE_NAME/,

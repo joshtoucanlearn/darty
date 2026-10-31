@@ -134,8 +134,8 @@ function protectedBuild173Payload(seed = 173173, matchType = 'co-op') {
 }
 
 test('frozen promotion bytes and lower-engine contracts are exact', () => {
-  assert.equal(hash(adapterSource), 'e4c820aa81a32565db2933a8d1b35714867000c5f365c191e7f02123eaacdf5e');
-  assert.equal(hash(matchSource), '72c05f774c29b74312fb66a8b6c2eb08824d0a4c46fa71620978369ec7a9e812');
+  assert.equal(hash(adapterSource), '9e0ffb76f88d61d7846d6f8cb554bc3e85ff150024d095fd6f072a8450b1c63f');
+  assert.equal(hash(matchSource), '352c8fce0133d59e091db488c9cfcf35ba0a94e38c0e7cb1db2004ee02ad079c');
   assert.equal(Adapter.VERSION, '1.0.0-offline-live-authority-playtest');
   assert.deepEqual([...Adapter.SUPPORTED_WORKFLOWS], ['single-player', 'cpu-v-cpu']);
   assert.equal(Ball.VERSION, Adapter.DEPENDENCY_CONTRACTS.ball.version);
@@ -216,7 +216,11 @@ test('ordinary pass rollback capture preserves circular Build 173 runtime refere
   const captureEnd = matchSource.indexOf('function liveV2ApplyMovement', captureStart);
   assert.ok(captureStart > 0 && captureEnd > captureStart);
   const capture = matchSource.slice(captureStart, captureEnd);
-  assert.match(capture, /values:Object\.fromEntries\(playerKeys\.map\(key=>\[key,player\[key\]\]\)\)/);
+  assert.match(capture, /values:liveV2PlayerTransactionValues\(player\)/);
+  const valuesStart = matchSource.indexOf('function liveV2PlayerTransactionValues');
+  const valuesReader = matchSource.slice(valuesStart, matchSource.indexOf('\n', valuesStart));
+  assert.match(valuesReader, /intent:player\.intent,aiTarget:player\.aiTarget,runIntent:player\.runIntent/, 'intent objects that retain live footballer references are captured by reference');
+  assert.doesNotMatch(valuesReader, /liveV2Clone|JSON\./, 'player fields are read by reference, never traversed');
   assert.match(capture, /actionPowerFeedback:\{\.\.\.actionPowerFeedback\}/);
   assert.match(capture, /brains:\{you:\{\.\.\.TEAM_BRAIN\.you\},opp:\{\.\.\.TEAM_BRAIN\.opp\}\}/);
   assert.doesNotMatch(capture, /liveV2Clone\(player\[key\]\)/);

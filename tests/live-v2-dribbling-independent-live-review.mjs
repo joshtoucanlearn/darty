@@ -175,10 +175,12 @@ test('terminal or expired lease output retires the host pending action instead o
 });
 
 test('host rollback covers dribble presentation fields and receiver-control switching', () => {
-  const capture = functionSource('liveV2CaptureTransactionState');
+  // The per-player field list moved out of the capture function into the explicit
+  // liveV2PlayerTransactionValues reader; the same fields must still be captured.
+  const capture = functionSource('liveV2CaptureTransactionState') + functionSource('liveV2PlayerTransactionValues');
   const restore = functionSource('liveV2RestoreTransactionState');
   for (const field of ['dribbleFoot', 'dribbleContact', 'dribbleSeparation', 'dribbleTargetSeparation', 'dribbleOutcome']) {
-    assert.match(capture, new RegExp(`['\"]${field}['\"]`), `${field} must be restored after a discarded host transaction`);
+    assert.match(capture, new RegExp(`(?:['\"]${field}['\"]|\\b${field}:player\\.${field}\\b)`), `${field} must be restored after a discarded host transaction`);
   }
   assert.match(capture, /(?:^|[,\{])controlled(?:[,\}])/, 'human receiver selection must be captured');
   assert.match(capture, /(?:^|[,\{])controlledOpp(?:[,\}])/, 'second-controller selection must be captured for protected routes');

@@ -683,8 +683,12 @@ test('public shadow API remains observation-only while live authority uses a sep
     'cpu-intelligence-v2.js', 'movement-engine-v2.js', 'formation-behaviour-v2.js',
     'match-clock-v2.js'
   ];
+  const retiredShadowOnly = ['overhaul-shadow-orchestrator-v2.js', 'ball-shadow-bridge-v2.js'];
   for (const filename of exactShadowStack) {
-    assert.ok(matchHtml.split(`'${filename}'`).length - 1 >= 1, filename);
+    const mentions = matchHtml.split(`'${filename}'`).length - 1;
+    // The two shadow-only modules are no longer named by the page at all; the rest still load through the live preflight.
+    if (retiredShadowOnly.includes(filename)) assert.equal(mentions, 0, filename);
+    else assert.ok(mentions >= 1, filename);
     assert.doesNotMatch(matchHtml, new RegExp(`<script\\s+src=["'][^"']*${filename.replace(/\./g, '\\.')}`, 'i'));
   }
   assert.match(matchHtml, /matchType=String\(decoded&&decoded\.matchType\|\|''\),liveWorkflow=matchType==='single-player'\?'single-player':matchType==='spectator'\?'cpu-v-cpu':matchType==='free-kick-suite'\?'set-piece-suite':null/);
@@ -693,7 +697,6 @@ test('public shadow API remains observation-only while live authority uses a sep
   assert.match(matchHtml, /if\(!eligible\)return;[\s\S]*'aerial-contact-v2\.js'/);
   assert.match(matchHtml, /174-fl-v2-final-candidate-5/);
   assert.doesNotMatch(matchHtml, /<script[^>]+src=["']aerial-contact-v2\.js/);
-  assert.match(matchHtml, /requested=values\.length===1&&values\[0\]==='1'/);
   assert.doesNotMatch(matchHtml, /FootballLegacyOverhaulShadowOrchestratorV2/);
   assert.doesNotMatch(matchHtml, /build173V2Shadow\.(?:state|snapshot|commands?|apply|project|commit)\b/);
 });

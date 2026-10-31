@@ -181,7 +181,85 @@
     return output;
   }
 
+  // Single-pass equivalent of JSON.stringify(stableValue(safeClone(value))) for
+  // plain JSON data inside the safe limits. It returns null for anything the
+  // validating path could reject (non-finite numbers, undefined, non-plain
+  // objects, reserved keys, limit overruns, cycles), and the caller then runs
+  // the original validating path so errors are unchanged.
+  function stableJsonFast(value) {
+    const tracker = { nodes: 0, unfrozen: 0, deepest: 0 };
+    const text = stableFast(value, 0, tracker);
+    return text === undefined ? null : text;
+  }
+
+  // Deeply frozen subtrees are immutable, so their stable text is computed once
+  // per object. A hit replays the node and depth accounting of the original
+  // traversal so the safe limits behave exactly as they would uncached.
+  const STABLE_TEXT_CACHE = new WeakMap();
+
+  function stableFast(value, level, tracker) {
+    if (value === null) return 'null';
+    const kind = typeof value;
+    if (kind === 'boolean') return value ? 'true' : 'false';
+    if (kind === 'number') return Number.isFinite(value) ? String(value) : undefined;
+    if (kind === 'string') return value.length > SAFE_LIMITS.string ? undefined : JSON.stringify(value);
+    if (kind !== 'object' || level > SAFE_LIMITS.depth) return undefined;
+    const frozen = Object.isFrozen(value);
+    if (frozen) {
+      const hit = STABLE_TEXT_CACHE.get(value);
+      if (hit !== undefined) {
+        if (level + hit.height > SAFE_LIMITS.depth) return undefined;
+        tracker.nodes += hit.nodes;
+        if (tracker.nodes > SAFE_LIMITS.nodes) return undefined;
+        if (level + hit.height > tracker.deepest) tracker.deepest = level + hit.height;
+        return hit.text;
+      }
+    }
+    const startNodes = tracker.nodes;
+    const startUnfrozen = tracker.unfrozen;
+    const outerDeepest = tracker.deepest;
+    tracker.deepest = level;
+    tracker.nodes += 1;
+    if (tracker.nodes > SAFE_LIMITS.nodes) return undefined;
+    if (!frozen) tracker.unfrozen += 1;
+    let text;
+    if (Array.isArray(value)) {
+      const length = value.length;
+      if (Object.getPrototypeOf(value) !== Array.prototype || length > SAFE_LIMITS.array) return undefined;
+      text = '[';
+      for (let index = 0; index < length; index += 1) {
+        const item = stableFast(value[index], level + 1, tracker);
+        if (item === undefined) return undefined;
+        text += index === 0 ? item : ',' + item;
+      }
+      text += ']';
+    } else {
+      if (Object.getPrototypeOf(value) !== Object.prototype) return undefined;
+      const keys = Object.keys(value);
+      if (keys.length > SAFE_LIMITS.keys) return undefined;
+      keys.sort();
+      text = '{';
+      for (let index = 0; index < keys.length; index += 1) {
+        const key = keys[index];
+        const first = key.charCodeAt(0);
+        if (first >= 48 && first <= 57) return undefined; // array-index keys reorder under JSON.stringify
+        if (key === '__proto__' || key === 'prototype' || key === 'constructor') return undefined;
+        const item = stableFast(value[key], level + 1, tracker);
+        if (item === undefined) return undefined;
+        text += (index === 0 ? '' : ',') + JSON.stringify(key) + ':' + item;
+      }
+      text += '}';
+    }
+    if (frozen && tracker.unfrozen === startUnfrozen) {
+      STABLE_TEXT_CACHE.set(value, { text, nodes: tracker.nodes - startNodes, height: tracker.deepest - level });
+    }
+    if (outerDeepest > tracker.deepest) tracker.deepest = outerDeepest;
+    return text;
+  }
+
   function stableJson(value) {
+    const fast = stableJsonFast(value);
+    if (fast !== null) return fast;
     return JSON.stringify(stableValue(safeClone(value, 'stableJson')));
   }
 

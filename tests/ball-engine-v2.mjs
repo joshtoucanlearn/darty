@@ -46,7 +46,6 @@ test('the MR engine exposes its browser/CommonJS API and joins live authority on
   vm.runInNewContext(source, browser);
   assert.equal(browser.window.FootballLegacyBallEngineV2.VERSION, Ball.VERSION);
   assert.doesNotMatch(matchHtml, /<script\s+src=["']ball-engine-v2\.js/i);
-  assert.match(matchHtml, /id="build173V2ShadowPreflight"/);
   assert.match(matchHtml, /id="offlineLiveV2Preflight"/);
   assert.match(matchHtml, /if\(!eligible\)return;[\s\S]*pieces=\['ball-engine-v2\.js'/,
     'the live module must remain behind the exact offline V2 capability gate');

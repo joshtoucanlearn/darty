@@ -1,5 +1,12 @@
 # Football Legacy — Changelog
 
+## DARTY speed tidy — 31 October 2026
+
+- Cheaper live ticks with no change to the football: the per-tick host rollback capture, JSON clones, match-control digests, match-clock history and diagnostic frame copies no longer re-copy whole states, and Ball V2 skips goal-frame sweeps when the ball is nowhere near the posts or bar. Four full six-minute matches ran in about 3.5 ms per live tick against 5.6 ms before, with 80% fewer ticks over 25 ms (headless CPU wall time, not browser frame rate).
+- Proof: all 42 seeded matches (the 0de2c46 qualification gate) give identical scores, scorers, stats, challenges, races, actions, attack and delivery counts, ticks and full time, and every paired replay is exact.
+- The Build 173 shadow loader and the dormant ball-physics script are gone from the live page. three.js loads once; the CDN copy remains a fallback only if the local file fails.
+- Automatic lighter graphics for weak devices: after the first seconds of a match the page measures frame time and, only if it cannot hold about 46 fps, steps down pixel ratio, crowd detail and animation and street decoration (the lit train stays). Capable devices stay on the full look and never change tier. `?renderTier=0..3` pins a tier.
+
 ## DARTY lesson-ready foul, slide and keeper pass — 26 October 2026
 
 - Restored referee decisions for off-ball tackles, slides, forceful shoulder charges and pushes from behind, while leaving negligible incidental contact legal.

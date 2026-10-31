@@ -153,7 +153,6 @@ test('plain browser script exposes window.FootballLegacyCPUIntelligenceV2', () =
 
 test('EXACT-FLAG AUTHORITY GATE: CPU intelligence has no unconditional load or live call', () => {
   assert.doesNotMatch(matchHtml, /<script\s+src=["']cpu-intelligence-v2\.js/i);
-  assert.match(matchHtml, /id="build173V2ShadowPreflight"/);
   assert.doesNotMatch(matchHtml, /FootballLegacyCPUIntelligenceV2/);
   assert.match(source, /intentionally dormant/i);
 });

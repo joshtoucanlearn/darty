@@ -44,12 +44,7 @@ const state = (overrides = {}) => Ball.createBallState({
 
 test('MR aerodynamics loads only behind exact V2 preflight and preserves untuned profile defaults', () => {
   assert.doesNotMatch(matchHtml, /<script\s+src=["']ball-engine-v2\.js/i);
-  assert.match(matchHtml, /id="build173V2ShadowPreflight"/);
-  const shadowStart = matchHtml.indexOf('<script id="build173V2ShadowPreflight">');
-  const shadowEnd = matchHtml.indexOf('</script>', shadowStart);
-  const shadowPreflight = matchHtml.slice(shadowStart, shadowEnd);
-  assert.ok(shadowPreflight.indexOf('if(!eligible)return;') < shadowPreflight.indexOf("['ball-engine-v2.js'"),
-    'shadow Ball V2 bytes must load only after exact shadow eligibility');
+  assert.doesNotMatch(matchHtml, /build173V2ShadowPreflight/);
   const liveStart = matchHtml.indexOf('<script id="offlineLiveV2Preflight">');
   const liveEnd = matchHtml.indexOf('</script>', liveStart);
   const livePreflight = matchHtml.slice(liveStart, liveEnd);

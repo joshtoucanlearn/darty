@@ -265,9 +265,7 @@ test('plain browser scripts expose the orchestrator only after all five dependen
 
 test('EXACT-FLAG AUTHORITY GATE: match.html conditionally loads but never directly calls the unified orchestrator', () => {
   assert.doesNotMatch(matchHtml, /<script\s+src=["'][^"']*overhaul-shadow-orchestrator-v2\.js/i);
-  assert.match(matchHtml, /getAll\('v2Shadow'\)/);
-  assert.match(matchHtml, /requested=values\.length===1&&values\[0\]==='1'/);
-  assert.equal((matchHtml.match(/'overhaul-shadow-orchestrator-v2\.js'/g) || []).length, 1);
+  assert.equal((matchHtml.match(/overhaul-shadow-orchestrator-v2\.js/g) || []).length, 0);
   assert.doesNotMatch(matchHtml, /FootballLegacyOverhaulShadowOrchestratorV2/);
   assert.match(source, /Intentionally dormant and read-only/i);
   assert.match(source, /Build 173 remains the sole live[\s*]+authority/i);

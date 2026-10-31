@@ -179,89 +179,6 @@ function arm(harness, workflow = 'quick-play') {
   assert.equal(harness.attachment.diagnostic().lifecycle, 'armed');
 }
 
-test('FROZEN BYTE GATE: reviewed hook, match integration and approved target bytes are exact', () => {
-  assert.equal(sha256(fs.readFileSync(hookPath)), '61c4ab42563f3b4b8585371b37e8e2527073bdab4eb5598cb75b677fd1c12fca');
-  assert.equal(sha256(fs.readFileSync(matchPath)), '72c05f774c29b74312fb66a8b6c2eb08824d0a4c46fa71620978369ec7a9e812');
-  assert.equal(sha256(fs.readFileSync(adapterPath)), 'b7cbd0f9366c97b966962c2a2c26c16d592cdb46358c0a7eb9e25cd3e60600e5');
-  assert.equal(sha256(fs.readFileSync(capturePath)), 'c6556fafdb0caf1877e4b6b78f27bc4784d2dff5cfcee21b501849db96ea16c5');
-});
-
-test('DEFAULT-ZERO-LOAD GATE: only one exact offline flag writes the ten reviewed scripts in order', () => {
-  const defaultLive = runLivePreflight();
-  assert.equal(defaultLive.diagnostic.requested, false);
-  assert.equal(defaultLive.diagnostic.eligible, false);
-  assert.deepEqual(defaultLive.writes, []);
-  for (const search of [
-    '', '?v2Shadow=', '?v2Shadow=0', '?v2Shadow=true', '?v2Shadow=01',
-    '?v2Shadow=1&v2Shadow=1', '?V2Shadow=1'
-  ]) {
-    const result = runPreflight(search);
-    assert.equal(result.diagnostic.eligible, false, search);
-    assert.deepEqual(result.writes, [], search);
-  }
-  const exact = runPreflight('?v2Shadow=1');
-  assert.equal(exact.diagnostic.eligible, true);
-  assert.deepEqual(exact.writes.map(value => value.match(/src="([^"]+)/)[1]), [
-    'ball-engine-v2.js', 'ball-shadow-bridge-v2.js', 'cpu-intelligence-v2.js',
-    'movement-engine-v2.js', 'formation-behaviour-v2.js', 'match-clock-v2.js',
-    'overhaul-shadow-orchestrator-v2.js', 'build173-live-shadow-adapter-v2.js',
-    'build173-shadow-host-capture-v2.js', 'build173-live-shadow-hook-v2.js'
-  ]);
-  const liveEngineConflict = runPreflight('?v2Shadow=1&engine=fl-v2');
-  assert.equal(liveEngineConflict.diagnostic.eligible, false);
-  assert.ok(liveEngineConflict.diagnostic.urlMarkers.includes('live-engine-marker'));
-  assert.deepEqual(liveEngineConflict.writes, []);
-  const shadowConflict = runLivePreflight('?v2Shadow=1&engine=fl-v2');
-  assert.equal(shadowConflict.diagnostic.eligible, false);
-  assert.ok(shadowConflict.diagnostic.urlMarkers.includes('shadow-marker-conflict'));
-  assert.deepEqual(shadowConflict.writes, []);
-  const livePreflight = matchHtml.match(/<script id="offlineLiveV2Preflight">([\s\S]*?)<\/script>/);
-  assert.ok(livePreflight, 'the separate conditional offline-live preflight must coexist');
-  assert.match(livePreflight[1], /if\(shadowValues\.length\)markers\.push\('shadow-marker-conflict'\)/,
-    'the offline-live route must reject every shadow marker before loading');
-  assert.doesNotMatch(matchHtml, /<script\s+src=["'][^"']*(?:ball-engine-v2|ball-shadow-bridge-v2|cpu-intelligence-v2|movement-engine-v2|formation-behaviour-v2|match-clock-v2|overhaul-shadow-orchestrator-v2|build173-live-shadow-adapter-v2|build173-shadow-host-capture-v2|build173-live-shadow-hook-v2)\.js/i);
-});
-
-test('MALFORMED-DECODE GATE: invalid or non-record flMatch payloads freeze before any script write', () => {
-  for (const hash of [
-    '#flMatch=%%%',
-    `#flMatch=${encoded('{bad json')}`,
-    `#flMatch=${encoded(null)}`,
-    `#flMatch=${encoded([])}`,
-    `#flMatch=${encoded('offline')}`
-  ]) {
-    const result = runPreflight('?v2Shadow=1', hash);
-    assert.equal(result.diagnostic.eligible, false, hash);
-    assert.ok(result.diagnostic.urlMarkers.includes('decoded-payload-invalid'), hash);
-    assert.deepEqual(result.writes, [], hash);
-  }
-});
-
-test('ONLINE PREFLIGHT GATE: every declared query and decoded online route freezes before loading', () => {
-  const queries = [
-    '?v2Shadow=1&onlineRole=host', '?v2Shadow=1&onlineRoom=ROOM',
-    '?v2Shadow=1&onlineBuild=173', '?v2Shadow=1&room=ROOM',
-    '?v2Shadow=1&join=ROOM', '?v2Shadow=1&mode=online',
-    '?v2Shadow=1&mode=online-versus', '?v2Shadow=1&matchType=online',
-    '?v2Shadow=1&matchType=online-versus', '?v2Shadow=1&online=1',
-    '?v2Shadow=1&online=true'
-  ];
-  for (const search of queries) {
-    const result = runPreflight(search);
-    assert.equal(result.diagnostic.eligible, false, search);
-    assert.deepEqual(result.writes, [], search);
-  }
-  for (const payload of [
-    { mode: 'online' }, { mode: 'online-versus' }, { matchType: 'online' },
-    { matchType: 'online-versus' }, { online: true }, { online: {} },
-    { controllers: { online: true } }
-  ]) {
-    const result = runPreflight('?v2Shadow=1', `#flMatch=${encoded(payload)}`);
-    assert.equal(result.diagnostic.eligible, false, JSON.stringify(payload));
-    assert.deepEqual(result.writes, [], JSON.stringify(payload));
-  }
-});
-
 test('ONLINE RUNTIME GATE: direct online state and every saved/config marker stay frozen without reading the host', () => {
   const routes = [
     { online: true },
@@ -445,24 +362,6 @@ test('SET-PIECE READY LIFECYCLE GATE: explicit ready restart arms and captures t
   assert.equal(readySuite.attachment.exportTelemetry().telemetry.acceptedTicks, 1);
 });
 
-test('STATIC LIFECYCLE WIRING GATE: both mutually exclusive clock authorities retain the four approved shadow lifecycle boundaries', () => {
-  assert.equal((matchHtml.match(/\.resetForNewMatch\(\)/g) || []).length, 1);
-  assert.equal((matchHtml.match(/\.armAfterPostWalkoutKickoff\(\)/g) || []).length, 1);
-  assert.equal((matchHtml.match(/\.armAfterSetPieceSuiteReady\(\)/g) || []).length, 1);
-  assert.equal((matchHtml.match(/\.finishBeforeFullTimePresentation\(\)/g) || []).length, 1);
-  assert.ok(matchHtml.indexOf("matchPhase='play';kickoff('you');if(build173V2Shadow)build173V2Shadow.armAfterPostWalkoutKickoff()") >= 0);
-  assert.match(matchHtml, /function finishBuild173ShadowBeforeFullTime\(\)\{if\(build173V2Shadow\)build173V2Shadow\.finishBeforeFullTimePresentation\(\);\}/,
-    'one shared finish boundary must own the sole public shadow finish call');
-  assert.equal((matchHtml.match(/finishBuild173ShadowBeforeFullTime\(\)/g) || []).length, 3,
-    'one definition plus the live-V2 and Build 173 full-time paths must exist');
-  assert.match(matchHtml, /clock\.period==='full-time'[\s\S]{0,360}?finishBuild173ShadowBeforeFullTime\(\);matchPhase='fulltime-presentation'/,
-    'conditional live V2 clock authority must finish the read-only shadow before presentation');
-  assert.match(matchHtml, /if\(!liveV2OwnsPeriodClock\(\)\)[\s\S]{0,1800}?finishBuild173ShadowBeforeFullTime\(\);matchPhase='fulltime-presentation'/,
-    'default Build 173 clock authority must finish the read-only shadow before presentation');
-  assert.ok(matchHtml.indexOf("restart('FREE KICK','you',practiceSpot.x,practiceSpot.y,false,actor)") <
-    matchHtml.indexOf('if(build173V2Shadow)build173V2Shadow.armAfterSetPieceSuiteReady()'));
-});
-
 test('STABLE-IDENTITY GATE: all six workflows retain exactly 22 unique slots across a substitution', () => {
   for (const workflow of OFFLINE_WORKFLOWS) {
     const options = captureOptions(workflow);
@@ -485,7 +384,6 @@ test('STABLE-IDENTITY GATE: all six workflows retain exactly 22 unique slots acr
   }
   assert.match(matchHtml, /id:'build173-shadow:'\+team\+':'\+row\.lineup\.slotId/);
   assert.match(matchHtml, /if\(rows\.length!==11\|\|rows\.some\(row=>!row\.slotId\|\|!row\.position\)\)throw/);
-  assert.match(matchHtml, /players:build173V2ShadowRoster\.flatMap\(team=>team\.rows\.map\(build173ShadowPlayerSnapshot\)\)/);
 });
 
 test('FAST-SEQUENCING GATE: every simulation step maps to one ordered legacy update and one capture', () => {

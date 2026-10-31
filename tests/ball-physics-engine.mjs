@@ -35,8 +35,8 @@ test('plain browser script exposes window.FootballLegacyBallPhysics', () => {
   assert.equal(typeof browserWindow.FootballLegacyBallPhysics.step, 'function');
 });
 
-test('match page loads the dormant kernel without connecting live authority', () => {
-  assert.match(matchHtml, /<script src="ball-physics\.js(?:\?[^"<]*)?"><\/script>/);
+test('match page no longer loads the retired dormant kernel', () => {
+  assert.doesNotMatch(matchHtml, /ball-physics\.js/);
 });
 
 test('createState always returns a complete, independent state contract', () => {
@@ -175,13 +175,13 @@ test('experimental ground roll loses speed and reaches a stable settled state', 
   assert.deepEqual(settled.angularVelocity, { x: 0, y: 0, z: 0 });
 });
 
-test('DORMANT AUTHORITY GATE: match page loads the kernel but live gameplay does not consume it', () => {
-  // Phase 1 invariant: keep the deterministic kernel available for testing while
-  // the established match engine remains the sole live gameplay authority.
-  assert.match(
+test('DORMANT AUTHORITY GATE: match page neither loads nor consumes the retired kernel', () => {
+  // The deterministic kernel stays available to tests as a module, but the live
+  // page no longer loads it and live gameplay must not consume it.
+  assert.doesNotMatch(
     matchHtml,
-    /<script src="ball-physics\.js(?:\?[^"<]*)?"><\/script>/,
-    'The dormant deterministic kernel must remain available to the match page'
+    /ball-physics\.js/,
+    'The retired dormant kernel must not be loaded by the live page'
   );
   assert.doesNotMatch(
     matchHtml,
