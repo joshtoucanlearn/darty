@@ -42,7 +42,7 @@
       home.setAttribute('aria-pressed',String(side==='you'));away.setAttribute('aria-pressed',String(side==='opp'));
       title.textContent=mode==='choose'?'Pick a side and jump in':mode==='waiting'?(slowWait?'Taking over at the next stoppage':'Taking over…'):mode==='disconnected'?'Controller disconnected · match paused':mode==='reconnected'?'Controller reconnected':'Keep watching';
       const labels=/(xbox|xinput|045e)/i.test(deviceId)?['A','B','Menu']:/(nintendo|switch|joy-con|057e)/i.test(deviceId)?['B','A','+']:/(dual\s?sense|ps5|0?54c|wireless controller)/i.test(deviceId)?['×','○','Options']:['South button','East button','Menu'];
-      help.textContent=mode==='choose'?`D-pad / left stick ← → · ${labels[0]} confirm · ${labels[1]} dismiss · ${labels[2]} reopens`:mode==='waiting'?`${side==='you'?'Home':'Away'} · ${labels[1]} cancel`:mode==='disconnected'?'Reconnect your controller to continue':mode==='reconnected'?`${labels[2]} resumes the match`:`${labels[2]} · Pick a side`;
+      help.textContent=mode==='choose'?`D-pad / left stick ← → · ${labels[0]} confirm · ${labels[1]} dismiss · ${labels[2]} reopens`:mode==='waiting'?`${side==='you'?'Home':'Away'} · ${labels[1]} cancel`:mode==='disconnected'?'Reconnect your controller to continue':mode==='reconnected'?`${labels[2]} resumes the match`:`${labels[0]} or ${labels[2]} · Pick a side`;
       actions.hidden=!['choose','waiting','dismissed'].includes(mode);confirm.hidden=mode==='waiting';dismiss.hidden=mode==='dismissed';
       confirm.textContent=mode==='dismissed'?'Pick a side':'Play '+(side==='you'?'Home':'Away');dismiss.textContent=mode==='waiting'?'Cancel':'Keep watching';
     }
@@ -88,7 +88,7 @@
       const select=pressed(gp,0),back=pressed(gp,1),menu=pressed(gp,9),x=gp.axes[0]||0;
       const direction=pressed(gp,14)||x<-.66?-1:pressed(gp,15)||x>.66?1:0;
       if(back&&!backBefore){mode='dismissed';render();}
-      else if(mode==='dismissed'&&menu&&!menuBefore){mode='choose';render();}
+      else if(mode==='dismissed'&&((select&&!selectBefore)||(menu&&!menuBefore))){mode='choose';render();} // Joshua, 1 Nov: after backing out, confirm (or Options) brings the Home/Away choice back
       else if(mode==='choose'){
         if(direction&&direction!==directionBefore){side=direction<0?'you':'opp';render();}
         if(select&&!selectBefore)request();

@@ -138,6 +138,15 @@ for(const [browser,id,mapping,raw,label] of padShapes)for(const side of ['you','
   assert.equal(result.workflow,'single-player');assert.equal(result.restAim,0);assert.equal(result.restMove,0);assert.equal(result.rightDown,true);assert.equal(result.phantomPass,false);
 });
 
+test('after backing out, Cross (or Options) brings the Home/Away choice back and does not confirm (Joshua, 1 Nov)',()=>{
+  const f=uiFixture(),gp=pad();connect(f,gp);f.poll();
+  edge(f,gp,1);assert.equal(f.selector.status().mode,'dismissed');
+  assert.match(f.panel().children[2].textContent,/× or Options · Pick a side/);
+  edge(f,gp,0);assert.equal(f.selector.status().mode,'choose');assert.equal(f.state.handoffs,0);
+  edge(f,gp,1);edge(f,gp,9);assert.equal(f.selector.status().mode,'choose');
+  edge(f,gp,0);assert.equal(f.selector.status().mode,'waiting');
+});
+
 test('no message for a connected pad that sends no input (Joshua, 1 Nov: "if its connected its connected")',()=>{
   const f=uiFixture(),gp=pad(0,'054c-0ce6-DualSense Wireless Controller');connect(f,gp);f.advance(30000);
   assert.equal(f.panel().children.length,4);assert.equal(f.selector.status().mode,'choose');
