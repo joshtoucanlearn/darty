@@ -2644,7 +2644,27 @@
       if(liveV2LaunchDribbleKnockOn(actor,intent)){actor.v2LastKnockOnFrame=clockFrames;logEvent('ai-skill-selection',actor.team,actor,{skill:'knock-on',context:move.situation||intent.reason,defenderId:move.defenderId||null,tier:actor.v2LastKnockTier,cpu:true,physicalBonus:false});}
     }
   }
-  function liveV2ApplyBall(projection){const row=projection.ball,physicalBallSeparated=projection.physicalBallSeparated===true;if(!row||ball.owner&&!physicalBallSeparated)return;if(physicalBallSeparated)ball.owner=null;for(const key of ['x','y','z','vx','vy','zv'])if(!Number.isFinite(row[key]))throw new Error('non-finite FL V2 ball projection');Object.assign(ball,{x:row.x,y:row.y,z:row.z,vx:row.vx,vy:row.vy,zv:row.zv});ball.v2Regime=String(row.regime||'');}
+  // Woodwork. Ball V2 integrates the bounce off the posts and bar and reports the contact in its tick trace;
+  // the host's only job is the football around it: end the shot, name the rebound, show it, log it, and let the
+  // normal loose-ball race (the adapter reads flightType 'woodwork-rebound') send players to the ball. This one
+  // function serves both authorities: the V2 path below and the legacy host physics branch further down, which
+  // only runs when V2 does not own the loose ball, so a contact can never fire twice.
+  function applyWoodworkRebound(kind,details={}){
+    const crossbar=kind==='crossbar',shooter=ball.shooter||null;
+    showEvent(crossbar?'OFF THE BAR':'OFF THE POST',650);
+    logEvent('woodwork',shooter&&shooter.team||null,shooter,{woodwork:crossbar?'crossbar':'post',...details});
+    // A shot that comes off the frame and then crosses the line is still the shooter's goal while nobody else has touched it.
+    ball.woodworkShooter=ball.isShot?shooter:null;ball.woodworkKicker=ball.lastKicker||null;
+    ball.isShot=false;ball.shooter=null;ball.target=null;ball.flightType='woodwork-rebound';
+    if(FREE_KICK_PRACTICE&&liveV2SuiteShotActive)liveV2QueueSuiteEvent('contact',{contact:{kind:'goal-frame-contact',materialId:crossbar?'crossbar':'post'},resolveResult:crossbar?'crossbar':'post'});
+    return true;
+  }
+  function liveV2ApplyGoalFrameContact(projection){
+    const events=projection.ballTrace&&projection.ballTrace.events;if(!Array.isArray(events)||!events.length||ball.owner)return false;
+    const contact=events.find(event=>event&&event.type==='contact'&&(event.colliderRole==='goal-post'||event.colliderRole==='crossbar'));if(!contact)return false;
+    return applyWoodworkRebound(contact.colliderRole==='crossbar'?'crossbar':'post',{authority:'ball-v2-goal-frame-contact',colliderId:String(contact.colliderId||''),normalSpeedMetresPerSecond:+Number(contact.normalSpeed||0).toFixed(2)});
+  }
+  function liveV2ApplyBall(projection){const row=projection.ball,physicalBallSeparated=projection.physicalBallSeparated===true;if(!row||ball.owner&&!physicalBallSeparated)return;if(physicalBallSeparated)ball.owner=null;for(const key of ['x','y','z','vx','vy','zv'])if(!Number.isFinite(row[key]))throw new Error('non-finite FL V2 ball projection');Object.assign(ball,{x:row.x,y:row.y,z:row.z,vx:row.vx,vy:row.vy,zv:row.zv});ball.v2Regime=String(row.regime||'');liveV2ApplyGoalFrameContact(projection);}
   function resolvePendingPassTerminal(actor,reason='possession-terminal',extra={}){
     if(!lastPasser)return false;const passer=lastPasser,completed=!!(actor&&passer.team===actor.team&&passer!==actor);if(completed){passer.stats.completed=(passer.stats.completed||0)+1;report.teams[actor.team].completed++;assistCandidate=passer;}else assistCandidate=null;
     logEvent('pass-resolved',passer.team,passer,{terminal:true,completed,receiverId:actor&&actor.id||null,receiverTeam:actor&&actor.team||null,reason:String(reason||'possession-terminal'),...extra});lastPasser=null;return true;
@@ -5735,8 +5755,9 @@ function beginDedicatedSetPiece(kind,team,taker,x,y){
     });
   }
 
-  function countShotOnTarget(){if(ball&&ball.isShot&&ball.shooter&&!ball.onTargetCounted){ball.onTargetCounted=true;ball.shooter.stats.onTarget++;report.teams[ball.shooter.team].onTarget++;}}
-  function goalEligibleBall(state=ball){return !!(state&&state.isShot);}
+  function countShotOnTarget(){if(ball&&ball.isShot&&ball.shooter&&!ball.onTargetCounted){ball.onTargetCounted=true;ball.shooter.stats.onTarget++;report.teams[ball.shooter.team].onTarget++;}else if(ball&&woodworkReboundCredit(ball)&&!ball.onTargetCounted){ball.onTargetCounted=true;ball.woodworkShooter.stats.onTarget++;report.teams[ball.woodworkShooter.team].onTarget++;}}
+  function woodworkReboundCredit(state){return !!(state&&state.woodworkShooter&&state.flightType==='woodwork-rebound'&&!state.owner&&state.lastKicker===state.woodworkKicker);}
+  function goalEligibleBall(state=ball){return !!(state&&(state.isShot||woodworkReboundCredit(state)));}
 
   // DARTY keeper-balance candidate: the save paths share the visible action's
   // contact envelope. Standing keepers cannot collect a shot from three metres away.
@@ -6312,8 +6333,8 @@ function beginDedicatedSetPiece(kind,team,taker,x,y){
       const top=8,bot=H-8,goalHeight=GOAL_HEIGHT;resolveSetPieceWallBlock();if(!liveV2TickApplied||!liveV2SuppressLegacyBallBlock)resolveBallBlock();if(!liveV2SuppressLegacyAerialDuel)resolveAerialDuel(false);expireMissedCrossRoute(ball);reconcileDirectionalKnockOn(ball,clockFrames);
       // Posts and bar are physical; glancing hits change angle rather than passing through.
       if(!liveV2OwnsLooseBall)for(const gx of [M,W-M]){
-        for(const py of [H/2-GOAL_H/2,H/2+GOAL_H/2]){const d=Math.hypot(ball.x-gx,ball.y-py);if(d<BALLR+5&&ball.z<goalHeight+5){const nx=(ball.x-gx)/(d||1),ny=(ball.y-py)/(d||1),dot=ball.vx*nx+ball.vy*ny;ball.vx-=1.75*dot*nx;ball.vy-=1.75*dot*ny;ball.vx*=.72;ball.vy*=.72;ball.cool=5;showEvent('OFF THE POST',650);logEvent('woodwork',ball.shooter&&ball.shooter.team||null,ball.shooter||null,{woodwork:'post'});ball.isShot=false;ball.shooter=null;ball.target=null;ball.flightType='woodwork-rebound';if(FREE_KICK_PRACTICE&&liveV2SuiteShotActive)liveV2QueueSuiteEvent('contact',{contact:{kind:'goal-frame-contact',materialId:'post'},resolveResult:'post'});}}
-        if(Math.abs(ball.x-gx)<BALLR+5&&Math.abs(ball.y-H/2)<GOAL_H/2&&Math.abs(ball.z-goalHeight)<BALLR+4){ball.vx*=-.62;ball.zv=Math.abs(ball.zv)*.35;ball.cool=5;showEvent('OFF THE BAR',650);logEvent('woodwork',ball.shooter&&ball.shooter.team||null,ball.shooter||null,{woodwork:'crossbar'});ball.isShot=false;ball.shooter=null;ball.target=null;ball.flightType='woodwork-rebound';if(FREE_KICK_PRACTICE&&liveV2SuiteShotActive)liveV2QueueSuiteEvent('contact',{contact:{kind:'goal-frame-contact',materialId:'crossbar'},resolveResult:'crossbar'});}
+        for(const py of [H/2-GOAL_H/2,H/2+GOAL_H/2]){const d=Math.hypot(ball.x-gx,ball.y-py);if(d<BALLR+5&&ball.z<goalHeight+5){const nx=(ball.x-gx)/(d||1),ny=(ball.y-py)/(d||1),dot=ball.vx*nx+ball.vy*ny;ball.vx-=1.75*dot*nx;ball.vy-=1.75*dot*ny;ball.vx*=.72;ball.vy*=.72;ball.cool=5;applyWoodworkRebound('post',{authority:'legacy-host-physics'});}}
+        if(Math.abs(ball.x-gx)<BALLR+5&&Math.abs(ball.y-H/2)<GOAL_H/2&&Math.abs(ball.z-goalHeight)<BALLR+4){ball.vx*=-.62;ball.zv=Math.abs(ball.zv)*.35;ball.cool=5;applyWoodworkRebound('crossbar',{authority:'legacy-host-physics'});}
       }
       const boxKeeper=ball.shooter&&ball.shooter.team==='you'?okeep:ball.shooter&&ball.shooter.team==='opp'?ykeep:null,keeperShotResolved=resolveKeeperBoxShotContest(boxKeeper);if(!keeperShotResolved)resolveSlowReachableKeeperSaveBeforeGoal();
       if(liveBallBoundsActive()&&(ball.y<top||ball.y>bot)){const restartTeam=lastTouch==='you'?'opp':'you',restartX=clamp(ball.x,M+24,W-M-24),restartY=ball.y<top?top+8:bot-8;if(FREE_KICK_PRACTICE){if(liveV2SuiteShotActive)liveV2QueueSuiteEvent('resolve',{outcome:{result:'missed'}});ball.vx=ball.vy=ball.zv=0;ball.owner=null;if(!startPracticeFreeKickReplay('touchline-miss','you',pendingFreeKickReplay&&pendingFreeKickReplay.actor||practiceTaker,()=>queuePracticeBallReturn('after-replay',120)))queuePracticeBallReturn('touchline-miss',1500);return;}if(currentBallCarriesFreeKickReplay()){const pending=pendingFreeKickReplay,actor=pending&&pending.actor,team=pending&&pending.team||lastTouch;if(startOutcomeReplay('free-kick-touchline-out',team,actor,ball.x,ball.y,()=>restart('THROW-IN',restartTeam,restartX,restartY)))return;}restart('THROW-IN',restartTeam,restartX,restartY);return;}

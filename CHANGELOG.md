@@ -1,5 +1,11 @@
 # Football Legacy — Changelog
 
+## DARTY woodwork rebounds — 31 October 2026
+
+- A shot that hits the post or crossbar now ends there: OFF THE POST or OFF THE BAR shows, a `woodwork` event is logged once, the ball becomes a `woodwork-rebound`, and the normal loose-ball race (attackers following in, defenders clearing, the keeper recovering) runs. Before, Ball V2 bounced the ball correctly but nothing consumed the contact, so the ball stayed a live "shot" and players never chased it. Ball physics is unchanged.
+- A shot that clips the post and still crosses the line is still the shooter's goal and a shot on target until anyone else touches it.
+- Proof: scripted shots at both posts and the crossbar at both goals bounce and switch to the loose-ball race on the contact tick; the 42-seed gate (full time on all 42, paired replays exact) shows the 11 matches with no woodwork contact identical to before and the 31 with one changing. Headless metrics now report woodwork hits and what follows them.
+
 ## DARTY speed tidy — 31 October 2026
 
 - Cheaper live ticks with no change to the football: the per-tick host rollback capture, JSON clones, match-control digests, match-clock history and diagnostic frame copies no longer re-copy whole states, and Ball V2 skips goal-frame sweeps when the ball is nowhere near the posts or bar. Four full six-minute matches ran in about 3.5 ms per live tick against 5.6 ms before, with 80% fewer ticks over 25 ms (headless CPU wall time, not browser frame rate).

@@ -9,6 +9,7 @@ import { createDeliveryMetrics } from './delivery-metrics.mjs';
 import { createAttackMetrics } from './attack-metrics.mjs';
 import { createCombinationMetrics } from './combination-metrics.mjs';
 import { createCohesionMetrics } from './cohesion-metrics.mjs';
+import { createWoodworkMetrics } from './woodwork-metrics.mjs';
 import path from 'node:path';
 import vm from 'node:vm';
 import {performance as wallPerformance} from 'node:perf_hooks';
@@ -84,6 +85,7 @@ export function createHeadlessMatch(inputUrl, { seed, minutes, keeperTrace = fal
   const races = createLooseRaceMetrics();
   const challenges=createChallengeMetrics();
   const knockOns = createKnockOnMetrics();
+  const woodwork = createWoodworkMetrics();
   const canvasContext = new Proxy({}, {
     get(object, key) {
       if (key === 'measureText') return text => ({ width: String(text).length * 8 });
@@ -112,7 +114,7 @@ export function createHeadlessMatch(inputUrl, { seed, minutes, keeperTrace = fal
   };
   const context = vm.createContext(vm.constants.DONT_CONTEXTIFY);
   Object.assign(context, {
-    console, document, __trainVisibilityEnabled:trainVisibility&&!humanInput, __cohesion: cohesion, __actions: actions, __attack: attack, __deliveries:deliveries, __races: races, __knockOns:knockOns,__challenges:challenges, location: url, navigator: { getGamepads: () => [], userAgent: 'Node fixed-tick host' },
+    console, document, __trainVisibilityEnabled:trainVisibility&&!humanInput, __cohesion: cohesion, __actions: actions, __attack: attack, __deliveries:deliveries, __races: races, __knockOns:knockOns,__woodwork:woodwork,__challenges:challenges, location: url, navigator: { getGamepads: () => [], userAgent: 'Node fixed-tick host' },
     localStorage: { getItem: () => null, setItem: noop, removeItem: noop },
     URL, URLSearchParams, TextEncoder, TextDecoder, Uint8Array,
     atob: text => Buffer.from(text, 'base64').toString('binary'),
@@ -157,6 +159,7 @@ export function createHeadlessMatch(inputUrl, { seed, minutes, keeperTrace = fal
       if(event){const actor=args[2],target=event.targetId&&[...you,...opp].find(p=>p.id===event.targetId),progress=attackDirection(event.team)===1?(ball.x-M)/(W-2*M):1-(ball.x-M)/(W-2*M);
         const dir=attackDirection(event.team),line=dir*offsideLine(event.team),tx=Number(event.intendedX??target?.x??ball.x);
         __races.event({...event,actorId:actor&&actor.id,time:performance.now()});
+        __woodwork.event({...event,actorId:actor&&actor.id,time:performance.now()});
         __challenges.event({...event,actorId:actor?.id,time:performance.now()});
         __deliveries.event({...event,actorId:actor?.id,actorRole:actor&&positionFamily(actor),time:performance.now()});
         __knockOns.event({...event,actorId:actor?.id,time:performance.now(),cpu:!!actor&&!teamHasHumanController(actor.team),direction:dir,x:actor?(actor.x-M)*105/(W-2*M):null,y:actor?actor.y*68/H:null});
@@ -269,12 +272,12 @@ export function createHeadlessMatch(inputUrl, { seed, minutes, keeperTrace = fal
         halfTime:report.events.some(e=>e.type==='half-time'),fullTime:report.events.some(e=>e.type==='full-time')})
     };
   `;
-  execute(html.slice(start, end).replace('liveV2Tick=nextTick;', '__challenges.projection(frame.hostProjection,performance.now(),frame.cpu);__actions.frame(frame.cpu,frame.hostProjection);__attack.contact(frame.hostProjection,performance.now());__races.assignment(frame.hostProjection);liveV2Tick=nextTick;').replace('  setCameraMode(cameraMode,false);', bridge + '\n  setCameraMode(cameraMode,false);'), 'match-host.js');
+  execute(html.slice(start, end).replace('liveV2Tick=nextTick;', '__challenges.projection(frame.hostProjection,performance.now(),frame.cpu);__actions.frame(frame.cpu,frame.hostProjection);__attack.contact(frame.hostProjection,performance.now());__races.assignment(frame.hostProjection);__woodwork.frame(frame.hostProjection);liveV2Tick=nextTick;').replace('  setCameraMode(cameraMode,false);', bridge + '\n  setCameraMode(cameraMode,false);'), 'match-host.js');
   clock.advance(200); // The host's existing 180 ms automatic start.
   return {
     scenario(code) { if(!scripted)throw new Error('scripted fixture access not enabled');return context.__headless.scenario(code); },
     keeperTrace: () => context.__headless.keeperTrace(),
-    state: () => ({ ...context.__headless.state(), progress: progress.snapshot(), cohesion: cohesion.snapshot(), actions: actions.snapshot(), attack: attack.snapshot(), deliveries:deliveries.snapshot(), races: races.snapshot(), knockOns:knockOns.snapshot(), challenges:challenges.snapshot(), performance:{headlessTickWall:{...tickPerformance,longFrames:{...tickPerformance.longFrames}},renderedFramesMeasured:false} }),
+    state: () => ({ ...context.__headless.state(), progress: progress.snapshot(), cohesion: cohesion.snapshot(), actions: actions.snapshot(), attack: attack.snapshot(), deliveries:deliveries.snapshot(), races: races.snapshot(), knockOns:knockOns.snapshot(), woodwork:woodwork.snapshot(), challenges:challenges.snapshot(), performance:{headlessTickWall:{...tickPerformance,longFrames:{...tickPerformance.longFrames}},renderedFramesMeasured:false} }),
     step() { const began=wallPerformance.now();clock.advance(1000 / 60); const sample = context.__headless.tick(); progress.observe(sample.live, sample.committed);
       if(sample.live){const elapsed=wallPerformance.now()-began;tickPerformance.samples++;tickPerformance.totalMs+=elapsed;tickPerformance.maximumMs=Math.max(tickPerformance.maximumMs,elapsed);
         if(elapsed>25)tickPerformance.longFrames.over25Ms++;if(elapsed>40)tickPerformance.longFrames.over40Ms++;if(elapsed>80)tickPerformance.longFrames.over80Ms++;} }
