@@ -1,3 +1,11 @@
+## DARTY controller takeover at the first safe moment — 1 November 2026
+
+- Joshua, after trying his PS5 controller: “do we really need to wait for next stoppage?” A confirmed choice can now join during settled outfield possession, including when the other team has the ball. Loose balls, physical touch leases, pending releases, challenges and referee/replay scenes finish first; held restarts remain available. The chosen side controls its carrier, or the existing best defender switch.
+- The single-player gameplay attachment starts a fresh epoch from the host's ball and players. The match-control runtime, clock, score, restart, stamina and cumulative authority counts stay intact; old gameplay command and skill identities, contact poses and input charges reset. No CPU or football feel values change.
+- The prompt says “Taking over…” immediately and “Taking over at the next stoppage” after three seconds. There is no “no input” message: a connected controller is simply connected (Joshua).
+- Home/Away selection, confirmation, cancellation and reopening also have touch buttons with phone-width wrapping and safe-area spacing. Standard DualSense pads use the standard D-pad only; raw DualSense pads retain their mapping and use axis 5 for right-stick Y, so -1 trigger rests cannot become phantom aiming after takeover. Added pad-shape tables, safety refusal cases and a 20-seed, three-request-time, both-side full-time host matrix with measured waits. Physical Safari/iOS and browser-driver acceptance remain separate from simulated-pad tests.
+- Human aerial input now respects existing contact eligibility during a fall, reception lock or host-owned move; a fallen player cannot fault the V2 transaction after takeover. CPU-only snapshots are unchanged.
+
 ## DARTY spectator controller takeover — 1 November 2026
 
 - A connected controller can choose Home or Away during CPU vs CPU: D-pad / left stick selects, Cross confirms, Circle dismisses and Options reopens. The prompt shows Home and Away with their kit colours, no team names (Joshua, 1 November), and stays absent without a controller.

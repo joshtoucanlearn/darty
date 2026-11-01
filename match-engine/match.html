@@ -191,7 +191,7 @@
   });
 })();
 </script>
-<script src="spectator-takeover.js?v=takeover-20261101b"></script>
+<script src="spectator-takeover.js?v=takeover-20261101c"></script>
 <script src="darty-video-capture.js?v=takeover-20261101"></script>
 <script src="vendor/three.min.js?v=r128-local"></script>
 <script src="instant-result.js"></script>
@@ -884,7 +884,7 @@
   function gamepadButtonPressed(gp,index,threshold=.5){
     const rawIndex=isRawDualSense(gp)&&(index in rawDualSenseButton)?rawDualSenseButton[index]:index,button=gp&&gp.buttons&&gp.buttons[rawIndex];
     const ordinary=!!(button&&(button.pressed||button.value>threshold));
-    return ordinary||(isDualSenseDevice(gp)&&index>=12&&index<=15&&rawDualSenseDpad(gp,index));
+    return ordinary||(isRawDualSense(gp)&&index>=12&&index<=15&&rawDualSenseDpad(gp,index));
   }
   function gamepadLayout(gp){return isRawDualSense(gp)?'firefox-raw-dualsense':isNintendoDevice(gp)?'nintendo-switch-positional':isXboxDevice(gp)?'xbox-standard':'standard';}
   function updateGamepadHint(){
@@ -1232,7 +1232,8 @@
     if(fightCombo&&!state.fightComboLatched)startCardFight();
     else if(r3Now&&!r3Before&&!l3Now){const actor=isSecond?controlledOpp:controlled;logGamepadInput(isSecond?SECOND_CONTROLLER_TEAM:primaryHumanTeam,actor,11,'flick-up');attemptFlickUp(actor,{x:state.moveX,y:state.moveY});}
     state.fightComboLatched=fightCombo;state.previousButtons[10]=l3Now;state.previousButtons[11]=r3Now;
-    const right=deadZoneStick(gp.axes&&gp.axes.length>3?gp.axes[2]:0,gp.axes&&gp.axes.length>3?gp.axes[3]:0),l2=pressed(6,.32),l1=pressed(4,.32),actor=isSecond?controlledOpp:controlled,previousShield=[...you,...opp,ykeep,okeep].filter(Boolean).find(p=>p.id===state.shieldPlayerId);state.aimX=right.x;state.aimY=right.y;state.aimMagnitude=right.magnitude;
+    // Raw DualSense axes 3/4 are triggers at -1; right-stick Y is axis 5.
+    const right=deadZoneStick(gp.axes&&gp.axes.length>3?gp.axes[2]:0,gp.axes&&gp.axes.length>3?gp.axes[isRawDualSense(gp)&&gp.axes.length>5?5:3]:0),l2=pressed(6,.32),l1=pressed(4,.32),actor=isSecond?controlledOpp:controlled,previousShield=[...you,...opp,ykeep,okeep].filter(Boolean).find(p=>p.id===state.shieldPlayerId);state.aimX=right.x;state.aimY=right.y;state.aimMagnitude=right.magnitude;
     if(pollPenaltyKeeperChoice(state,isSecond,right)){state.manualSwitchFlickLatched=true;state.rightStickActive=false;state.rightStickTravel=0;return;}
     if(practiceRoamCameraInputActive(isSecond)){
       if(previousShield)previousShield.shielding=false;if(actor)actor.shielding=false;state.shield=false;state.shieldPlayerId=null;state.manualSwitchFlickLatched=false;state.knockOnLatched=false;state.knockOnSwitchConsumed=false;state.rightStickActive=false;state.rightStickTravel=0;state.stepoverFlickLatched=false;return;
@@ -2405,7 +2406,9 @@
   function liveV2Snapshot(snapshotTick){
     const home=liveV2TeamRoster('you'),away=liveV2TeamRoster('opp'),input=movementInput(),human=!AUTO&&controlled&&!controlled.isGK&&!controlled.sentOff?controlled:null,allRows=[...home.lineup,...away.lineup],players=allRows.map(row=>{const player=row.player,attrs=player.attrs||{},heightCm=Number(player.appearance&&player.appearance.heightCm)||180,kickerLocked=ball.lastKicker===player&&Number(ball.kickerLock||0)>0,receptionLocked=Number(player.receiveT||0)>0,bodyLow=player.action==='dive'||/^(fall|tackleFall|punchedDown)/.test(player.action||'')||player.stun>8&&player.action==='idle';return{id:String(player.id),teamId:player.team,role:String(player.role||'mid'),position:row.position,slotId:row.slotId,x:Number(player.x),y:Number(player.y),vx:Number(player.vx)||0,vy:Number(player.vy)||0,fx:Number(player.fx)||attackDirection(player.team),fy:Number(player.fy)||0,radius:rad,contactRig:liveV2ContactRigFor(player),carryAnchor:ball.owner===player&&!player.isGK?{touchPhase:player.touchPhase,dribbleOutcome:player.dribbleOutcome,dribbleTargetSeparation:player.dribbleTargetSeparation,dribbleFoot:player.dribbleFoot,firstTouch:player.firstTouch?{...player.firstTouch}:null,environment:{clockFrames,rad,unitsPerMetre:PITCH_UNITS_PER_METRE,ballRadius:BALLR}}:null,bodyLow,heightM:clamp(heightCm/100,1.55,2.12),stamina:Number(player.stamina)||0,attrs:{...attrs},isGK:!!player.isGK,sentOff:!!player.sentOff,contactEligible:!kickerLocked&&!receptionLocked&&!player.v2SlideOwned&&!bodyLow,contactLockTicks:Math.max(kickerLocked?Number(ball.kickerLock)||0:0,receptionLocked?Number(player.receiveT)||0:0,bodyLow?Math.max(Number(player.stun)||0,Number(player.actionT)||0):0),stunTicks:Math.max(0,Math.trunc(player.stun||0)),skillCooldownTicks:Math.max(0,player.aiSkillCooldown||0),physicalSkillActive:player.skill>0||player.action==='flickUp'&&player.actionT>0,skillProtection:(()=>{const w=player.skillUtilityWindow,d=w&&liveV2PlayerById(w.defenderId);return d&&w.success&&w.until>=clockFrames?{defenderId:d.id,multiplier:skillTackleModifier(player,d)}:null;})(),lowChallenge:player.slide>0||player.lunge>0||player.action==='tackle',skillExitTarget:clockFrames<(player.v2SkillExitUntil||0)?player.v2SkillExitTarget||null:null,tackleActive:player===human&&player.lunge>0,shoulderActive:player===human&&player.shoulderT>0,control:player===human?{x:input.x,y:input.y,strength:input.strength,sprint:!!(keys['shift']||gamepadInput.sprint),shield:!!player.shielding}:null};});
     const owner=ball.owner||null,target=ball.target||null,lastKicker=ball.lastKicker||null;
-    const aerialActor=human&&human.aerialCommand&&human.aerialCommandUntil>=clockFrames&&!owner?human:null,aerialAge=aerialActor?Math.max(0,Math.round(clockFrames-(aerialActor.aerialCommandFrame||clockFrames))):0,aerialMode=String(aerialActor&&aerialActor.aerialCommand||''),aerialIntent=aerialActor?{sequence:'input-'+String(aerialActor.id)+'-'+Math.max(0,Math.round((aerialActor.aerialCommandFrame||clockFrames)*1000)),commandTick:Math.max(1,snapshotTick-aerialAge),actorId:String(aerialActor.id),technique:aerialMode.includes('flair')?'aerial-shot':'auto',intent:aerialMode==='pass'?'pass':aerialMode==='clear'||aerialMode==='flair'?'clear':'shoot',target:{x:aerialMode==='clear'?aerialActor.x+attackDirection(aerialActor.team)*420:aerialMode==='pass'&&target?target.x:(aerialActor.team==='you'?W-M:M),y:aerialMode==='pass'&&target?target.y:H/2,z:aerialMode==='pass'?24:52}}:null;
+    // Human input may arrive during a fall, receipt lock or host-owned move.
+    // Submit it only when the same physical actor is eligible for V2 contact.
+    const aerialActor=human&&human.aerialCommand&&human.aerialCommandUntil>=clockFrames&&!owner&&players.find(p=>p.id===String(human.id))?.contactEligible&&!liveV2HostOwnsPlayer(human)?human:null,aerialAge=aerialActor?Math.max(0,Math.round(clockFrames-(aerialActor.aerialCommandFrame||clockFrames))):0,aerialMode=String(aerialActor&&aerialActor.aerialCommand||''),aerialIntent=aerialActor?{sequence:'input-'+String(aerialActor.id)+'-'+Math.max(0,Math.round((aerialActor.aerialCommandFrame||clockFrames)*1000)),commandTick:Math.max(1,snapshotTick-aerialAge),actorId:String(aerialActor.id),technique:aerialMode.includes('flair')?'aerial-shot':'auto',intent:aerialMode==='pass'?'pass':aerialMode==='clear'||aerialMode==='flair'?'clear':'shoot',target:{x:aerialMode==='clear'?aerialActor.x+attackDirection(aerialActor.team)*420:aerialMode==='pass'&&target?target.x:(aerialActor.team==='you'?W-M:M),y:aerialMode==='pass'&&target?target.y:H/2,z:aerialMode==='pass'?24:52}}:null;
     // Ordinary left-stick receiving is a guided cushion: it retains the
     // player's requested direction without automatically turning every clean
     // reception into an ownerless knock-on. Explicit active knock-ons remain
@@ -9468,25 +9471,64 @@ function buildGoal(gx){
   },320);
 
   function spectatorTakeoverReady(){
-    return AUTO&&started&&matchPhase==='play'&&!paused&&!matchOver&&!liveV2StrictStopped&&
-      kickoffHeld&&!!restartTaker&&!externalSetPieceActive&&!inReset()&&!halfTimeUntil&&
-      !pendingFreeKickRunUp&&!pendingPenaltyRunUp&&!foulSequence&&!pendingDiveDecision&&
-      !offsidePresentation&&!confrontationSequence&&!varSequence&&celebrate<=0&&
-      !goalReplay.active&&!disciplineReplay.active&&!diveReplay.active&&!specialPSequence.active;
+    if(!AUTO||!started||matchPhase!=='play'||paused||matchOver||liveV2StrictStopped||!liveV2Authority||
+      externalSetPieceActive||inReset()||halfTimeUntil||pendingFreeKickRunUp||pendingPenaltyRunUp||
+      foulSequence||liveV2PendingFoul||pendingDiveDecision||diveDecisionAwaitingApplication&&!diveDecisionAwaitingApplication.decisionApplied||
+      offsidePresentation||confrontationSequence||varSequence||officialPauseUntil>performance.now()||
+      pendingCardFight&&pendingCardFight.expires>performance.now()||celebrate>0||instantGoalShot||
+      goalReplay.active||goalReplay.pending||disciplineReplay.active||diveReplay.active||specialPSequence.active)return false;
+    if(kickoffHeld)return !!restartTaker;
+    if(!liveV2CanAdvance()||chargeAction||pendingShotTimer||dTapTimer||tackleCharging)return false;
+    for(const input of [gamepadInput,gamepadInput2])if(input.passCharging||input.shootCharging||input.throughCharging||
+      input.lobCharging||input.pendingShotTimer||input.pendingLobTimer||input.dTapTimer)return false;
+    // Only a completed, grounded outfield possession can seed a new gameplay
+    // epoch. Keeper holds, loose balls and physical touch leases still
+    // belong to their current authority until they finish.
+    const carrier=ball.owner;
+    if(!clockRunning||!carrier||carrier.isGK||carrier.sentOff||ball.z>3||Math.abs(ball.zv||0)>.01||
+      D(carrier,ball)>rad+BALLR+12||ball.target||ball.isShot||lastPasser||offsideCandidate||
+      liveV2PendingLaunch||liveV2DribbleLeaseOwnerId!==null||liveV2PendingDribbleAction||
+      ball.directionalKnockOnContract||ball.pendingKickoffReceipt||humanAerialFinishIntent)return false;
+    for(const p of [...you,...opp,ykeep,okeep]){
+      if(!p||p.sentOff)continue;
+      if(liveV2HostOwnsPlayer(p)||p.slide>0||p.v2SlideOwned||p.lunge>0||p.shoulderT>0||p.stun>0||
+        p.diveT>0||p.aerialCommand&&p.aerialCommandUntil>=clockFrames||
+        p.v2ContactAction&&p.v2ContactAction.recoveryEndTick>=liveV2Tick||
+        p.actionT>0&&/^(standingTackle|tackle|slide|shoulder|dive|fall|punched|header|volley|shot|shoot|pass|cross|keeper)/.test(p.action||''))return false;
+    }
+    // The adapter can buffer a CPU release even when the host's command is
+    // empty. Check the committed domain too, before discarding that epoch.
+    const state=liveV2Authority.status(),dribble=state.dribbling.state;
+    return state.enabled&&!state.failure&&!state.possession.inFlight&&!state.possession.offsideCandidate&&
+      !dribble.physicalSeparated&&dribble.leaseUntilTick===null&&!dribble.bufferedAction&&dribble.phase!=='touch-preparation';
   }
   function takeOverSpectatorSide(team,gp){
     if(!spectatorTakeoverReady()||(team!=='you'&&team!=='opp'))return false;
     let authority;
     try{authority=createOfflineLiveV2Gameplay('single-player');}
     catch(error){showEvent('CONTROLLER TAKEOVER UNAVAILABLE',1500);return false;}
-    // At a held restart the host already owns the ball. Replace only the
-    // gameplay attachment; the match-control clock, score and restart survive.
+    // A workflow capability cannot be restored across workflows. Start a new
+    // gameplay epoch, as at a held restart: liveV2Snapshot(1) seeds its movement,
+    // possession and ball from the unchanged host. Adapter CPU memories, flight
+    // forecasts, contacts and dribble ledgers are fresh; none may be in flight.
+    // Keep the control runtime/tick, period, score, restart, roster, velocities,
+    // stamina, host tactical state and monotonic match authority totals.
+    const held=kickoffHeld,carrier=ball.owner;
     cancelChargedActionsForPause();clearHumanAerialFinishIntent('spectator-takeover');
     liveV2Authority=authority;liveV2GameplayWorkflow='single-player';liveV2Tick=0;
     liveV2WasEligible=false;liveV2TickApplied=false;liveV2TickBallApplied=false;
     liveV2PendingLaunch=null;liveV2DribbleLeaseOwnerId=null;liveV2PendingDribbleAction=null;liveV2LastDribbleLogKey='';
+    liveV2OuterTransactionState=null;liveV2PendingFoul=null;liveV2TickCarrier=null;
+    liveV2SuppressLegacyReception=false;liveV2SuppressLegacyAerialDuel=false;liveV2SuppressLegacyBallBlock=false;
+    liveV2ConsumedDribbleActionIds.clear();
+    // Command identities and pose ticks belong to the retired epoch. The
+    // readiness gate guarantees that no live challenge is being cancelled.
+    for(const p of [...you,...opp,ykeep,okeep])if(p){
+      for(const key of ['v2ContactAction','v2ActionCommandId','v2SlideCommandId','v2DribbleIntentKey','v2CpuSkillKey','v2CpuFakeKey','v2KnockOnKey'])if(key in p)p[key]=null;
+      if('v2ContactTick' in p)p.v2ContactTick=0;
+    }
     primaryHumanTeam=team;AUTO=false;spectatorTakeoverActive=true;
-    controlled=restartTaker.team===team?restartTaker:bestSwitchCandidateForTeam(team);
+    controlled=held&&restartTaker.team===team?restartTaker:carrier&&carrier.team===team?carrier:bestSwitchCandidateForTeam(team);
     controlledOpp=null;twoPlayerEnabled=false;autoSwitchCooldown=0;
     for(const key in keys)keys[key]=false;
     if(team==='opp'){
@@ -9500,7 +9542,7 @@ function buildGoal(gx){
     document.documentElement.classList.remove('darty-clean');document.documentElement.classList.add('darty-takeover'); // no input guide (Joshua, 1 Nov)
     setCameraMode('broadcast',false);restartCameraCut=true;
     if(report){report.config.auto=false;report.config.humanTeam=team;}
-    logEvent('spectator-takeover',team,controlled,{controller:1,at:'held-restart',restart:restartMsg});
+    logEvent('spectator-takeover',team,controlled,{controller:1,at:held?'held-restart':'settled-possession',restart:held?restartMsg:null});
     document.querySelectorAll('.buttonGuideRow').forEach(row=>{
       const label=row.querySelector('b'),description=row.querySelector('span');
       if(label&&description&&label.textContent==='Controller 1 / 2')description.textContent='Controller 1 · '+(team==='you'?'Home':'Away')+' single-player';
