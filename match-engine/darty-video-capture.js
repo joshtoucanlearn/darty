@@ -67,7 +67,7 @@
   const ready=new Promise((resolve,reject)=>{resolveReady=resolve;rejectReady=reject;});
   // A failed load remains visible; callers can await/reject ready without a hang.
   ready.catch(()=>{});
-  let cutUntil=0,lastCamera=null,lastReplay=null,lastCelebration=false,pendingPop=null;
+  let lastCamera=null,lastReplay=null,lastCelebration=false,pendingPop=null;
   function camera(){return hooks?hooks.camera():null;}
   function record(type,details={}){
     if(!hooks)return;
@@ -87,9 +87,9 @@
     if(pendingPop&&(hooks.replay()||hooks.celebration()))pendingPop=null;
     if(pendingPop&&now>=pendingPop.at&&hooks.canReplayPop()){const pop=pendingPop;pendingPop=null;hooks.replayPop(pop);}
     if(hooks.replay()||hooks.celebration())return;
-    // Long readable holds, with brief wider views. Existing rigs own all framing.
-    const cycle=now%60000,mode=now<cutUntil?'classic':cycle<24000?'dynamic':cycle<44000?'classic':cycle<50000?'endToEnd':cycle<56000?'broadcast':'tactical';
-    setCamera(mode);
+    // Joshua, 1 Nov: no cinematic or switching cameras. The showcase holds the
+    // Broadcast camera for the whole match; replays and celebrations keep their own.
+    setCamera('broadcast');
   }
   function advanceFrame(){
     frame++;
@@ -111,7 +111,6 @@
     visual:fn=>clock?clock.withRandom('visual',fn):fn(),
     gpu:fn=>clock?clock.withRandom('gpu',fn):fn(),
     onEvent(event){
-      if(showcase&&['shot','darty-hard-hit'].includes(event.type)){cutUntil=root.performance.now()+2400;setCamera('classic');}
       for(const type of eventTypes(event))record(type,{sourceType:event.type,team:event.team||null,playerId:event.playerId||null,...(event.part?{part:event.part}:{}),...(event.shotType==='guaranteed'?{testingAid:true}:{})});
       if(showcase&&event.type==='darty-toy-pop')pendingPop={at:root.performance.now()+700,playerId:event.playerId,actorId:event.actorId};
     },

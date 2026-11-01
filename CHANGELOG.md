@@ -1,5 +1,9 @@
 # Football Legacy — Changelog
 
+## DARTY steady Broadcast camera — 1 November 2026
+
+- The showcase card (`director=showcase`) no longer cycles through five camera angles every minute or cuts to Classic on every shot. It holds the Broadcast camera for the whole match. Goal, foul and save replays and celebrations keep their own angles.
+
 ## DARTY woodwork rebounds — 31 October 2026
 
 - A shot that hits the post or crossbar now ends there: OFF THE POST or OFF THE BAR shows, a `woodwork` event is logged once, the ball becomes a `woodwork-rebound`, and the normal loose-ball race (attackers following in, defenders clearing, the keeper recovering) runs. Before, Ball V2 bounced the ball correctly but nothing consumed the contact, so the ball stayed a live "shot" and players never chased it. Ball physics is unchanged.
