@@ -167,7 +167,7 @@
   const panel=document.getElementById('matchLoading'),title=document.getElementById('matchLoadingTitle'),text=document.getElementById('matchLoadingText'),actions=document.getElementById('matchLoadingActions');
   let ready=false,failed=false;
   // A controller can join CPU v CPU at the next safe stoppage.
-  if(new URLSearchParams(location.search).get('autoplay')==='1')text.textContent='Watch CPU v CPU or connect a controller.';
+  if(new URLSearchParams(location.search).get('autoplay')==='1'){title.textContent='Watch CPU v CPU or connect a controller.';text.textContent='Getting the pitch and players ready.';} // Joshua, 1 Nov: the heading, so the loading stages below never replace it
   function fail(message){
     if(ready)return;
     failed=true;title.textContent='The match could not start';text.textContent=message+' Reload the match to try again, or go back to DARTY.';actions.hidden=false;

@@ -136,7 +136,7 @@ test('the real handover refuses live play and presentations, and controller poll
     const replay=takeOverSpectatorSide('you',gp);goalReplay.active=false;
     return{live,replay,auto:AUTO,same:liveV2Authority===before};})()`);
   assert.equal(result.live,false);assert.equal(result.replay,false);assert.equal(result.auto,true);assert.equal(result.same,true);
-  assert.match(html,/text\.textContent='Watch CPU v CPU or connect a controller\.'/);
+  assert.match(html,/title\.textContent='Watch CPU v CPU or connect a controller\.'/);
   assert.match(html,/spectator:\(\)=>!spectatorTakeoverActive/);
   const video=readFileSync(new URL('../match-engine/darty-video-capture.js',import.meta.url),'utf8');
   assert.match(video,/hooks\.spectator.*!hooks\.spectator\(\)/);
