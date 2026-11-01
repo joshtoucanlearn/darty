@@ -57,7 +57,7 @@ The final manifest must match these SHA-256 values after the last edit:
 - `match-engine/live-v2-authority-adapter.js`: `02a701efd49de0a3cdea13776b6596c3d7fe2a00877937e190a5b5495f69d478`
 - `match-engine/live-v2-contact-authority-composer.js`: `15f87890f25012412dff34d1d8f0dcdf44694d14d107b859f260cde3c4e6c10b`
 - `quick-play/app.js`: `5cb2ce72ebe1f24571509fb492943df37e635c92eaf065d4daf11d152319b0e9`
-- `quick-play/index.html`: `74ac8ccd4a4b6d6dd6ae14d565fa7d6778f1bac8269734203c09c4612b3dc8a0`
+- `quick-play/index.html`: `ac6e6f0647b622e4a09523fc16b8eb277ac20c4cb72752b575406d2e35264866`
 - `quick-play/styles.css`: `ed49a7f9f80f876373c38feafa1599b3a1248faa513b39d67788f5221fc53532`
 - `index.html`: `752f02e4da9112e5e456b9024a3c62e6f19bef062e93e3bd16cb83485263a052`
 - `styles.css`: `a60b5b114ce5d41ddd4d54717dce27ce51ba5bea0fedf14e11d42da2010e40b4`

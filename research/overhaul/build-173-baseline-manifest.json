@@ -239,7 +239,7 @@
       "path": "match-engine/match.html",
       "purpose": "V2-only playable host with exact three-workflow fail-closed preflight",
       "baselineSha256": "8380734db3a142293c5bca2a22f6b6cc9e6a0fa658f9f0c26cce8ad1801cf678",
-      "candidateSha256": "dd1ed1a2f69563fd3a620f06a942245306b0d5727df2ee8ccf564b5943aed5ba",
+      "candidateSha256": "5c24a4055f5162759ee5917ee6f99abdd3a610b1ff26c3f27a0b8cbdacdf2b0d",
       "pinState": "frozen",
       "expectedRelation": "authoritative-v2-only-three-workflow-host-plus-nonplayable-compatibility-scaffold"
     },
@@ -289,7 +289,7 @@
       "path": "quick-play/index.html",
       "purpose": "Quick Play launcher with fixed FL V2 authority and unsupported multiplayer modes disabled",
       "baselineSha256": "6732f88581b00dfb5651d3bdfae4bc440b7891c3763b9b8e13e482a4fe04fef1",
-      "candidateSha256": "74ac8ccd4a4b6d6dd6ae14d565fa7d6778f1bac8269734203c09c4612b3dc8a0",
+      "candidateSha256": "ac6e6f0647b622e4a09523fc16b8eb277ac20c4cb72752b575406d2e35264866",
       "expectedRelation": "v2-only-three-workflow-launcher-plus-controller-and-gameplay-cache-bust"
     },
     {
