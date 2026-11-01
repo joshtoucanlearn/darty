@@ -81,7 +81,7 @@
     const current=JSON.stringify(camera());if(current!==lastCamera){record('camera');lastCamera=current;}
   }
   function direct(){
-    if(!showcase||!hooks)return;
+    if(!showcase||!hooks||hooks.spectator&& !hooks.spectator())return;
     const now=root.performance.now();
     if(pendingPop&&now-pendingPop.at>3000)pendingPop=null;
     if(pendingPop&&(hooks.replay()||hooks.celebration()))pendingPop=null;

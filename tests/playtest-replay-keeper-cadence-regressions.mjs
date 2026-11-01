@@ -96,8 +96,9 @@ test('V2 playtest telemetry remains cumulative across dead-ball authority epochs
   assert.match(authority, /liveV2AuthorityTotals\.lastCommittedTick\+\+/);
   assert.match(boundary, /liveV2Tick=0/);
   assert.doesNotMatch(boundary, /liveV2AuthorityTotals\s*=/, 'dead-ball handoff must not erase cumulative playtest evidence');
-  assert.match(html, /liveV2Badge\(LIVE_V2_PREFLIGHT\.workflow==='cpu-v-cpu'\?'V2 · CPU':'V2 · SP'\)/);
-  assert.match(html, /LIVE_V2_PREFLIGHT\.workflow==='set-piece-suite'\?'V2 · SET PIECE':LIVE_V2_PREFLIGHT\.workflow==='cpu-v-cpu'\?'V2 · CPU':'V2 · SP'/);
+  assert.match(html, /let liveV2GameplayWorkflow=LIVE_V2_PREFLIGHT\.workflow/);
+  assert.match(html, /liveV2Badge\(liveV2GameplayWorkflow==='cpu-v-cpu'\?'V2 · CPU':'V2 · SP'\)/);
+  assert.match(html, /LIVE_V2_PREFLIGHT\.workflow==='set-piece-suite'\?'V2 · SET PIECE':liveV2GameplayWorkflow==='cpu-v-cpu'\?'V2 · CPU':'V2 · SP'/);
 });
 
 test('pausing freezes goal presentation time and keeps the four-second broadcast hold', () => {

@@ -358,6 +358,7 @@ function throughHarness({ source, teammates, direction, power }) {
     restartMsg: '',
     SAME_TEAM_COOP: false,
     AUTO: false,
+    primaryHumanTeam: 'you',
     controlled: source,
     controlledOpp: null,
     offsideCandidate: null

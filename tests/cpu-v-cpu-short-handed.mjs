@@ -20,6 +20,7 @@ test('an outfield dismissal leaves live CPU gameplay eligible without clearing t
     const you=Array.from({length:10},(_,i)=>({sentOff:i===0})),opp=Array.from({length:10},()=>({sentOff:false})),ball={owner:null};
     const ykeep={sentOff:false},okeep={sentOff:false},liveV2ControlApi={minimumRosterStatus};
     const LAB_HOST_AUTHORITY=false,LIVE_V2_PREFLIGHT={workflow:'cpu-v-cpu',eligible:true};
+    const liveV2GameplayWorkflow=LIVE_V2_PREFLIGHT.workflow;
     const liveV2Authority={},started=true,matchPhase='play',AUTO=true,clockRunning=true;
     const liveV2StrictStopped=false,paused=false,matchOver=false,twoPlayerEnabled=false,FREE_KICK_PRACTICE=false,
       ONLINE_HOST=false,externalSetPieceActive=false,kickoffHeld=false,celebrate=0,offsidePresentation=null,

@@ -145,6 +145,7 @@
     return{detected:true,inputObserved:state.inputObserved,inputActive,lastInputAt:state.lastInputAt,select:pressed(gp,0),back:pressed(gp,1),previousSection:pressed(gp,4),nextSection:pressed(gp,5),direction:directionFor(gp)};
   };
   const poll=now=>{
+    if(document.body?.dataset.controllerExternalGamepad==='true'){requestAnimationFrame(poll);return;}
     let pads=[];if(document.body?.dataset.controllerExternalGamepad!=='true'){try{pads=typeof navigator.getGamepads==='function'?[...(navigator.getGamepads()||[])].filter(Boolean):[];}catch(e){}}
     for(const gp of pads){processGamepad(gp,now);
     }
@@ -156,7 +157,7 @@
     #controllerUiHint{position:fixed;right:16px;bottom:16px;z-index:99999;max-width:calc(100% - 32px);padding:9px 13px;border:1px solid rgba(232,120,36,.65);border-left:4px solid #e87824;background:rgba(3,16,31,.95);color:#f7f1e7;font:800 11px/1.35 Arial,sans-serif;letter-spacing:.07em;text-transform:uppercase;opacity:0;transform:translateY(8px);pointer-events:none;transition:.16s}#controllerUiHint.show{opacity:1;transform:none}`;document.head.appendChild(style);
   enhanceSelects(document);
   new MutationObserver(records=>records.forEach(record=>record.addedNodes.forEach(enhanceSelects))).observe(document.documentElement,{childList:true,subtree:true});
-  addEventListener('gamepadconnected',event=>{padStates.delete(event.gamepad.index);showHint(controllerHint(event.gamepad,'detected')+' · press a button to activate');});
+  addEventListener('gamepadconnected',event=>{padStates.delete(event.gamepad.index);if(document.body?.dataset.controllerExternalGamepad!=='true')showHint(controllerHint(event.gamepad,'detected')+' · press a button to activate');});
   addEventListener('gamepaddisconnected',event=>{padStates.delete(event.gamepad.index);});
   addEventListener('pointerdown',()=>{controllerMode=false;document.body.classList.remove('controller-navigation');clearFocus();},{passive:true});
   addEventListener('keydown',e=>{if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Enter','Escape'].includes(e.key)){controllerMode=false;document.body.classList.remove('controller-navigation');}});

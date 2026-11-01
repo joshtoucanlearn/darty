@@ -188,7 +188,7 @@
       "onlineGameplayAuthority": "unavailable-until-v2-authority",
       "onlineGameplayAuthorityChanged": true,
       "files": {
-        "controller-ui.js": "e0ce32b1320457d24511a1d9c06d1d8cebc25662fedf4c78183c1eb191672b4f",
+        "controller-ui.js": "503dcfa38955be40ae1fc046df95a10121875092a4136098726707c827b0457b",
         "online/app.js": "f03f110e615cbcd4243242d33175f050320927857f313b4ced80a0d10badf3b2",
         "online/index.html": "84085c9fcedbd70964d8f8c7705752418fe8a73165c4220b86beeb01fc9e09dc"
       },
@@ -225,7 +225,7 @@
       "path": "controller-ui.js",
       "purpose": "shared controller presentation and navigation",
       "baselineSha256": "f3408f2e1a4cf6a72b04874c03778cc8ea9f45eb8961dcdad5ca745d527d2b11",
-      "candidateSha256": "e0ce32b1320457d24511a1d9c06d1d8cebc25662fedf4c78183c1eb191672b4f",
+      "candidateSha256": "503dcfa38955be40ae1fc046df95a10121875092a4136098726707c827b0457b",
       "expectedRelation": "scoped-controller-reconnect-input-maintenance"
     },
     {
@@ -239,7 +239,7 @@
       "path": "match-engine/match.html",
       "purpose": "V2-only playable host with exact three-workflow fail-closed preflight",
       "baselineSha256": "8380734db3a142293c5bca2a22f6b6cc9e6a0fa658f9f0c26cce8ad1801cf678",
-      "candidateSha256": "84a1d18941cbe4c64d96d833a39219e167baefe598fa68971c147f4faede790d",
+      "candidateSha256": "6394436a5443d5e102efa47fbe81b454cd440803dcf13ebf2ef165c26eb18df9",
       "pinState": "frozen",
       "expectedRelation": "authoritative-v2-only-three-workflow-host-plus-nonplayable-compatibility-scaffold"
     },
