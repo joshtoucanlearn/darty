@@ -81,6 +81,25 @@ test('raw PS5 mapping uses Cross/Circle and the hat without a zeroed reconnect p
   edge(f,gp,2);assert.equal(f.selector.status().mode,'dismissed');edge(f,gp,9);edge(f,gp,1);assert.equal(f.selector.status().mode,'waiting');
 });
 
+test('a real PS5 pad at rest can choose: raw triggers at -1, hat centred, stick drift (Joshua, 1 Nov)',()=>{
+  // Raw DualSense (mapping ''): L2 and R2 rest at -1 on axes 3 and 4, the hat rests at 1.2857 on axis 9.
+  const f=uiFixture(),gp=pad(0,'54c-0ce6-Wireless Controller','');gp.axes=[.04,-.03,.06,-1,-1,.02,0,0,0,1.285714];connect(f,gp);
+  f.poll();assert.equal(f.selector.status().side,'you');
+  gp.axes[9]=-.428571;f.poll();assert.equal(f.selector.status().side,'opp');gp.axes[9]=1.285714;f.poll();
+  edge(f,gp,1);assert.equal(f.selector.status().mode,'waiting');
+  // Standard mapping with an unused input that never reads zero (a drifting right stick, a half-pressed trigger).
+  const g=uiFixture(),sp=pad();sp.axes=[0,0,.4,-.35];sp.buttons[6]={pressed:false,value:.3};connect(g,sp);
+  g.poll();sp.buttons[15]={pressed:true,value:1};g.poll();assert.equal(g.selector.status().side,'opp');
+  sp.buttons[15]={pressed:false,value:0};g.poll();edge(g,sp,0);assert.equal(g.selector.status().mode,'waiting');
+});
+
+test('a pad that never looks at rest still gets the prompt after about 1.25 s, and a held Cross does not confirm',()=>{
+  const f=uiFixture(),gp=pad();press(gp,0);gp.axes=[.9,0,0,0];connect(f,gp);
+  for(let i=0;i<80;i++)f.poll();
+  assert.equal(f.selector.status().mode,'choose');
+  press(gp,0,false);gp.axes=[0,0,0,0];f.poll();edge(f,gp,0);assert.equal(f.selector.status().mode,'waiting');
+});
+
 test('reconnect at the original browser slot restores the same human side',()=>{
   const f=uiFixture(),gp=pad();connect(f,gp);f.ready();edge(f,gp,0);f.poll();f.poll();
   f.setPads([]);f.listeners.gamepaddisconnected({gamepad:gp});assert.equal(f.state.disconnects,1);

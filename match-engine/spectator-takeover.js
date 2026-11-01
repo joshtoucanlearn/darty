@@ -2,7 +2,7 @@
   'use strict';
   // Input/UI only. The host owns the existing single-player handover.
   function create({navigator,document,pressed,canTakeOver,takeOver,disconnect,reconnect,finished,teams}){
-    let mode='hidden',side='you',index=null,deviceId='',selectBefore=false,backBefore=false,menuBefore=false,directionBefore=0,neutralRequired=true;
+    let mode='hidden',side='you',index=null,deviceId='',selectBefore=false,backBefore=false,menuBefore=false,directionBefore=0,neutralRequired=true,neutralWait=0;
     let apiBlocked=false;
     const occupiedReconnectSlots=new Set();
     let panel=null,title=null,choices=null,help=null,home=null,away=null;
@@ -31,12 +31,13 @@
       const labels=/(xbox|xinput|045e)/i.test(deviceId)?['A','B','Menu']:/(nintendo|switch|joy-con|057e)/i.test(deviceId)?['B','A','+']:['×','○','Options'];
       help.textContent=mode==='choose'?`D-pad / left stick ← → · ${labels[0]} confirm · ${labels[1]} dismiss · ${labels[2]} reopens`:mode==='waiting'?`${side==='you'?'Home':'Away'} · ${labels[1]} cancel`:mode==='disconnected'?'Reconnect your controller to continue':mode==='reconnected'?`${labels[2]} resumes the match`:`${labels[2]} · Pick a side`;
     }
-    function resetEdges(gp){selectBefore=pressed(gp,0);backBefore=pressed(gp,1);menuBefore=pressed(gp,9);directionBefore=0;neutralRequired=true;}
+    function resetEdges(gp){selectBefore=pressed(gp,0);backBefore=pressed(gp,1);menuBefore=pressed(gp,9);directionBefore=0;neutralRequired=true;neutralWait=0;}
+    // Only the inputs this prompt reads, through the game's mapping-aware pressed(). A whole-pad check
+    // never settled on a real PS5 pad (Joshua, 1 Nov: "i cant select anything"): a raw DualSense rests
+    // its triggers at -1 on axes 3 and 4, and other pads carry unused inputs that never read zero.
     function neutral(gp){
-      for(let i=0;i<gp.buttons.length;i++)if(gp.buttons[i]&&(gp.buttons[i].pressed||gp.buttons[i].value>.15))return false;
-      for(let i=0;i<4&&i<gp.axes.length;i++)if(Math.abs(gp.axes[i])>.18)return false;
-      for(let i=12;i<=15;i++)if(pressed(gp,i))return false;
-      return true;
+      for(const i of [0,1,9,12,13,14,15])if(pressed(gp,i))return false;
+      return Math.abs(gp.axes[0]||0)<=.3&&Math.abs(gp.axes[1]||0)<=.3;
     }
     function poll(){
       let pads=null;
@@ -64,7 +65,7 @@
         gp=first;index=gp.index;deviceId=gp.id;mode='choose';resetEdges(gp);render();
       }
       if(mode==='active')return gp;
-      if(neutralRequired){if(neutral(gp)){neutralRequired=false;resetEdges(gp);neutralRequired=false;}return null;}
+      if(neutralRequired){if(neutral(gp)||++neutralWait>=75){resetEdges(gp);neutralRequired=false;}return null;} // about 1.25 s: a pad that never looks at rest still gets the prompt
       if(mode==='reconnected'){mode='active';render();return gp;}
       const select=pressed(gp,0),back=pressed(gp,1),menu=pressed(gp,9),x=gp.axes[0]||0;
       const direction=pressed(gp,14)||x<-.66?-1:pressed(gp,15)||x>.66?1:0;
