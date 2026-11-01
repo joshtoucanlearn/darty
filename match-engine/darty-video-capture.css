@@ -14,3 +14,5 @@ html.darty-clean .matchclock{min-width:72px}
 /* Browser CSS timelines must not advance while a screenshot is being saved. */
 html.darty-capture *,html.darty-capture *::before,html.darty-capture *::after{animation:none!important;transition:none!important;caret-color:transparent!important}
 html.darty-capture #audioGate,html.darty-capture #controllerStatus,html.darty-capture #controllerUiHint{display:none!important}
+/* Joshua, 1 Nov: after a controller takeover there is no input guide: whoever connects a controller knows how to play. */
+html.darty-takeover #setPieceHint,html.darty-takeover .controls,html.darty-takeover #gamepadHint,html.darty-takeover #controllerStatus,html.darty-takeover #buttonGuidePanel,html.darty-takeover .pauseSection:has(.buttonGuide){display:none!important}

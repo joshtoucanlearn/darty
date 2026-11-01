@@ -6440,6 +6440,8 @@ function beginDedicatedSetPiece(kind,team,taker,x,y){
     officialPauseUntil=0;refereePresentation=null;varSequence=null;foulSequence=null;offsidePresentation=null;pendingCardFight=null;confrontationSequence=null;pendingDiveDecision=null;diveDecisionAwaitingApplication=null;lastPlayOnDive=null;setPieceCameraHold=null;restartCameraCut=false;
   }
   function showFullTimeStats(){
+    // Joshua, 1 Nov: full-time scorers by surname. Name particles stay with it (van Nistelrooy, De Bruyne); one-word names are kept whole.
+    const scorerSurname=name=>{const parts=String(name||'').trim().split(/\s+/),particle=/^(van|von|der|den|de|da|di|do|dos|das|du|le|la|del|della|dal|ter|ten|el|al|bin)$/i;let i=parts.length-1;while(i>0&&particle.test(parts[i-1]))i--;return parts.slice(i).join(' ');};
     const home=report.teams.you,away=report.teams.opp,score=report.score;
     ftScore.textContent=homeDisplayName+' '+score.you+' – '+score.opp+' '+awayDisplayName;
     document.getElementById('ftTitle').textContent=matchAbandoned?'Match abandoned':'Full time';
@@ -6448,7 +6450,7 @@ function beginDedicatedSetPiece(kind,team,taker,x,y){
     for(const team of ['you','opp']){
       const goals=report.events.filter(event=>event.type==='goal'&&event.team===team&&event.player);
       const column=document.createElement('p');
-      column.textContent=goals.map(event=>event.player+' '+event.minute+'′'+(event.ownGoal?' (OG)':'')).join('\n');
+      column.textContent=goals.map(event=>scorerSurname(event.player)+' '+event.minute+'′'+(event.ownGoal?' (OG)':'')).join('\n');
       scorers.appendChild(column);
     }
     scorers.hidden=!scorers.textContent;
@@ -9495,7 +9497,7 @@ function buildGoal(gx){
     bindPadState(gamepadInput,gp,false);
     // Consume the confirm edge, then require neutral before forwarding gameplay.
     for(let i=0;i<18;i++)gamepadInput.previousButtons[i]=gamepadButtonPressed(gp,i);
-    document.documentElement.classList.remove('darty-clean');
+    document.documentElement.classList.remove('darty-clean');document.documentElement.classList.add('darty-takeover'); // no input guide (Joshua, 1 Nov)
     setCameraMode('broadcast',false);restartCameraCut=true;
     if(report){report.config.auto=false;report.config.humanTeam=team;}
     logEvent('spectator-takeover',team,controlled,{controller:1,at:'held-restart',restart:restartMsg});

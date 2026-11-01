@@ -1,6 +1,8 @@
 ## DARTY spectator controller takeover — 1 November 2026
 
-- A connected controller can choose Home or Away during CPU vs CPU: D-pad / left stick selects, Cross confirms, Circle dismisses and Options reopens. The prompt shows both team names and kit colours and stays absent without a controller. The CPU vs CPU start screen now reads “Watch CPU v CPU or connect a controller.” (Joshua, 1 November).
+- A connected controller can choose Home or Away during CPU vs CPU: D-pad / left stick selects, Cross confirms, Circle dismisses and Options reopens. The prompt shows Home and Away with their kit colours, no team names (Joshua, 1 November), and stays absent without a controller.
+- After a takeover there is no input guide: the set-piece button strip, the keyboard line, the controller status bar and the pause menu's button list are hidden (Joshua: whoever connects a controller knows how to play).
+- Full time lists the scorers by surname only, with name particles kept (van Nistelrooy, De Bruyne). The CPU vs CPU start screen now reads “Watch CPU v CPU or connect a controller.” (Joshua, 1 November).
 - Takeover waits for the next safe stoppage, then uses the existing Quick Play single-player controller and V2 gameplay attachment with the selected side. Score, clock and the current restart continue; Broadcast is the player default and the showcase director releases the camera. One human side is supported.
 - Disconnect resets the existing controller input and pauses the match; reconnect the same controller, release held inputs, then use Options to resume. Blocked Gamepad API access leaves takeover off. Embedding pages must delegate `allow="gamepad"` on the iframe.
 - Added Node coverage for the prompt, both sides, safe handover, inputs, disconnect/reconnect and blocked API. Browser and PS5 acceptance, and the 42-seed football equality gate, remain separate review steps.

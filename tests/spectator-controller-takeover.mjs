@@ -48,7 +48,7 @@ test('no controller has no prompt or host mutation; blocked/missing Gamepad API 
 
 test('connect shows real names and colours; dismiss, Options reopen and left/right selection',()=>{
   const f=uiFixture(),gp=pad();connect(f,gp);assert.equal(f.selector.status().mode,'choose');assert.equal(f.panel().hidden,false);
-  const choices=f.panel().children[1];assert.equal(choices.children[0].children[1].textContent,'Home · Ribble End');
+  const choices=f.panel().children[1];assert.equal(choices.children[0].children[1].textContent,'Home');assert.doesNotMatch(f.panel().textContent,/Ribble End/);
   assert.equal(choices.children[1].children[0].style.background,'#142d58');
   edge(f,gp,1);assert.equal(f.selector.status().mode,'dismissed');assert.match(f.panel().children[2].textContent,/Options/);
   edge(f,gp,9);assert.equal(f.selector.status().mode,'choose');edge(f,gp,15);assert.equal(f.selector.status().side,'opp');

@@ -18,7 +18,7 @@
         const button=document.createElement('button'),swatch=document.createElement('i'),name=document.createElement('span');
         button.type='button';button.setAttribute('data-controller-ignore','true');
         swatch.style.background=team.colour;swatch.style.borderRight='8px solid '+team.secondary;swatch.setAttribute('aria-hidden','true');
-        name.textContent=label+' · '+team.name;button.append(swatch,name);choices.appendChild(button);return button;
+        name.textContent=label;/* Joshua, 1 Nov: no team names; the kit colours show which is which */button.append(swatch,name);choices.appendChild(button);return button;
       }
       home=choice(teams.you,'Home');away=choice(teams.opp,'Away');help=document.createElement('small');
       panel.append(title,choices,help);document.body.appendChild(panel);
@@ -29,7 +29,7 @@
       home.setAttribute('aria-pressed',String(side==='you'));away.setAttribute('aria-pressed',String(side==='opp'));
       title.textContent=mode==='choose'?'Pick a side and jump in':mode==='waiting'?'Taking over at the next stoppage':mode==='disconnected'?'Controller disconnected · match paused':mode==='reconnected'?'Controller reconnected':'Keep watching';
       const labels=/(xbox|xinput|045e)/i.test(deviceId)?['A','B','Menu']:/(nintendo|switch|joy-con|057e)/i.test(deviceId)?['B','A','+']:['×','○','Options'];
-      help.textContent=mode==='choose'?`D-pad / left stick ← → · ${labels[0]} confirm · ${labels[1]} dismiss · ${labels[2]} reopens`:mode==='waiting'?`${teams[side].name} · ${labels[1]} cancel`:mode==='disconnected'?'Reconnect your controller to continue':mode==='reconnected'?`${labels[2]} resumes the match`:`${labels[2]} · Pick a side`;
+      help.textContent=mode==='choose'?`D-pad / left stick ← → · ${labels[0]} confirm · ${labels[1]} dismiss · ${labels[2]} reopens`:mode==='waiting'?`${side==='you'?'Home':'Away'} · ${labels[1]} cancel`:mode==='disconnected'?'Reconnect your controller to continue':mode==='reconnected'?`${labels[2]} resumes the match`:`${labels[2]} · Pick a side`;
     }
     function resetEdges(gp){selectBefore=pressed(gp,0);backBefore=pressed(gp,1);menuBefore=pressed(gp,9);directionBefore=0;neutralRequired=true;}
     function neutral(gp){

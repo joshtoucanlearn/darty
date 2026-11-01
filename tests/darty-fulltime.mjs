@@ -26,16 +26,16 @@ function element() {
   };
 }
 
-test('endMatch presents report numbers, short names and recorded scorers, and focuses restart', () => {
+test('endMatch presents report numbers, short names and recorded scorers by surname, and focuses restart', () => {
   const elements = new Map();
   const get = id => { if (!elements.has(id)) elements.set(id, element()); return elements.get(id); };
   const home = { possessionTicks: 60, shots: 9, onTarget: 4, passes: 20, completed: 15, fouls: 3, yellows: 2, reds: 1, saves: 5 };
   const away = { possessionTicks: 40, shots: 7, onTarget: 6, passes: 25, completed: 20, fouls: 6, yellows: 1, reds: 0, saves: 2 };
   const context = vm.createContext({
     report: { teams: { you: home, opp: away }, events: [
-      { type: 'goal', team: 'you', player: 'Player One', minute: 12 },
-      { type: 'goal', team: 'you', player: 'Player Two', minute: 73, ownGoal: true },
-      { type: 'goal', team: 'opp', player: 'Player Three', minute: 45 },
+      { type: 'goal', team: 'you', player: 'Thierry Henry', minute: 12 },
+      { type: 'goal', team: 'you', player: 'Ruud van Nistelrooy', minute: 73, ownGoal: true },
+      { type: 'goal', team: 'opp', player: 'Ronaldinho', minute: 45 },
       { type: 'shot', team: 'you', player: 'Unscored', minute: 80 }
     ] },
     document: { getElementById: get, createElement: element },
@@ -51,7 +51,7 @@ test('endMatch presents report numbers, short names and recorded scorers, and fo
   assert.equal(get('ftime').style.display, 'block');
   assert.equal(get('ftScore').textContent, 'HME 2 – 1 AWY');
   assert.equal(get('ftMsg').textContent, 'HME win');
-  assert.deepEqual(get('ftScorers').children.map(p => p.textContent), ['Player One 12′\nPlayer Two 73′ (OG)', 'Player Three 45′']);
+  assert.deepEqual(get('ftScorers').children.map(p => p.textContent), ['Henry 12′\nvan Nistelrooy 73′ (OG)', 'Ronaldinho 45′']);
   const rows = [...get('ftStats').innerHTML.matchAll(/<tr><td>(.*?)<\/td><th scope="row">(.*?)<\/th><td>(.*?)<\/td><\/tr>/g)].map(row => row.slice(1));
   assert.deepEqual(rows, [
     ['60%', 'Possession', '40%'], ['9 (4)', 'Shots (on target)', '7 (6)'],
