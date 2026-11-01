@@ -1,5 +1,9 @@
 # Football Legacy — Changelog
 
+## DARTY faces stay at every graphics level — 1 November 2026
+
+- Player and referee faces are never hidden as distance "detail", at any automatic graphics level. Crowd faces stay whenever the crowd is drawn; before, they switched off at the second-lowest level.
+
 ## DARTY steady Broadcast camera — 1 November 2026
 
 - The showcase card (`director=showcase`) no longer cycles through five camera angles every minute or cuts to Classic on every shot. It holds the Broadcast camera for the whole match. Goal, foul and save replays and celebrations keep their own angles.

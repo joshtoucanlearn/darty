@@ -268,6 +268,7 @@ function governorApi() {
 }
 
 test('tier 0 is the shipping look and the lighter tiers only ever reduce render cost', () => {
+  assert.match(fs.readFileSync(path.join(root, 'match-engine/match.html'), 'utf8'), /if\(crowdFaces\)crowdFaces\.visible=spec\.crowdFigures;/, 'crowd faces stay whenever the crowd is drawn (Joshua, 1 Nov)');
   const { RENDER_TIERS } = governorApi();
   assert.equal(RENDER_TIERS.length, 4);
   const full = RENDER_TIERS[0];

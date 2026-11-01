@@ -506,7 +506,7 @@
         1:{body:new THREE.CylinderGeometry(3.9,4.8,24,6),head:new THREE.SphereGeometry(4.4,6,4),arm:new THREE.CylinderGeometry(1.0,1.18,15,5)},
         2:{body:new THREE.CylinderGeometry(3.9,4.8,24,5),head:new THREE.SphereGeometry(4.4,5,3),arm:new THREE.CylinderGeometry(1.0,1.18,15,5)}};
       const set=gov.crowdGeometry[spec.crowdDetail===0?'full':spec.crowdDetail];crowdBodies.geometry=set.body;crowdHeads.geometry=set.head;crowdArms.geometry=set.arm;
-      crowdBodies.visible=crowdHeads.visible=spec.crowdFigures;if(crowdFaces)crowdFaces.visible=spec.crowdFigures&&spec.crowdArms;if(crowdScarves)crowdScarves.visible=spec.crowdFigures;crowdArms.visible=spec.crowdFigures&&spec.crowdArms;
+      crowdBodies.visible=crowdHeads.visible=spec.crowdFigures;if(crowdFaces)crowdFaces.visible=spec.crowdFigures;if(crowdScarves)crowdScarves.visible=spec.crowdFigures;crowdArms.visible=spec.crowdFigures&&spec.crowdArms;
     }
     const decor=scene.getObjectByName('north-london-highbury-islington-streets');if(decor&&decor.userData.decor)decor.userData.decor.forEach(mesh=>{mesh.visible=spec.streetDecor;});
     gov.appliedTier=gov.tier;return true;
@@ -7600,7 +7600,7 @@ function beginDedicatedSetPiece(kind,team,taker,x,y){
     const performanceDetails=[];
     grp.traverse(node=>{
       if(!node.isMesh)return;
-      const geometry=node.geometry,essential=geometry&&geometry.type==='LatheGeometry'||node===skull||node===neck||node===contactShadow||node===ring||assistantFlag&&node.parent===assistantFlag;
+      const geometry=node.geometry,essential=geometry&&geometry.type==='LatheGeometry'||node===skull||node===neck||node===facePanel||node===contactShadow||node===ring||assistantFlag&&node.parent===assistantFlag;
       if(!essential)performanceDetails.push(node);
     });
     grp.userData={

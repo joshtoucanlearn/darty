@@ -27,6 +27,7 @@ test('balanced mode keeps one static stadium shadow map and uses existing actor 
 test('broadcast-distance actors keep their articulated silhouette while tiny mesh details become close-up only', () => {
   assert.match(source, /const performanceDetails=\[\]/);
   assert.match(source, /geometry&&geometry\.type==='LatheGeometry'/);
+  assert.match(source, /node===facePanel\|\|/, 'faces are never a distance-culled detail (Joshua, 1 Nov)');
   assert.match(source, /mesh\.position\.distanceTo\(camera\.position\)<=RENDER_QUALITY_PROFILE\.actorDetailDistance/);
   assert.match(source, /u\.performanceDetails\.forEach\(node=>\{node\.visible=detailVisible;\}\)/);
   assert.match(source, /u\.ring\.visible=!!highlighted/);
