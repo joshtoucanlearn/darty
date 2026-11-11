@@ -479,17 +479,19 @@
   // never reads or writes match state, so the football is identical at every
   // tier. Capable devices stay on tier 0 and look exactly as before; a device
   // that cannot hold about 46 fps steps down one tier per measurement window and
-  // never steps back up, so quality cannot flap mid-match. ?renderTier=0..3 pins
+  // steps back up one tier after a long calm spell (wait doubles each time, so quality cannot
+  // flap mid-match). 11 Nov: the lightest tier keeps 76% sharpness (was 55%) so the ball stays
+  // readable; savings come from the crowd and decoration instead. ?renderTier=0..3 pins
   // a tier, ?renderTier=auto is the default, ?renderQuality=high disables it.
   const RENDER_TIERS=[
     {id:'full',pixelScale:1,crowdDetail:0,crowdArms:true,crowdFigures:true,waveStride:1,armStride:4,streetDecor:true,actorDetailDistance:Infinity},
-    {id:'light',pixelScale:.85,crowdDetail:1,crowdArms:true,crowdFigures:true,waveStride:2,armStride:8,streetDecor:true,actorDetailDistance:300},
-    {id:'lighter',pixelScale:.7,crowdDetail:2,crowdArms:false,crowdFigures:true,waveStride:4,armStride:0,streetDecor:true,actorDetailDistance:220},
-    {id:'lightest',pixelScale:.55,crowdDetail:2,crowdArms:false,crowdFigures:false,waveStride:8,armStride:0,streetDecor:false,actorDetailDistance:160}
+    {id:'light',pixelScale:.92,crowdDetail:1,crowdArms:true,crowdFigures:true,waveStride:2,armStride:8,streetDecor:true,actorDetailDistance:300},
+    {id:'lighter',pixelScale:.84,crowdDetail:2,crowdArms:false,crowdFigures:true,waveStride:4,armStride:0,streetDecor:true,actorDetailDistance:220},
+    {id:'lightest',pixelScale:.76,crowdDetail:2,crowdArms:false,crowdFigures:false,waveStride:8,armStride:0,streetDecor:false,actorDetailDistance:160}
   ];
-  const RENDER_GOVERNOR_SETTINGS={warmupFrames:150,windowFrames:90,settleFrames:45,slowMedianMs:21.5,stallP90Ms:33.4,stallMedianMs:18.5,maximumSimulationShare:.6,maximumFrameMs:250};
+  const RENDER_GOVERNOR_SETTINGS={warmupFrames:150,windowFrames:90,settleFrames:45,slowMedianMs:21.5,stallP90Ms:33.4,stallMedianMs:18.5,maximumSimulationShare:.6,maximumFrameMs:250,calmMedianMs:17.8,calmP90Ms:22,calmWindows:12};
   const renderTierRequest=query.get('renderTier'),renderTierPinned=/^[0-3]$/.test(String(renderTierRequest));
-  const renderGovernor={mode:RENDER_HIGH_QUALITY?'high':(video&&video.capture)?'capture':renderTierPinned?'pinned':'auto',tier:renderTierPinned?Number(renderTierRequest):0,appliedTier:0,frames:0,settle:RENDER_GOVERNOR_SETTINGS.warmupFrames,samples:[],simulation:[],history:[],waveStride:1,armStride:4,basePixelRatio:renderer.getPixelRatio(),baseActorDetailDistance:RENDER_QUALITY_PROFILE.actorDetailDistance,crowdGeometry:null};
+  const renderGovernor={mode:RENDER_HIGH_QUALITY?'high':(video&&video.capture)?'capture':renderTierPinned?'pinned':'auto',tier:renderTierPinned?Number(renderTierRequest):0,appliedTier:0,frames:0,settle:RENDER_GOVERNOR_SETTINGS.warmupFrames,samples:[],simulation:[],history:[],calm:0,calmNeeded:RENDER_GOVERNOR_SETTINGS.calmWindows,waveStride:1,armStride:4,basePixelRatio:renderer.getPixelRatio(),baseActorDetailDistance:RENDER_QUALITY_PROFILE.actorDetailDistance,crowdGeometry:null};
   function renderGovernorSummary(samples){const sorted=samples.slice().sort((a,b)=>a-b),pick=q=>sorted.length?sorted[Math.min(sorted.length-1,Math.max(0,Math.ceil(q*sorted.length)-1))]:0;return{median:pick(.5),p90:pick(.9)};}
   // Pure decision: should a full window of frame intervals (and the share of each frame spent in the simulation) step the tier down?
   function renderGovernorDecide(samples,simulationSamples,tier,settings=RENDER_GOVERNOR_SETTINGS){
@@ -497,6 +499,8 @@
     const slow=summary.median>settings.slowMedianMs||summary.median>settings.stallMedianMs&&summary.p90>settings.stallP90Ms;
     return{step:slow&&tier<RENDER_TIERS.length-1&&share<=settings.maximumSimulationShare,median:summary.median,p90:summary.p90,simulationShare:share};
   }
+  // Pure decision: is this window calm enough (steady ~60 fps) to count towards stepping back up a tier?
+  function renderGovernorCalm(samples,tier,settings=RENDER_GOVERNOR_SETTINGS){const summary=renderGovernorSummary(samples);return tier>0&&samples.length>0&&summary.median<=settings.calmMedianMs&&summary.p90<=settings.calmP90Ms;}
   function applyRenderTier(){
     const spec=RENDER_TIERS[renderGovernor.tier],gov=renderGovernor;if(gov.appliedTier===gov.tier)return false;
     renderer.setPixelRatio(gov.basePixelRatio*spec.pixelScale);
@@ -519,8 +523,14 @@
     if(gov.mode!=='auto'||!(frameMs>0)||frameMs>RENDER_GOVERNOR_SETTINGS.maximumFrameMs)return;
     gov.frames++;if(gov.settle>0){gov.settle--;return;}
     gov.samples.push(frameMs);gov.simulation.push(simulationMs);if(gov.samples.length<RENDER_GOVERNOR_SETTINGS.windowFrames)return;
-    const decision=renderGovernorDecide(gov.samples,gov.simulation,gov.tier);gov.samples=[];gov.simulation=[];
-    if(!decision.step){return;}
+    const lastWindow=gov.samples,decision=renderGovernorDecide(gov.samples,gov.simulation,gov.tier);gov.samples=[];gov.simulation=[];
+    if(!decision.step){
+      if(!renderGovernorCalm(lastWindow,gov.tier)){gov.calm=0;return;}
+      if(++gov.calm<gov.calmNeeded)return;
+      gov.history.push({frame:gov.frames,from:gov.tier,to:gov.tier-1,medianMs:+decision.median.toFixed(2),p90Ms:+decision.p90.toFixed(2),simulationShare:+decision.simulationShare.toFixed(2),recovery:true});
+      gov.tier--;gov.calm=0;gov.calmNeeded*=2;gov.settle=RENDER_GOVERNOR_SETTINGS.settleFrames;return;
+    }
+    gov.calm=0;
     gov.history.push({frame:gov.frames,from:gov.tier,to:gov.tier+1,medianMs:+decision.median.toFixed(2),p90Ms:+decision.p90.toFixed(2),simulationShare:+decision.simulationShare.toFixed(2)});
     gov.tier++;gov.settle=RENDER_GOVERNOR_SETTINGS.settleFrames;
   }
@@ -6717,7 +6727,7 @@ function beginDedicatedSetPiece(kind,team,taker,x,y){
   }
 
   // ===================== 3D SCENE =====================
-  let scene3dBuilt=false,youMeshes=[],oppMeshes=[],ykeepMesh,okeepMesh,ballMesh,ballVisualPreviousX=null,ballVisualPreviousZ=null,ballVisualRollAxis=null,refMesh,ref={x:W/2,y:H/2,action:'idle',actionT:0},crowd=null,nearCrowd=null,crowdBaseY=null,crowdPointSupport=[],crowdBodies=null,crowdHeads=null,crowdFaces=null,crowdArms=null,crowdScarves=null,crowdArmData=[],crowdFigureData=[],crowdAnimTick=0,crowdWaveTick=0,crowdAnimDummy=new THREE.Object3D(),crowdT=0,goalNets=[],netRipple=null,cameraSideStand=null,nearTunnel=null,leftEndStand=null,rightEndStand=null,innerCityTrain=null,weatherFX=null,weatherBase=null,stadiumEnvMap=null,sunGlowSprite=null,pitchsideCameraOperators=[];
+  let scene3dBuilt=false,youMeshes=[],oppMeshes=[],ykeepMesh,okeepMesh,ballMesh,ballContactShadow=null,ballVisualPreviousX=null,ballVisualPreviousZ=null,ballVisualRollAxis=null,refMesh,ref={x:W/2,y:H/2,action:'idle',actionT:0},crowd=null,nearCrowd=null,crowdBaseY=null,crowdPointSupport=[],crowdBodies=null,crowdHeads=null,crowdFaces=null,crowdArms=null,crowdScarves=null,crowdArmData=[],crowdFigureData=[],crowdAnimTick=0,crowdWaveTick=0,crowdAnimDummy=new THREE.Object3D(),crowdT=0,goalNets=[],netRipple=null,cameraSideStand=null,nearTunnel=null,leftEndStand=null,rightEndStand=null,innerCityTrain=null,weatherFX=null,weatherBase=null,stadiumEnvMap=null,sunGlowSprite=null,pitchsideCameraOperators=[];
   let specialPManagers=[],specialExteriorGroup=null,specialEarthGroup=null,specialEarthPlanetRoot=null,specialEarthPileRoot=null,specialEarthClouds=null,specialExteriorField=null,specialEarthField=null,specialExteriorData=[],specialEarthData=[],specialDummy=new THREE.Object3D(),specialEarthCameraTarget=new THREE.Vector3();
   const specialPSequence={active:false,stage:0,stageStartedAt:0,startedAt:0,stageElapsed:0,scorer:null,logicActors:[],sceneSnapshot:null,cameraCut:false,cameraBeat:-1};
   let matchPhase='play', walkoutUntil=0, walkoutTunnelUntil=0, walkoutLineUntil=0, walkinUntil=0;
@@ -7931,7 +7941,7 @@ function buildGoal(gx){
     for(let x=-64;x<576;x+=64){bg.beginPath();bg.moveTo(x,0);bg.quadraticCurveTo(x+32,64,x,128);bg.quadraticCurveTo(x-32,192,x,256);bg.stroke();}
     const aerowMotif=(x,y,scale=1)=>{bg.save();bg.translate(x,y);bg.scale(scale,scale);bg.fillStyle='#f4f1d6';bg.beginPath();bg.arc(0,0,39,0,Math.PI*2);bg.fill();bg.fillStyle='#101f3c';bg.beginPath();bg.arc(0,0,30,0,Math.PI*2);bg.fill();bg.fillStyle='#e8e22a';bg.beginPath();bg.arc(0,0,18,0,Math.PI*2);bg.fill();bg.strokeStyle='#f4f1d6';bg.lineWidth=5;bg.beginPath();bg.arc(0,0,11,-Math.PI*.72,Math.PI*.72);bg.stroke();bg.fillStyle='#f4f1d6';bg.font='900 10px Arial';bg.textAlign='center';bg.textBaseline='middle';bg.fillText('90',1,1);bg.restore();};
     [[42,38,.72],[136,92,1],[244,39,.70],[350,94,1],[468,40,.72],[75,207,.86],[210,181,.98],[337,211,.86],[477,178,.98],[-35,132,.82],[547,132,.82]].forEach(row=>aerowMotif(...row));
-    bg.fillStyle='#101f3c';bg.font='900 15px Arial';bg.textAlign='center';bg.fillText('TOTAL 90',256,130);bg.fillStyle='#f4f1d6';bg.fillRect(222,139,68,4);const bt=new THREE.CanvasTexture(bc);bt.anisotropy=16;bt.encoding=THREE.sRGBEncoding;ballMesh=new THREE.Mesh(new THREE.SphereGeometry(BALL_VISUAL_R,40,32),new THREE.MeshStandardMaterial({map:bt,roughness:.31,metalness:.01,envMapIntensity:.88}));ballMesh.castShadow=RENDER_QUALITY_PROFILE.dynamicActorShadows;ballVisualRollAxis=new THREE.Vector3();scene.add(ballMesh);{const tc=document.createElement('canvas');tc.width=tc.height=64;const tg=tc.getContext('2d'),grad=tg.createRadialGradient(32,32,0,32,32,32);grad.addColorStop(0,'rgba(255,250,224,1)');grad.addColorStop(.42,'rgba(255,222,140,.55)');grad.addColorStop(1,'rgba(255,196,96,0)');tg.fillStyle=grad;tg.fillRect(0,0,64,64);const tt=new THREE.CanvasTexture(tc);for(let i=0;i<SHOT_TRAIL_LENGTH;i++){const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:tt,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,opacity:0}));sprite.visible=false;sprite.renderOrder=2;scene.add(sprite);shotFx.sprites.push(sprite);}}
+    bg.fillStyle='#101f3c';bg.font='900 15px Arial';bg.textAlign='center';bg.fillText('TOTAL 90',256,130);bg.fillStyle='#f4f1d6';bg.fillRect(222,139,68,4);const bt=new THREE.CanvasTexture(bc);bt.anisotropy=16;bt.encoding=THREE.sRGBEncoding;ballMesh=new THREE.Mesh(new THREE.SphereGeometry(BALL_VISUAL_R,40,32),new THREE.MeshStandardMaterial({map:bt,roughness:.31,metalness:.01,envMapIntensity:.88}));ballMesh.castShadow=RENDER_QUALITY_PROFILE.dynamicActorShadows;ballVisualRollAxis=new THREE.Vector3();scene.add(ballMesh);{const sc=document.createElement('canvas');sc.width=sc.height=64;const sg=sc.getContext('2d'),sgrad=sg.createRadialGradient(32,32,0,32,32,32);sgrad.addColorStop(0,'rgba(0,0,0,.78)');sgrad.addColorStop(.5,'rgba(0,0,0,.42)');sgrad.addColorStop(1,'rgba(0,0,0,0)');sg.fillStyle=sgrad;sg.fillRect(0,0,64,64);ballContactShadow=new THREE.Mesh(new THREE.PlaneGeometry(BALL_VISUAL_R*3.8,BALL_VISUAL_R*3.8),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(sc),transparent:true,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-2}));ballContactShadow.rotation.x=-Math.PI/2;ballContactShadow.renderOrder=1;scene.add(ballContactShadow);}{const tc=document.createElement('canvas');tc.width=tc.height=64;const tg=tc.getContext('2d'),grad=tg.createRadialGradient(32,32,0,32,32,32);grad.addColorStop(0,'rgba(255,250,224,1)');grad.addColorStop(.42,'rgba(255,222,140,.55)');grad.addColorStop(1,'rgba(255,196,96,0)');tg.fillStyle=grad;tg.fillRect(0,0,64,64);const tt=new THREE.CanvasTexture(tc);for(let i=0;i<SHOT_TRAIL_LENGTH;i++){const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:tt,transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,opacity:0}));sprite.visible=false;sprite.renderOrder=2;scene.add(sprite);shotFx.sprites.push(sprite);}}
     setPieceGuideGroup=new THREE.Group();setPieceGuideGroup.visible=false;const guideGeo=new THREE.BufferGeometry();guideGeo.setAttribute('position',new THREE.BufferAttribute(new Float32Array(33*3),3));setPieceGuideLine=new THREE.Line(guideGeo,new THREE.LineDashedMaterial({color:0xe87824,transparent:true,opacity:.88,dashSize:18,gapSize:11,depthWrite:false}));setPieceGuideGroup.add(setPieceGuideLine);setPieceGuideRing=new THREE.Mesh(new THREE.RingGeometry(18,25,32),new THREE.MeshBasicMaterial({color:0xe87824,transparent:true,opacity:.80,side:THREE.DoubleSide,depthWrite:false}));setPieceGuideGroup.add(setPieceGuideRing);setPieceGuideDot=new THREE.Mesh(new THREE.SphereGeometry(5.2,12,9),new THREE.MeshBasicMaterial({color:0xf7f1e7,transparent:true,opacity:.92,depthWrite:false}));setPieceGuideGroup.add(setPieceGuideDot);scene.add(setPieceGuideGroup);
     if(CONFIG.weather==='rain'){const rp=[];for(let i=0;i<1500;i++)rp.push((Math.random()-.5)*W*1.3,80+Math.random()*720,(Math.random()-.5)*H*1.35);const rg=new THREE.BufferGeometry();rg.setAttribute('position',new THREE.Float32BufferAttribute(rp,3));weatherBase=Float32Array.from(rp);weatherFX=new THREE.Points(rg,new THREE.PointsMaterial({color:0xd8e7ef,size:2.0,transparent:true,opacity:.48,sizeAttenuation:true}));scene.add(weatherFX);}
     camera.position.set(0,470,H/2+455);camera.lookAt(0,12,0);cameraSideStand.visible=true;if(nearTunnel)nearTunnel.visible=matchPhase==='walkout'&&performance.now()<walkoutTunnelUntil;ensureCelebrationMob();if(!RENDER_HIGH_QUALITY)renderer.shadowMap.needsUpdate=true;scene3dBuilt=true;
@@ -8484,6 +8494,7 @@ function buildGoal(gx){
       if((ball.z||0)>BALL_VISUAL_R*.75&&Math.abs(Number(ball.spin)||0)>.0001)ballMesh.rotateY(Number(ball.spin)*.045);
     }
     ballVisualPreviousX=ballWorldX;ballVisualPreviousZ=ballWorldZ;
+    if(ballContactShadow){const lift=Math.max(0,ballMesh.position.y-BALL_VISUAL_R),fade=1/(1+lift/(BALL_VISUAL_R*6));ballContactShadow.visible=!heldAnchor&&ballMesh.visible!==false;ballContactShadow.position.set(ballWorldX,.35,ballWorldZ);ballContactShadow.scale.setScalar(1+lift/(BALL_VISUAL_R*14));ballContactShadow.material.opacity=.9*fade;}
     updateShotFx(ballWorldX,ballMesh.position.y,ballWorldZ,!!heldAnchor);
     if(netRipple){netRipple.ticks--;const duration=82,strength=Number(netRipple.strength||1),pulse=Math.sin((duration-netRipple.ticks)*.32)*netRipple.ticks/duration*13*strength;goalNets.forEach(n=>{const a=n.line.geometry.attributes.position.array,b=n.base,active=n.side===netRipple.side;for(let i=0;i<a.length;i+=3){a[i]=b[i]+(active?n.dir*pulse*Math.sin((b[i+1]+Math.abs(b[i+2]))*.055):0);}n.line.geometry.attributes.position.needsUpdate=true;});if(netRipple.ticks<=0){netRipple=null;goalNets.forEach(n=>{n.line.geometry.attributes.position.array.set(n.base);n.line.geometry.attributes.position.needsUpdate=true;});}}
     if(specialPSequence.active){drawSpecialPSequence();if(specialPSequence.stage>0){camFollow();if(renderFrame)renderVideoFrame();return;}}

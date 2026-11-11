@@ -263,7 +263,7 @@ test('the live page loads three.js once, and no retired shadow or dormant-kernel
 function governorApi() {
   const code = sourceBetween(matchHtml, '  const RENDER_TIERS=[', '  const renderTierRequest=') + sourceBetween(matchHtml, '  function renderGovernorSummary(', '  function applyRenderTier(){');
   const context = {};
-  vm.runInNewContext(code + '\nthis.api={RENDER_TIERS,RENDER_GOVERNOR_SETTINGS,renderGovernorDecide,renderGovernorSummary};', context);
+  vm.runInNewContext(code + '\nthis.api={RENDER_TIERS,RENDER_GOVERNOR_SETTINGS,renderGovernorDecide,renderGovernorSummary,renderGovernorCalm};', context);
   return context.api;
 }
 
@@ -289,7 +289,7 @@ test('tier 0 is the shipping look and the lighter tiers only ever reduce render 
     assert.ok(heavier.crowdFigures || !lighter.crowdFigures);
     assert.ok(heavier.streetDecor || !lighter.streetDecor);
   }
-  assert.ok(RENDER_TIERS.every(tier => tier.pixelScale >= 0.5), 'never below half resolution');
+  assert.ok(RENDER_TIERS.every(tier => tier.pixelScale >= 0.75), 'never below 75% sharpness, so the ball stays readable (Joshua, 11 Nov)');
 });
 
 test('the governor steps down only for a sustained slow render window and never for a fast, marginal or simulation-bound one', () => {
@@ -306,6 +306,18 @@ test('the governor steps down only for a sustained slow render window and never 
   assert.equal(decide(window(33.3), window(25)).step, false, 'a device whose frame is mostly simulation cost is not helped by lighter graphics');
   assert.equal(decide(window(40), window(4), 3).step, false, 'the lightest tier is the floor');
   assert.equal(decide([], []).step, false, 'no frames, no decision');
+});
+
+test('the governor climbs back only after a steady 60 fps spell, never from the top tier or a shaky window', () => {
+  const { renderGovernorCalm, RENDER_GOVERNOR_SETTINGS } = governorApi();
+  const window = (ms, count = RENDER_GOVERNOR_SETTINGS.windowFrames) => Array(count).fill(ms);
+  assert.equal(renderGovernorCalm(window(16.7), 2), true, 'steady 60 fps on a lighter tier is calm');
+  assert.equal(renderGovernorCalm(window(16.7), 0), false, 'tier 0 has nowhere to climb');
+  assert.equal(renderGovernorCalm(window(20), 3), false, '50 fps is not calm');
+  assert.equal(renderGovernorCalm([...window(16.7, 70), ...window(40, 20)], 1), false, 'stalls in the window are not calm');
+  assert.equal(renderGovernorCalm([], 1), false);
+  assert.ok(RENDER_GOVERNOR_SETTINGS.calmWindows * RENDER_GOVERNOR_SETTINGS.windowFrames >= 900, 'at least ~15 s of calm before the first climb');
+  assert.match(matchHtml, /gov\.calmNeeded\*=2/, 'each climb doubles the wait, so quality cannot flap');
 });
 
 test('the render governor and tiers touch no match state', () => {
